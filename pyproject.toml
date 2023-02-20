@@ -21,3 +21,6 @@ classifiers = [
 [project.urls]
 "Homepage" = "https://github.com/AlexRodis/bayesian_models"
 "Bug Tracker" = "https://github.com/AlexRodis/bayesian_models/issues"
+
+[tool.setuptools]
+py-modules = []
