@@ -11,7 +11,7 @@ import sklearn
 import xarray as xr
 import arviz as az
 import pytensor
-import interval
+from interval import Interval
 import functools
 
 
@@ -1165,13 +1165,13 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         for var_name, rope,hdi in zip(var_names,ropes, hdis):
             raw_summary = az.summary(self.idata, var_names=[var_name],
             filter_vars='like', hdi_prob=hdi)
-            rope=interval.interval(rope)
+            rope=Interval(*rope)
             out=[]
             for idx,row in raw_summary.iterrows():
-                ci=interval.interval([row[2],row[3]])
+                ci=Interval(row[2],row[3])
                 if ci in rope:
                     out.append("Not Significant")
-                elif ci & rope != interval():
+                elif ci & rope != Interval(0,0):
                     out.append("Indeterminate")
                 else:
                     out.append("Significant")
