@@ -1235,3 +1235,197 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             raise RuntimeError("Cannot plot trace. Model is untrained")
         
         return az.plot_trace(self.idata, *args, **kwargs)
+
+
+class BayesianNeuralNetwork:
+
+    '''
+
+        Class representing a dense Bayesian Neural Network (BNN)
+
+        Object Attributes:
+        --------------------
+
+        - layers:Iterable[Layer] := A Sequence of Layer objects, representing
+        the layers of the network. The input layer is addded automatically
+        and should not be included here. The output layer should be included
+        as the last layer object
+
+        Object Properties:
+        -------------------
+
+        - trained:bool=False := Sentinel value indicating if the models'
+        `fit` method has been called
+
+        - initialized:bool=False := Sentinel value indicating if the models'
+        `__init__` and `__call__` methods have been called
+
+        - idata:Optional[arviz.InferenceData]=None := The models' posterior
+        samplers, returned by the `fit` method
+
+        - model:Optional[pymc.Model] := The `pymc.Model` object representing
+        the underlying model
+
+        - posterior_predictive:Optional[xarray.Dataset] := Samples from the
+        posterior predictive. The result of calling the models' `predict`
+        method
+
+        Object Methods:
+        ----------------
+
+        - __init__(self, layers:Iterable[Layer]) := Begin object
+        initialization by defining the networks' architecture
+
+        - __call__(self, X:xarray.DataArray, Y:xarray.DataArray) := Complete
+        object initialization by specifying the full probability model
+
+        - fit(self, sampler=pymc.sample, *args:[tuple[Any]],
+            **kwargs:dict[str,Any])->arviz.InferenceData := Perform inference
+            on the model, by using `sampler` to sample from the posterior.
+            `infer` is an alias for this method
+
+        - predict(self, Xnew:xarray.DataArray)->xarray.Dataset := Predict
+        using the models' posterior predictive distribution.
+
+
+
+    '''
+
+    def __init__(self, layers:Iterable[Layer]):
+        self.layers = layers
+        # self.layers:dict[str,Iterable[Layer]] 
+        # i.e. dict(main = [Layer(), Layer()])
+        # self.likelihood_map = dict(model_output = mu, s = sigma)
+        self._trained:bool = False
+        self._initialized:bool = False
+        self._model:Optional[pymc.Model] = None
+        self._idata:Optional[az.InferenceData] = None
+        self._posterior_predictive:Optional[xr.Dataset] = None
+    
+    @property
+    def trained(self)->bool:
+        return self._trained
+    @trained.setter
+    def trained(self, val:bool)->None:
+        self._trained = val
+    @property
+    def initialized(self)->bool:
+        return self._initialized
+    @initialized.setter
+    def initialized(self, val:bool)->None:
+        self._initialized = val
+    @property
+    def model(self)->Optional[pymc.Model]:
+        return self._model
+    @model.setter
+    def model(self, val:pymc.Model)->None:
+        self._model = val
+    @property
+    def idata(self)->Optional[az.InferenceData]:
+        return self._idata
+    @idata.setter
+    def idata(self, val:az.InferenceData)->None:
+        self._idata = val
+    @property
+    def posterior_predictive(self)->Optional[xr.Dataset]:
+        return self._posterior_predictive
+    @posterior_predictive.setter
+    def posterior_predictive(self, val:xr.Dataset)->None:
+        self._posterior_predictive = val
+
+    def __call__(self, X_train:xr.DataArray, Y_train:xr.DataArray):
+        '''
+            Fully initialize the object by specifying the full probability
+            model for inference
+
+            Args:
+            -----
+
+                - X_train:xarray.DataArray := Model inputs
+
+                - Y_test:xarray.DataArray := Model outputs (rank-2 tensor
+                only)
+
+            Returns:
+            ---------
+
+                - self := Return the object itself
+        '''
+        self._x_coords:dict = force_extract_coords(X_train)
+        self._y_coords:dict = force_extract_coords(Y_train)
+        self._coords:dict = self._x_coords|self._y_coords
+        with pymc.Model(coords=self._coords) as bnn_model:
+            inputs = pymc.Data("inputs", X_train, mutable = True)
+            outputs = pymc.Data("outputs", Y_train, mutable = False)
+            L = inputs
+            # for region_id, layers in self.layers.items():
+            #   for layer in layers:
+            #       L = layer(L)
+            #   L = pymc.Deterministic('region_id', L)
+            for layer in self.layers:
+                L = layer(L)
+            y = pymc.Deterministic("y", L)
+            y_obs = pymc.Dirichlet('y_obs', y, observed = outputs)
+        self.initialized = True
+        self.model = bnn_model
+        return self
+    
+
+    def fit(self, *args, sampler=pymc.sample,
+            **kwargs)->az.InferenceData:
+        '''
+            Perform inference on the model
+
+            Args:
+            ------
+
+                - sampler:Callable=pymc.sample := The sampler to use for
+                inference. Optional. Defaults to the default `pymc.sample`
+
+                - *args:tuple[Any] := Positional arguements to be forwarded
+                for the sampler
+
+                - **kwargs:dict[str, Any] := Keyword arguments to be forwarded
+                to the sampler
+
+            Returns:
+            ---------
+
+                - self.idata:arviz.InferenceData := Samples from the
+                posterior. The output of calling `sampler`
+        '''
+        with self.model:
+            self.idata = sampler(*args, **kwargs)
+        self.trained = True
+        return self.idata
+    
+    def predict(self, X_new, *args, **kwargs)->xr.DataArray:
+        '''
+            Predict on new inputs, using the models' posterior predictive
+
+            Args:
+            ------
+
+                - X_new:xarray.DataArray := The new points to predict
+
+            Returns:
+            --------
+
+                - trace:xarray.Dataset := The `xarray.Dataset` containing
+                the models' prediction. Only samples the output layer
+                by default
+        '''
+        with self.model:
+            pymc.set_data(dict(
+                inputs = X_new,
+            ))
+            self.trace = pymc.sample_posterior_predictive(
+                self.idata, var_names=["y"],*args,**kwargs)
+        return self.trace
+
+
+    def __repr__(self)->str:
+        lstring:str=""
+        for layer in self.layers:
+            lstring += str(layer)
+        return ((f"BayesianNeuralNetwork <{lstring}>"))
