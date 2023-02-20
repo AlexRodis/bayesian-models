@@ -45,6 +45,7 @@ GPU = [
 	'jax==0.4.1',
 	'jaxlib==0.4.1',
 ]
+
 [tool.setuptools]
 
-package-dir={""="bayesian_models"}
+packages = ["bayesian_models"]
