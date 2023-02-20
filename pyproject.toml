@@ -34,7 +34,6 @@ dependencies = [
         'interval',
         ]
 
-
 [project.urls]
 
 "Homepage" = "https://github.com/AlexRodis/bayesian_models"
@@ -50,4 +49,5 @@ GPU = [
 
 [tool.setuptools]
 
+packages = ["bayesian_models"]
 py-modules = []
