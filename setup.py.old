@@ -1,0 +1,40 @@
+from setuptools import setup, find_packages
+
+from codecs import open
+from os import path
+
+HERE = path.abspath(path.dirname(__file__))
+
+with open(path.join(HERE, 'README.md'), encoding='utf-8') as file:
+    long_description = file.read()
+
+setup(
+    name = "bayesian_models",
+    version = "0.0.1",
+    description = "bayesian premade model library",
+    long_description = long_description,
+    long_description_content_type = "text/markdown",
+    url = "https://bayesian_model.readthedocs.io",
+    author = "Alexander Rodis",
+    author_email = "alexanderrhodis@gmail.com",
+    licence = "MIT",
+    classifiers = [
+        "Private :: Do Not Upload",
+        "Operating System :: OS Independent"
+        "Programming Language :: Python :: 3 :: Only",
+        "License :: OSI Approved :: MIT License",
+        "Development Status :: 2 - Pre-Alpha",
+        "Intended Audience :: Developers",
+        "Intended Audience :: Education",
+        "Intended Audience :: Science/Research",
+        ],
+    packages = ["bayesian_models"],
+    include_package_data=True,
+    install_requires = [
+        'pymc>=5.0.2',
+        'jax==4.0.1',
+        'jaxlib==4.0.1',
+        'scikit-learn>=1.2.1',
+        'interval',
+        ],
+        )
