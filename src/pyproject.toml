@@ -4,14 +4,11 @@ build-backend = 'setuptools.build_meta'
 [project]
 name = "bayesian_models"
 version = "0.0.1"
-authors = [{
-    name = "Alexander Rodis", email = "alexanderrhodis@gmail.com"    
-    }
+authors = [
+  { name="Alexander Rodis", email="alexanderrhodis@gmail.com" },
 ]
 maintainers = [
-    {
-    name = "Alexander Rodis", email = "alexanderrhodis@gmail.com"    
-    }
+    { name="Alexander Rodis", email="alexanderrhodis@gmail.com" },
 ]
 description = "A package for building common bayesian models in pymc"
 readme = 'README.md'
