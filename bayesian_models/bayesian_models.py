@@ -5,7 +5,7 @@ from typing import Any, Union, Callable, Sequence, Optional
 from abc import ABC, abstractmethod
 import pandas as pd
 import numpy as np
-from utilities import SklearnDataFrameScaler, tidy_multiindex
+from .utilities import SklearnDataFrameScaler, tidy_multiindex
 from functools import partial
 import sklearn
 import xarray as xr

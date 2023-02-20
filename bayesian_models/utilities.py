@@ -1,4 +1,5 @@
 import pandas as pd
+import sklearn
 from sklearn.preprocessing import StandardScaler
 from collections.abc import Iterable
 import typing
