@@ -12,6 +12,7 @@ h5netcdf==1.1.0
 h5py==3.8.0
 jax==0.4.1
 jaxlib==0.4.1
+joblib==1.2.0
 kiwisolver==1.4.4
 logical-unification==0.4.5
 matplotlib==3.7.0
@@ -28,9 +29,10 @@ pyparsing==3.0.9
 pytensor==2.9.1
 python-dateutil==2.8.2
 pytz==2022.7.1
+scikit-learn==1.2.1
 scipy==1.10.1
 six==1.16.0
-sklearn==0.0.post1
+threadpoolctl==3.1.0
 toolz==0.12.0
 tqdm==4.64.1
 typing_extensions==4.5.0
