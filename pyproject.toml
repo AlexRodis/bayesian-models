@@ -42,8 +42,8 @@ dependencies = [
 
 [project.optional-dependencies]
 GPU = [
-	'jax==4.0.1',
-	'jaxlib==4.0.1',
+	'jax==0.4.1',
+	'jaxlib==0.4.1',
 ]
 [tool.setuptools]
 
