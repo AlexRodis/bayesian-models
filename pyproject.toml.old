@@ -45,6 +45,11 @@ GPU = [
 	'jax==4.0.1',
 	'jaxlib==4.0.1',
 ]
-[tool.setuptools]
 
-package-dir={""="bayesian_models"}
+[tool.setuptools.packages.find]
+where=['bayesian_models']
+include=['bayesian_models*']
+exlude=["bayesian_models.test"]
+
+[tool.setuptools]
+py-modules = []
