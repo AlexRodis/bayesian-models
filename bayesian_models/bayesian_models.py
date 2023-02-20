@@ -1236,6 +1236,290 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         
         return az.plot_trace(self.idata, *args, **kwargs)
 
+def ReLU(x, leak:float=.0):
+    '''
+        `pytensor` implementation of the Leaky ReLU activation function:
+
+        .. math::
+
+            f(x)= max(leak, x)
+        NOTE: With leak=0 this is the standard ReLU function
+              With leak a small number i.e. 1e-2 this is Leaky ReLU
+              Otherwise this is Parametric ReLU
+
+        Args:
+        ------
+
+            - x := The input tensor
+
+            - leak:float=.0 := The leak parameter of the ReLU. When equal
+            to 0, returns the standard ReLU, when equal to a small number
+            i.e. 0.001 this is Leaky ReLU, otherwise it's parametric
+            ReLu
+
+        Returns:
+        ---------
+
+            - function := Elementwise operation
+
+    '''
+
+    return pytensor.tensor.switch(x<=0, leak, x)
+
+def ELU(x, alpha:float=1.0):
+    '''
+        `pytensor` implementation of the ELU activation function:
+
+        .. math::
+
+            f(x) = \begin{cases}
+                    x & x \gt 0 \\
+                    \alpha (e^x-1) &\text{if } b \\
+                    \end{cases}
+
+        Args:
+        -----
+
+            - x := The input tensor
+
+            - alpha:float=1.0 := The :math:`\alpha` parameter of the
+            ELU function
+
+        Returns:
+        ---------
+
+            - function := Elementwise operation
+    '''
+
+    return pytensor.tensor.switch(x<=0, 
+                                  alpha*(pytensor.tensor.exp(x)-1), 
+                                  x)
+
+def SWISS(x, beta:float=1):
+    '''
+        `pytensor` implementation of the Swiss activation function:
+
+        .. math::
+
+            f(x)=x sigmoid(\beta x)
+
+        NOTE: This implementation is equivalent to the 'Swiss-1' activation
+        function, where :math:`\beta` is **not** learned. The original
+        SWISS function has this as a learnable parameter instead
+    '''
+
+    return x*pymc.math.invlogit(beta*x)
+
+def GELU(x):
+    '''
+        `pytensor` implementaion of the GELU activation function. This 
+        function is defined as:
+
+        .. math::
+            X \thicksim \mathcal{N}(0,1)
+            f(x)\triangeq = xP(X\le x) = x\Phi (x)=x\frac 12 
+            [1+erf(\frac {x}{\sqrt{2}})]
+
+        Args:
+        ------
+
+            - x := Input tensor
+
+        Returns:
+        --------
+
+            - function := The elementwise operation
+    '''
+
+    return x*0.5*(1+pymc.math.erf(x/pymc.math.sqrt(2)))
+
+
+def SiLU(x):
+    '''
+        `pytensor` implementation of the SiLU activation function. This
+        function is defined as:
+
+        .. math::
+
+            f(x)\triangeq x \sigma (x)
+        
+        Args:
+        -----
+
+             - x := Input tensor
+
+        Returns:
+        ---------
+
+            - function := The elementwise operation
+    '''
+
+    return x*pymc.math.invlogit(x)
+
+
+
+class Layer:
+
+
+    transfer_functions:dict[str, Optional[Callable]] = dict(
+        exp = pymc.math.exp,
+        softmax = pymc.math.softmax,
+        sigmoid = pymc.math.invlogit,
+        linear = lambda e:e,
+        tanh = pymc.math.tanh,
+        relu = ReLU,
+        leaky_relu = functools.partial(ReLU, leak=1e-2),
+        parameteric_relu = functools.partial(ReLU, leak=1),
+        elu = ELU,
+        swiss = SWISS,
+        gelu = GELU,
+        selu = SiLU,
+    )
+    transfer_function_names:set = set(transfer_functions.keys())
+    transfer_function_callables = set([v for k,v in \
+                                       transfer_functions.items()])
+
+    '''
+        Object representing a Neural Network layer
+
+        Object Attributes:
+        -------------------
+
+            - n_neurons:int := The number of neurons in the layer
+
+            - name:Optional[str] := An identifier for this layers
+
+            - weight_priors:pymc.Continuous=pymc.Normal := Prior distribution
+            for the weight in the layer
+
+            - bias_priors:pymc.Continuous=pymc.Normal := Prior distribution
+            for the layer biases
+
+            - weight_prior_args:Optional[tuple[Any]] := Arguments to be be
+            forwarded to the weights prior distribution
+
+            - weight_prior_kwargs:Optional[tuple[aNY]] := Keyword arguments
+            to be forwarded to the weights prior distribution
+
+            - bias_prior_args:Optional[tuple[Any]] := Arguments to be be
+            forwarded to the biases prior distribution
+
+            - bias_prior_kwargs:Optional[tuple[aNY]] := Keyword arguments
+            to be forwarded to the biases prior distribution
+
+
+            - activation_function:Callable[..., Any] := The networks'
+            activation function
+
+        Object Methods:
+        -----------------
+
+            - __call__(self,X) := Adds the layer to the models' graph.
+            Bugged and currently not working
+
+            - __repr__(self) := Return a string representation of the
+            object
+        
+        '''
+
+    def _validate_inputs_(self, *args:tuple[Any],
+                          **kwargs:dict[str,Any])->None:
+        
+        '''
+            Validate object inputs and options
+        '''
+        if not isinstance(args[0], int):
+            raise TypeError("n_neurons argument must be a positive "
+                            f"integer. Received {type(args[0])} "
+                            "instead")
+        elif args[0]<=0:
+            raise ValueError(("n_neurons must be a postive integer."
+                              f"Received {args[0]} instead"))
+
+
+
+    def __init__(self,n_neurons:int,
+                weight_priors:pymc.Continuous = pymc.Normal,
+                bias_priors:pymc.Continuous = pymc.Normal,
+                weight_prior_args:tuple[Any]=(0,),
+                weight_prior_kwargs:dict[str,Any] = dict(sigma=1),
+                bias_prior_args:tuple[Any] = (0,),
+                bias_prior_kwargs:dict[str, Any] = dict(sigma = 1),
+                activation_function:Callable[...,Any] = pymc.math.tanh,
+                name:Optional[str] = None)->None:
+        self.n_neurons = n_neurons
+        self.name = name
+        self.weight_priors = weight_priors
+        self.bias_priors = bias_priors
+        self.weight_prior_args = weight_prior_args
+        self.weight_prior_kwargs = weight_prior_kwargs
+        self.bias_prior_args = bias_prior_args
+        self.bias_prior_kwargs = bias_prior_kwargs
+        self.activation_function = activation_function
+    
+    def __call__(self,X):
+        W = self.weight_priors(f"W_{self.name}", *self.weight_prior_args,
+                               **self.weight_prior_kwargs,
+                               shape = (X.shape[1], self.n_neurons))
+        b = self.bias_priors(f"b_{self.name}", *self.bias_prior_args,
+                             **self.bias_prior_kwargs,
+                             shape = self.n_neurons)
+        node = self.activation_function(pytensor.tensor.dot(X, W)+b)
+        return node
+        
+    def __repr__(self)->str:
+        return ((f"Deep Layer <name = {self.name}, "
+        f"n_neurons = {self.n_neurons}>, weights = {self.weight_priors}"
+        f"({self.weight_prior_args}, {self.weight_prior_kwargs}), "
+        f"biases = {self.bias_priors}({self.bias_prior_args}, "
+        f"{self.bias_prior_kwargs}), "
+        f"transfer function = {self.activation_functions}"))
+
+
+class MapLayer:
+    '''
+        Special pseudo-layer that splits network outputs into several
+        named variables. Useful for allowing the outputs of a network
+        to be shape variables of a distribution
+
+        WIP
+    '''
+
+    def __init__(self, splitter:dict[str, Callable],
+                 name:str="output_map")->None:
+
+        self.splitter = splitter
+        self._name = name
+    
+    @property
+    def name(self)->str:
+        return self._name
+    @name.setter
+    def name(self, val:str)->None:
+        self._name = val
+
+    def __call__(self, tensor):
+        for var, splitter in self.splitter.items():
+            v = pymc.Deterministic(var, splitter(tensor))
+
+class FreeAdditionLayer:
+    '''
+        Specify additional variables for a network model, i.e. noise
+        parameters for the likelihood
+
+        WIP
+    '''
+
+
+    def __init__(self, vars:Iterable[str], name:str):
+        self._name = name
+        self.vars = vars
+    
+    def __call__(self):
+        pass
+
+
+
 
 class BayesianNeuralNetwork:
 
