@@ -1,7 +1,7 @@
 import pymc
 import pymc as pm
 import typing
-from typing import Any, Union, Callable, Sequence, Optional
+from typing import Any, Union, Callable, Sequence, Optional, Iterable
 from abc import ABC, abstractmethod
 import pandas as pd
 import numpy as np
@@ -11,7 +11,8 @@ import sklearn
 import xarray as xr
 import arviz as az
 import pytensor
-from interval import interval
+import interval
+import functools
 
 class BayesianModel(ABC):
     '''
@@ -675,7 +676,6 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         super().__init__(tidify_data= tidify_data, scaler = scaler, 
         nan_handling=nan_handling, save_path = save_path)
         self.group_var = None
-        # self.data = None
         self._permutations = None
         self._n_perms = None
         self._data_dimentions = None
@@ -1148,10 +1148,10 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         for var_name, rope,hdi in zip(var_names,ropes, hdis):
             raw_summary = az.summary(self.idata, var_names=[var_name],
             filter_vars='like', hdi_prob=hdi)
-            rope=interval(rope)
+            rope=interval.interval(rope)
             out=[]
             for idx,row in raw_summary.iterrows():
-                ci=interval([row[2],row[3]])
+                ci=interval.interval([row[2],row[3]])
                 if ci in rope:
                     out.append("Not Significant")
                 elif ci & rope != interval():
