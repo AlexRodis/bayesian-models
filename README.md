@@ -29,10 +29,16 @@ You can then install the library with the command:
 git install pip install git+ssh://git@github.com/AlexRodis/bayesian_models.git
 ```
 It is often desirable to run models with a GPU if available. At present, there are known issues with the `numpyro` dependency. Only these versions are supported:
+
 ```
 jax==0.4.1
 jaxlib==0.4.1
 ```
+To attempt to install with GPU support run:
+```
+pip install bayesian_models[GPU]@ git+ssh://git@github.com/AlexRodis/bayesian_models.git
+```
+Note the GPU version is unstable
 
 You must also set the following environment variable prior to all other commands, including imports
 
