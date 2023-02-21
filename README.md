@@ -34,6 +34,11 @@ It is often desirable to run models with a GPU if available. At present, there a
 jax==0.4.1
 jaxlib==0.4.1
 ```
+To install the developement version run:
+```
+pip install 'bayesian_models[dev]@ git+ssh://git@github.com/AlexRodis/bayesian_models.git@dev-main'
+```
+
 To attempt to install with GPU support run:
 ```
 pip install 'bayesian_models[GPU]@ git+ssh://git@github.com/AlexRodis/bayesian_models.git'
