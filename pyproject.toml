@@ -46,6 +46,15 @@ GPU = [
 	'jaxlib==0.4.1',
 ]
 
+dev = [
+  'jax==0.4.1',
+  'jaxlib==0.4.1',
+  'sphinx',
+  'sphinx-rtd-theme',
+  'sphinxcontrib-katex',
+  'mypy',
+]
+
 [tool.setuptools]
 
 packages = ["bayesian_models"]
