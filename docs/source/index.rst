@@ -10,6 +10,9 @@ Welcome to bayesian_models's documentation!
    :maxdepth: 2
    :caption: Contents:
 
+   tutorials/quickstart
+   tutorials/installation
+   tutorials/best
 
 
 Indices and tables
