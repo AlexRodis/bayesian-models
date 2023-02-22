@@ -1,9 +1,11 @@
 import unittest
 from bayesian_models.models import BEST
 import numpy as np
-import xarray as xr
 import pandas as pd
 from os import remove
+import warnings
+
+warnings.filterwarnings("ignore")
 
 class TestBESTModel(unittest.TestCase):
 
@@ -25,7 +27,7 @@ class TestBESTModel(unittest.TestCase):
             )
 
     def tearDown(self):
-        targets = ["temp_model.netcdf"]
+        targets = ["temp_model.netcdf","temp_model.pickle"]
         for target in targets:
             try:
                 remove(target)
@@ -46,12 +48,9 @@ class TestBESTModel(unittest.TestCase):
         obj_other.load("temp_model.netcdf")
         self.assertTrue(obj.idata==obj_other.idata )
 
+    # See issue #5
     @unittest.expectedFailure
     def test_save_pickle(self):
-        
-        '''
-            See issue #5
-        '''
         import pickle
         obj = BEST()(self.df, "group")
         obj.fit(draws=100, chains=2, tune=100)
@@ -78,7 +77,8 @@ class TestBESTModel(unittest.TestCase):
         with self.assertWarns(UserWarning):
             obj.fit(tune=50, draws=10, chains=2)
 
-    @unittest.skip("See issue #8")
+    # See issue #8
+    @unittest.expectedFailure
     def test_nan_exclude(self):
         from bayesian_models.utilities import flatten
         gather = lambda object: list(
@@ -114,8 +114,8 @@ class TestBESTModel(unittest.TestCase):
         obj_exclude = BEST()(missing_nan, "group")
         self.assertTrue(obj_exclude.nan_present_flag)
 
-    
-    @unittest.skip("See issue #10")
+    # See issue #10
+    @unittest.expectedFailure
     def test_tidy_data(self):
         # Index currently ignored by the model
         multi_df = self.df.copy(deep= True)
@@ -139,17 +139,12 @@ class TestBESTModel(unittest.TestCase):
         multipair_df.loc[multipair_df.shape[0]+1] = [100, 
                                                       'dummy_level1']
         obj_multiple_pairs = BEST()(multipair_df, "group")
-        self.assertTrue(
-            set(obj_single_pair._groups.keys()) == set(['placebo',"drug"])\
-            and set(obj_multiple_pairs._groups.keys()) == set(['placebo',
-                                                      "drug", 
-                                                      "dummy_level0",
-                                                      "dummy_level1"])
-        )
+        single_pair_cond = set(obj_single_pair._groups.keys()) == \
+                set(['placebo',"drug"])
+        multiple_pairs_cond = set(obj_multiple_pairs._groups.keys()) ==\
+            set(['placebo', "drug",  "dummy_level0", "dummy_level1"])
+        self.assertTrue(single_pair_cond and multiple_pairs_cond)
 
-
-    def test_multivariate_warning_shape_ignored(self):
-        pass
 
     def test_group_combinations(self):
 
@@ -163,13 +158,13 @@ class TestBESTModel(unittest.TestCase):
         multipair_df.loc[multipair_df.shape[0]+1] = [100, 
                                                       'dummy_level1']
         multipair_obj = BEST()(multipair_df, "group")
-        print(obj_single_pair._permutations)
-        print(multipair_obj._permutations)
-        self.assertTrue(
-            set(combinations(["drug",'placebo',],2)) == obj_single_pair._permutations
-            and set(combinations(["drug","placebo",  "dummy_level0",
-                              "dummy_level1"],4)) == multipair_obj._permutations
-        )
+        simple_condition =  set(combinations(["drug",'placebo',],2)) ==\
+              set(obj_single_pair._permutations)
+        multipair_condition = set(
+            combinations(["drug","placebo", "dummy_level0", 
+                          "dummy_level1"],2)) == set(
+            multipair_obj._permutations)
+        self.assertTrue(simple_condition and multipair_condition)
 
 
 
@@ -178,10 +173,8 @@ class TestBESTModel(unittest.TestCase):
         complex_df = self.df.copy(deep=True)
         complex_df["iq"] = complex_df.value*.9
         obj_complex = BEST()(complex_df, "group")
-        print(obj_simple.features)
-        print(obj_complex.features)
         self.assertTrue(
-            set(obj_simple.features) == ("value") and set(obj_complex.features) == \
+            set(obj_simple.features) == set(("value",)) and set(obj_complex.features) == \
             set(["value", "iq"])
         )
 
@@ -194,14 +187,69 @@ class TestBESTModel(unittest.TestCase):
     def test_fit(self):
         BEST()(self.df, "group").fit(chains=2, tune=50, draws=50)
 
+    # See issue #13
+    @unittest.skip("See issue #13")
     def test_ground_truth(self):
-        pass
+        ε = 1e-1
+        ref_val_mu = 1.0
+        ref_val_sigma = .93
+        ref_val_sig = "Not Significant"
+        obj = BEST()(self.df, "group")
+        obj.fit(tune=1000, draws=1000, chains=2)
+        results = obj.predict(var_names=["Δμ"],
+                          ropes=[(0,3)],
+                          hdis=[.94,])
+        Δμ = results["Δμ"].loc[:,'mean']
+        sig = results["Δμ"].loc[:,"Significance"]
+        self.assertTrue( Δμ.iloc[0]-ref_val_mu <= ε)
 
+     # See issue #14
+    @unittest.expectedFailure
     def test_decition_rule(self):
-        pass
+        obj = BEST()(self.df, "group")
+        obj.fit(tune=1000, draws=2000, chains=2)
+        not_sig_results = obj.predict(var_names=["Δμ"],
+                          ropes=[(0.0,3.0)],
+                          hdis=[.94,])["Δμ"]
+        sig_results = obj.predict(var_names=["Δμ"],
+                          ropes=[(2.0,5.0)],
+                          hdis=[.94,])["Δμ"]
+        ind_results = obj.predict(var_names=["Δμ"],
+                          ropes=[(1.0,2.0)],
+                          hdis=[.94,])["Δμ"]
+        
+        self.assertTrue(
+            not_sig_results.Significance.values[0] == "Not Significant"\
+            and \
+            sig_results.Significance.values[0] == "Significant" and \
+            ind_results.Significance.values[0] == "Indeterminate"
+        )
 
     def test_multivariate(self):
-        pass
+        complex_df = self.df.copy(deep=True)
+        complex_df["iq"] = complex_df.value*.9
+        obj = BEST(multivariate_likelihood = True)(complex_df, "group")
+        obj.fit()
+        obj.predict()
+
 
     def test_univariate_sepperate(self):
-        pass
+        complex_df = self.df.copy(deep=True)
+        complex_df["iq"] = complex_df.value*.9
+        obj = BEST(common_shape=False)(complex_df, "group")
+        obj.fit()
+        obj.predict()
+
+    # See issue #17
+    @unittest.expectedFailure
+    def test_sepperate_dist_warning(self):
+        complex_df = self.df.copy(deep=True)
+        complex_df["iq"] = complex_df.value*.9
+        self.assertWarns(UserWarning, BEST, common_shape=False)
+
+    # See issue #17
+    @unittest.expectedFailure
+    def test_common_shape_and_multivariate_warning(self):
+        self.assertWarns( UserWarning, BEST, common_shape=True, 
+                         multivariate_likelihood=True
+        )
