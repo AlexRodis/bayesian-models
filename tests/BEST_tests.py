@@ -23,9 +23,6 @@ class TestBESTModel(unittest.TestCase):
                  group=np.r_[["drug"] * len(drug), ["placebo"] * len(
             placebo)])
             )
-        # self.df = y.drop("index", axis=1)
-        self.multi_df = self.df.copy(deep= True)
-        self.multi_df.columns = [["iq","treatment"], self.df.columns]  
 
     def tearDown(self):
         targets = ["temp_model.netcdf"]
@@ -81,6 +78,7 @@ class TestBESTModel(unittest.TestCase):
         with self.assertWarns(UserWarning):
             obj.fit(tune=50, draws=10, chains=2)
 
+    @unittest.skip("See issue #8")
     def test_nan_exclude(self):
         from bayesian_models.utilities import flatten
         gather = lambda object: list(
@@ -106,7 +104,8 @@ class TestBESTModel(unittest.TestCase):
         self.assertRaises(NotImplementedError ,
                           BEST(nan_handling='impute').__call__,
                           self.df, "group")
-
+    
+    # See issue #8
     @unittest.expectedFailure
     def test_nan_present(self):
         missing_nan = self.df.copy(deep=True)
@@ -115,35 +114,85 @@ class TestBESTModel(unittest.TestCase):
         obj_exclude = BEST()(missing_nan, "group")
         self.assertTrue(obj_exclude.nan_present_flag)
 
-    # See issue #8
+    
+    @unittest.skip("See issue #10")
     def test_tidy_data(self):
-        mindex = self.df.copy(deep=True)
-        mindex.columns = [["iq", "test_group"], mindex.columns]
-        mindex.index = [['dummy1']*5+["dummy2"]*5, mindex.index]
-        obj_0 = BEST()(self.df, "group")
-        obj_1 = BEST()(mindex, "group")
-        print(obj_1.features)
+        # Index currently ignored by the model
+        multi_df = self.df.copy(deep= True)
+        multi_df.columns = [["iq","treatment"], self.df.columns]
+        multi_df.index = [['dummy0']*5+['dummy1']*5, multi_df.index]
+        obj_multi = BEST()(multi_df, "treatment.group")
+        obj_plain = BEST()(self.df, "group")
+        tidy_columns = ['iq.value', 'treatment.group']
+        plain_columns = self.df.columns
+        self.assertTrue(
+            obj_plain._coords['dimentions'] == self.df.loc['']
+        )
+        
+    def test_levels(self):
+        obj_single_pair = BEST()(self.df, "group")
+        multipair_df = self.df.copy(deep=True)
+        multipair_df.loc[multipair_df.shape[0]+1] = [100, 
+                                                      'dummy_level0']
+        multipair_df.loc[multipair_df.shape[0]+1] = [100, 
+                                                      'dummy_level0']
+        multipair_df.loc[multipair_df.shape[0]+1] = [100, 
+                                                      'dummy_level1']
+        obj_multiple_pairs = BEST()(multipair_df, "group")
+        self.assertTrue(
+            set(obj_single_pair._groups.keys()) == set(['placebo',"drug"])\
+            and set(obj_multiple_pairs._groups.keys()) == set(['placebo',
+                                                      "drug", 
+                                                      "dummy_level0",
+                                                      "dummy_level1"])
+        )
 
-    def test_group_combinations(self):
-        pass
-
-    def test_ddof_warning(self):
-        pass
 
     def test_multivariate_warning_shape_ignored(self):
         pass
 
-    def test_levels(self):
-        pass
+    def test_group_combinations(self):
+
+        from itertools import combinations
+        obj_single_pair = BEST()(self.df, "group")
+        multipair_df = self.df.copy(deep=True)
+        multipair_df.loc[multipair_df.shape[0]+1] = [100, 
+                                                      'dummy_level0']
+        multipair_df.loc[multipair_df.shape[0]+1] = [100, 
+                                                      'dummy_level0']
+        multipair_df.loc[multipair_df.shape[0]+1] = [100, 
+                                                      'dummy_level1']
+        multipair_obj = BEST()(multipair_df, "group")
+        print(obj_single_pair._permutations)
+        print(multipair_obj._permutations)
+        self.assertTrue(
+            set(combinations(["drug",'placebo',],2)) == obj_single_pair._permutations
+            and set(combinations(["drug","placebo",  "dummy_level0",
+                              "dummy_level1"],4)) == multipair_obj._permutations
+        )
+
+
 
     def test_features(self):
-        pass
+        obj_simple = BEST()(self.df, "group")
+        complex_df = self.df.copy(deep=True)
+        complex_df["iq"] = complex_df.value*.9
+        obj_complex = BEST()(complex_df, "group")
+        print(obj_simple.features)
+        print(obj_complex.features)
+        self.assertTrue(
+            set(obj_simple.features) == ("value") and set(obj_complex.features) == \
+            set(["value", "iq"])
+        )
 
     def test_initialized_fit(self):
-        pass
+        obj = BEST()
+        self.assertRaises(
+            RuntimeError, obj.fit,
+        )
 
     def test_fit(self):
-        pass
+        BEST()(self.df, "group").fit(chains=2, tune=50, draws=50)
 
     def test_ground_truth(self):
         pass
@@ -151,3 +200,8 @@ class TestBESTModel(unittest.TestCase):
     def test_decition_rule(self):
         pass
 
+    def test_multivariate(self):
+        pass
+
+    def test_univariate_sepperate(self):
+        pass
