@@ -7,6 +7,7 @@ import pandas as pd
 import numpy as np
 from .utilities import SklearnDataFrameScaler, tidy_multiindex
 from functools import partial
+import sklearn
 import xarray as xr
 import arviz as az
 import pytensor
@@ -327,11 +328,6 @@ class DataValidationMixin:
 
             - nan_handling_values:tuple[str] := Defines valid values for the
             `nan_handling` argument
-            
-            
-            - valid_deterministic_nodes:set := Valid deterministic nodes
-            that could constitude elements of the `predict(var_names)`
-            argument. 
 
         Static Methods:
         ----------------
@@ -373,8 +369,7 @@ class DataValidationMixin:
     '''
 
 
-    nan_handling_values = set(("exclude", "impute"))
-    valid_deterministic_nodes = set(('Δμ',"Δσ", "Effect_Size"))  
+    nan_handling_values = ("exclude", "impute")
 
     def __init__(self,tidify_data:typing.Callable[...,Any]=tidy_multiindex,
                 scaler:Optional[SklearnDataFrameScaler] = None,
@@ -385,7 +380,7 @@ class DataValidationMixin:
             if nan_handling in DataValidationMixin.nan_handling_values:
                 self._nan_handling=nan_handling
             else:
-                raise ValueError((f"{nan_handling} is not valid option for "
+                raise ValueError((f"{nan_handlng} is not valid option for "
                     "`nan_handling`. Valid options are `exclude` and "
                     "`impute` "))
             super().__init__(*args, **kwargs)
@@ -457,7 +452,7 @@ class DataValidationMixin:
             Inpute missing values. Currently not Implemented
             and will raise an error
         '''
-        raise NotImplementedError()
+        raise NotImplemented()
     
     @staticmethod  
     def exclude_missing_nan(df:pd.DataFrame):
@@ -818,10 +813,10 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         # `self.nan_present_flag==True` the below line
         # is essentially computed and discarded
         rescaled = data if self.scaler is None else self.scaler(data)[0]
-        if self.nan_present_flag and self.nan_handling=='exclude':
+        if self._nan_present_flag and self.nan_handling=='exclude':
             filtered_data=BEST.exclude_missing_nan(rescaled)
             
-        elif self.nan_present_flag and self.nan_handling=='impute':
+        elif self._nan_present_flag and self.nan_handling=='inpute':
             filtered_data=BEST.impute_missing_nan(rescaled)
     
         else:
@@ -1166,27 +1161,6 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             raise RuntimeError(("Cannot make predictions. Model has "
                 "not been trained. Call the objects `fit` method first")
                 )
-        if 'Δσ' in var_names and not self.std_difference:
-            raise RuntimeError(("var_names contains the variable 'Δσ'"
-                                " but `std_difference` was not set to"
-                                " True. Ensure you specify "
-                                "`std_differnce=True` when initializing"
-                                " if you need to return standard "
-                                "deviations" ))
-        if 'Effect_Size' in var_names and not self.effect_magnitude:
-            raise RuntimeError(("var_names contains the variable 'Δσ'"
-                                " but `effect_magnitude` was not set to"
-                                " True. Ensure you specify "
-                                "`effect_magnitude=True` when "
-                                "initializing"
-                                " if you need to return standard "
-                                "deviations" ))
-        if not all(
-            (len(var_names) != len(ropes), len(ropes)!=len(hdis))
-            ):
-            from warnings import warn
-            warn(("Length of variables, ropes and hdis not equal. The"
-                  " shortest value will be considered"))
         results=dict()
         for var_name, rope,hdi in zip(var_names,ropes, hdis):
             raw_summary = az.summary(self.idata, var_names=[var_name],
@@ -1756,30 +1730,3 @@ class BayesianNeuralNetwork:
         for layer in self.layers:
             lstring += str(layer)
         return ((f"BayesianNeuralNetwork <{lstring}>"))
-
-
-
-if __name__ == '__main__':
-    import numpy as np
-    import pandas as pd
-    from bayesian_models import BEST
-
-    drug = (101,100,102,104,102,97,105,105,98,101,100,123,105,103,100,95,102,106,
-        109,102,82,102,100,102,102,101,102,102,103,103,97,97,103,101,97,104,
-        96,103,124,101,101,100,101,101,104,100,101)
-    placebo = (99,101,100,101,102,100,97,101,104,101,102,102,100,105,88,101,100,
-        104,100,100,100,101,102,103,97,101,101,100,101,99,101,100,100,
-        101,100,99,101,100,102,99,100,99)
-
-    y1 = np.array(drug)
-    y2 = np.array(placebo)
-    df = pd.DataFrame(
-        dict(value=np.r_[y1, y2], group=np.r_[["drug"] * len(drug), ["placebo"] * len(placebo)])
-    )
-    obj=BEST()(df, "group")
-    obj.fit(chains=2, draws=1000, tune=1000)
-    obj.predict(
-        var_names=['Δμ', 'Δσ'],
-        ropes = [(0,1),(0,1)],
-        hdis=[.95,.95]
-    )

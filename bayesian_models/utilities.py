@@ -83,20 +83,12 @@ def tidy_multiindex(df:pd.DataFrame, sep:str="."):
         
             - ndf:pandas.DataFrame := The DataFrame with a single-level index
     '''
-    tidy_cols = df.columns
-    tidy_rows = df.index
     import functools
-    if isinstance(df.columns, pd.MultiIndex):
-        tidy_cols = (functools.reduce(
-            lambda e1,e2: str(e1)+sep+str(e2), col ) for col in df.columns)
+    tidy_cols = (functools.reduce(
+        lambda e1,e2: str(e1)+sep+str(e2), col ) for col in df.columns)
     ndf = df.copy(deep=True)
     ndf.columns = tidy_cols
-    if isinstance(df.index, pd.MultiIndex):
-        tidy_rows = (functools.reduce(lambda e1,e2: str(e1)+sep+str(e2), col ) for col in df.index)
-    ndf = ndf.copy(deep=True)
-    ndf.index = tidy_rows
     return ndf
-
 
 def reverse_tidy_multiindex(df:pd.DataFrame, sep="."):
     '''
