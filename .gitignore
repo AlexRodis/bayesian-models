@@ -27,6 +27,9 @@ share/python-wheels/
 *.egg
 MANIFEST
 
+# vscode files
+settings.json
+
 # virtual environments
 *_env
 *_venv
