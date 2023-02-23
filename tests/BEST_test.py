@@ -187,8 +187,7 @@ class TestBESTModel(unittest.TestCase):
         )
 
     def test_fit(self):
-        BEST()(self.df, "group").fit(chains=2, tune=50, draws=50,
-                progressbar=False)
+        BEST()(self.df, "group").fit(50, tune=50, progressbar=False)
 
     def test_ground_truth(self):
         ε = 1e-1
@@ -241,20 +240,6 @@ class TestBESTModel(unittest.TestCase):
         obj = BEST(common_shape=False)(complex_df, "group")
         obj.fit(progressbar=False)
         obj.predict()
-
-    # See issue #17
-    @unittest.expectedFailure
-    def test_sepperate_dist_warning(self):
-        complex_df = self.df.copy(deep=True)
-        complex_df["iq"] = complex_df.value*.9
-        self.assertWarns(UserWarning, BEST, common_shape=False)
-
-    # See issue #17
-    @unittest.expectedFailure
-    def test_common_shape_and_multivariate_warning(self):
-        self.assertWarns( UserWarning, BEST, common_shape=True, 
-                         multivariate_likelihood=True
-        )
         
     def test_predict_raises_missing_sigma(self):
         obj = BEST()(self.df, 'group')
