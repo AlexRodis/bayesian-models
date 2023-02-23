@@ -1,7 +1,7 @@
 import pymc
 import pymc as pm
 import typing
-from typing import Any, Union, Callable, Sequence, Optional, Iterable
+from typing import Any, Union, Callable, Optional, Iterable
 from abc import ABC, abstractmethod
 import pandas as pd
 import numpy as np
@@ -160,7 +160,7 @@ class IOMixin:
     '''
         Cooperative inheritance class that handles model saving and
         loading. Injects the `save` and `load` methods to subclasses
-        and add the `save_path` property
+        and adds the `save_path` property
 
         Object Methods:
         ----------------
@@ -218,7 +218,7 @@ class IOMixin:
                 loading. For `method='pickle'` (experimental) attempts to save
                 the entire object be serializing.
 
-                NOTE: Not checks are made to verify that the loaded models'
+                NOTE: No checks are made to verify that the loaded models'
                 structure and the one infered from trace are compatible. Will
                 likely result in unpredictable errors.
 
@@ -337,7 +337,7 @@ class DataValidationMixin:
             - exclude_missing_nan(df:pandas.DataFrame)->pandas.DataFrame:
             := Drops all rows with missing values.
 
-            - impute_missing_nan(df:pandas.DataFrame)->None: := Inputes
+            - impute_missing_nan(df:pandas.DataFrame)->None: := Imputes
             missings data values. NotImplemented and will raise an error
 
             - check_missing_nan(df:pandas.DataFrame, nan_handling:str
@@ -350,7 +350,7 @@ class DataValidationMixin:
             Adds the following properties to inheriting objects:
 
             - nan_handling:str='exclude' := Selects the strategy in dealing
-            with missing values. Valid options are 'exclude' and 'inpute'. The
+            with missing values. Valid options are 'exclude' and 'impute'. The
             latter is not implemented and will raise an error.
 
             - tidify_data:Optional[Callable[pandas.DataFrame,
@@ -380,7 +380,7 @@ class DataValidationMixin:
             if nan_handling in DataValidationMixin.nan_handling_values:
                 self._nan_handling=nan_handling
             else:
-                raise ValueError((f"{nan_handlng} is not valid option for "
+                raise ValueError((f"{nan_handling} is not valid option for "
                     "`nan_handling`. Valid options are `exclude` and "
                     "`impute` "))
             super().__init__(*args, **kwargs)
@@ -449,10 +449,10 @@ class DataValidationMixin:
     @staticmethod
     def impute_missing_nan(df:pd.DataFrame):
         '''
-            Inpute missing values. Currently not Implemented
+            Impute missing values. Currently not Implemented
             and will raise an error
         '''
-        raise NotImplemented()
+        raise NotImplementedError()
     
     @staticmethod  
     def exclude_missing_nan(df:pd.DataFrame):
@@ -569,8 +569,8 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             
             - nan_handling:str='exclude' := Specify how missing values are
             handled. Either `'exclude'` to remove all rows with missing values
-            or `'inpute'` to attempt to impute them. Optional. Defaults to
-            `'exclude'`. `'inpute'` not implemented and raises an error if
+            or `'impute'` to attempt to impute them. Optional. Defaults to
+            `'exclude'`. `'impute'` not implemented and raises an error if
             specified. Ignored if no missing values are present.
             
             - tidify_data:Optional[Callable[pandas.DataFrame,pandas.DataFrame
@@ -767,8 +767,8 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         from warnings import warn
         if not self.common_shape:
             warn(("Allowing independant degrees of freedom for all"
-            " features may result in unidentifiable models and "
-            "multimodal posteriors"))
+            " features may result in unidentifiable models, overfitting" 
+            " and multimodal posteriors"))
         if self.multivariate_likelihood and not self.common_shape:
             warn(("Degrees of freedom parameter for a multivariate"
             " StudentT must be a scalar. `common_shape` will be "
@@ -816,7 +816,7 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         if self._nan_present_flag and self.nan_handling=='exclude':
             filtered_data=BEST.exclude_missing_nan(rescaled)
             
-        elif self._nan_present_flag and self.nan_handling=='inpute':
+        elif self._nan_present_flag and self.nan_handling=='impute':
             filtered_data=BEST.impute_missing_nan(rescaled)
     
         else:
