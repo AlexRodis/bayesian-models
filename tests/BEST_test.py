@@ -89,10 +89,10 @@ class TestBESTModel(unittest.TestCase):
         missing_nan = self.df.copy(deep=True)
         missing_nan.loc[missing_nan.shape[0]+1]=[np.nan, "drug"]
         missing_nan.loc[missing_nan.shape[0]+1]=[np.nan, "placebo"]
-        obj_clean = BEST()
-        obj_dirty = BEST()
-        obj_dirty._preprocessing_(missing_nan, "group")
-        obj_clean._preprocessing_(self.df, "group")
+        obj_clean = BEST()(missing_nan, "group")
+        obj_dirty = BEST()(self.df, "group")
+        obj_dirty._preprocessing_(missing_nan)
+        obj_clean._preprocessing_(self.df)
         dirty_indices= gather(obj_dirty)
         clean_indices = gather(obj_clean)
         self.assertTrue(

@@ -821,7 +821,7 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         if self.nan_present_flag and self.nan_handling=='exclude':
             filtered_data=BEST.exclude_missing_nan(rescaled)
             
-        elif self._nan_present_flag and self.nan_handling=='inpute':
+        elif self._nan_present_flag and self.nan_handling=='impute':
             filtered_data=BEST.impute_missing_nan(rescaled)
     
         else:
