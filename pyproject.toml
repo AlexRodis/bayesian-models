@@ -52,6 +52,7 @@ dev = [
   'sphinx',
   'sphinx-rtd-theme',
   'sphinxcontrib-katex',
+  'esbonio>=0.12.0',
   'mypy',
 ]
 
