@@ -13,6 +13,7 @@ Welcome to bayesian_models's documentation!
    tutorials/quickstart
    tutorials/installation
    tutorials/best
+   discussions/index
 
 
 Indices and tables
