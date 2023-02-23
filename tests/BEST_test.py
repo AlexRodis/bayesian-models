@@ -190,8 +190,6 @@ class TestBESTModel(unittest.TestCase):
         BEST()(self.df, "group").fit(chains=2, tune=50, draws=50,
                 progressbar=False)
 
-    # See issue #13
-    # @unittest.expectedFailure
     def test_ground_truth(self):
         ε = 1e-1
         ref_val_mu = 1.0
@@ -290,4 +288,13 @@ class TestBESTModel(unittest.TestCase):
             var_names=['Δσ', 'Δμ'],
             ropes = [(0,1)],
             hdis = [.94]
+        )
+        
+    def test_consistency_checks_common_ddof(self):
+        self.assertWarns(UserWarning, BEST, common_shape=False)
+    
+    def test_consistency_checks_multivariate(self):
+        self.assertWarns(
+            UserWarning, BEST, multivariate_likelihood=True,
+            common_shape=False
         )
