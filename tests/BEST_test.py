@@ -81,15 +81,14 @@ class TestBESTModel(unittest.TestCase):
             obj.fit(tune=50, draws=10, chains=2,
                 progressbar=False)
 
-    # See issue #8
-    @unittest.expectedFailure
+
     def test_nan_exclude(self):
         from bayesian_models.utilities import flatten
         gather = lambda object: list(
             flatten(list(v for k,v in object._groups.items())))
         missing_nan = self.df.copy(deep=True)
-        missing_nan.loc[missing_nan.shape[-1]+1]=[None, "drug"]
-        missing_nan.loc[missing_nan.shape[-1]+1]=[None, "placebo"]
+        missing_nan.loc[missing_nan.shape[0]+1]=[np.nan, "drug"]
+        missing_nan.loc[missing_nan.shape[0]+1]=[np.nan, "placebo"]
         obj_clean = BEST()
         obj_dirty = BEST()
         obj_dirty._preprocessing_(missing_nan, "group")
@@ -102,15 +101,14 @@ class TestBESTModel(unittest.TestCase):
                 obj_dirty.nan_present_flag
         )
 
-    # See issue #7
-    @unittest.expectedFailure
     def test_nan_impute(self):
+        missing_df = self.df.copy(deep=True)
+        missing_df.loc[missing_df.shape[0]+1]=[np.nan,'placebo']
         self.assertRaises(NotImplementedError ,
                           BEST(nan_handling='impute').__call__,
-                          self.df, "group")
+                          missing_df, "group")
     
-    # See issue #8
-    @unittest.expectedFailure
+
     def test_nan_present(self):
         missing_nan = self.df.copy(deep=True)
         missing_nan.loc[missing_nan.shape[-1]+1]=[None, "drug"]
@@ -193,20 +191,21 @@ class TestBESTModel(unittest.TestCase):
                 progressbar=False)
 
     # See issue #13
-    @unittest.expectedFailure
+    # @unittest.expectedFailure
     def test_ground_truth(self):
         ε = 1e-1
         ref_val_mu = 1.0
         ref_val_sigma = .93
         ref_val_sig = "Not Significant"
-        obj = BEST()(self.df, "group")
-        obj.fit(tune=1000, draws=1000, chains=2,
+        obj = BEST(std_difference=True)(self.df, "group")
+        obj.fit(tune=50, draws=50, chains=2,
                 progressbar=False)
-        results = obj.predict(var_names=["Δμ"],
-                          ropes=[(0,3)],
-                          hdis=[.94,])
+        results = obj.predict(var_names=["Δμ", "Δσ"],
+                          ropes=[(0,3), (0,3)],
+                          hdis=[.94,.94])
         Δμ = results["Δμ"].loc[:,'mean']
-        sig = results["Δμ"].loc[:,"Significance"]
+        Δσ =  results["Δμ"].loc[:,'mean']
+        sig = results["Δσ"].loc[:,"Significance"]
         self.assertTrue( Δμ.iloc[0]-ref_val_mu <= ε)
 
      # See issue #14
@@ -259,4 +258,38 @@ class TestBESTModel(unittest.TestCase):
     def test_common_shape_and_multivariate_warning(self):
         self.assertWarns( UserWarning, BEST, common_shape=True, 
                          multivariate_likelihood=True
+        )
+        
+    def test_predict_raises_missing_sigma(self):
+        obj = BEST()(self.df, 'group')
+        obj.fit(draws=10, chains=2, tune=10,
+                progressbar=False)
+        self.assertRaises(
+            RuntimeError, obj.predict,
+            var_names=['Δσ'],
+            ropes = [(0,1)],
+            hdis = [.94]
+        )
+        
+    def test_predict_raises_missing_effect(self):
+        obj = BEST(std_difference=True)(self.df, 'group')
+        obj.fit(draws=10, chains=2, tune=10,
+                progressbar=False)
+        self.assertRaises(
+            RuntimeError, obj.predict,
+            var_names=['Effect_Size'],
+            ropes = [(0,1)],
+            hdis = [.94]
+        )
+        
+    def test_predict_warns_uneven_lengths(self):
+
+        obj = BEST(std_difference=True)(self.df, 'group')
+        obj.fit(draws=10, chains=2, tune=10,
+                progressbar=False)
+        self.assertWarns(
+            UserWarning, obj.predict,
+            var_names=['Δσ', 'Δμ'],
+            ropes = [(0,1)],
+            hdis = [.94]
         )
