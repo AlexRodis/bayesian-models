@@ -1,7 +1,7 @@
 import pymc
 import pymc as pm
 import typing
-from typing import Any, Union, Callable, Sequence, Optional, Iterable
+from typing import Any, Union, Callable, Optional, Iterable
 from abc import ABC, abstractmethod
 import pandas as pd
 import numpy as np
@@ -159,7 +159,7 @@ class IOMixin:
     '''
         Cooperative inheritance class that handles model saving and
         loading. Injects the `save` and `load` methods to subclasses
-        and add the `save_path` property
+        and adds the `save_path` property
 
         Object Methods:
         ----------------
@@ -217,7 +217,7 @@ class IOMixin:
                 loading. For `method='pickle'` (experimental) attempts to save
                 the entire object be serializing.
 
-                NOTE: Not checks are made to verify that the loaded models'
+                NOTE: No checks are made to verify that the loaded models'
                 structure and the one infered from trace are compatible. Will
                 likely result in unpredictable errors.
 
@@ -341,7 +341,7 @@ class DataValidationMixin:
             - exclude_missing_nan(df:pandas.DataFrame)->pandas.DataFrame:
             := Drops all rows with missing values.
 
-            - impute_missing_nan(df:pandas.DataFrame)->None: := Inputes
+            - impute_missing_nan(df:pandas.DataFrame)->None: := Imputes
             missings data values. NotImplemented and will raise an error
 
             - check_missing_nan(df:pandas.DataFrame, nan_handling:str
@@ -354,7 +354,7 @@ class DataValidationMixin:
             Adds the following properties to inheriting objects:
 
             - nan_handling:str='exclude' := Selects the strategy in dealing
-            with missing values. Valid options are 'exclude' and 'inpute'. The
+            with missing values. Valid options are 'exclude' and 'impute'. The
             latter is not implemented and will raise an error.
 
             - tidify_data:Optional[Callable[pandas.DataFrame,
@@ -454,7 +454,7 @@ class DataValidationMixin:
     @staticmethod
     def impute_missing_nan(df:pd.DataFrame):
         '''
-            Inpute missing values. Currently not Implemented
+            Impute missing values. Currently not Implemented
             and will raise an error
         '''
         raise NotImplementedError()
@@ -574,8 +574,8 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             
             - nan_handling:str='exclude' := Specify how missing values are
             handled. Either `'exclude'` to remove all rows with missing values
-            or `'inpute'` to attempt to impute them. Optional. Defaults to
-            `'exclude'`. `'inpute'` not implemented and raises an error if
+            or `'impute'` to attempt to impute them. Optional. Defaults to
+            `'exclude'`. `'impute'` not implemented and raises an error if
             specified. Ignored if no missing values are present.
             
             - tidify_data:Optional[Callable[pandas.DataFrame,pandas.DataFrame
@@ -772,8 +772,8 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         from warnings import warn
         if not self.common_shape:
             warn(("Allowing independant degrees of freedom for all"
-            " features may result in unidentifiable models and "
-            "multimodal posteriors"))
+            " features may result in unidentifiable models, overfitting" 
+            " and multimodal posteriors"))
         if self.multivariate_likelihood and not self.common_shape:
             warn(("Degrees of freedom parameter for a multivariate"
             " StudentT must be a scalar. `common_shape` will be "
@@ -781,7 +781,7 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             self.common_shape=not self.common_shape
             
     
-    def _preprocessing_(self, data, group_var):
+    def _preprocessing_(self, data):
         '''
             Handled data preprocessing steps by 1. checking and 
             handling missing values, 2. collapsing multiindices
@@ -803,9 +803,9 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         '''
         self.nan_present_flag = BEST.check_missing_nan(
             data, self.nan_handling)
-        self.levels = data.loc[:,group_var].dropna().unique()
+        self.levels = data.loc[:,self.group_var].dropna().unique()
         self.num_levels=len(self.levels)
-        self.features = data.columns.difference([group_var])
+        self.features = data.columns.difference([self.group_var])
         
         # May result in an unindentifiable model. Requires updating along
         # with additional options for handdling multivariate inputs. i.e.
@@ -821,14 +821,14 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         if self.nan_present_flag and self.nan_handling=='exclude':
             filtered_data=BEST.exclude_missing_nan(rescaled)
             
-        elif self.nan_present_flag and self.nan_handling=='impute':
+        elif self._nan_present_flag and self.nan_handling=='inpute':
             filtered_data=BEST.impute_missing_nan(rescaled)
     
         else:
             filtered_data = data
 
         groups = {level : filtered_data.loc[
-            filtered_data.loc[:,group_var]==level].index for \
+            filtered_data.loc[:,self.group_var]==level].index for \
                 level in self.levels}
 
         self._groups = groups
@@ -969,9 +969,10 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
                 
                 - obj:BEST := The object
         '''
+        self.group_var = group_var
         data =self.tidify_data(data) if self.tidify_data is not None \
             else data
-        self._preprocessing_(data, group_var)
+        self._preprocessing_(data)
         if self.scaler is not None:
             data = self.scaler(data.loc[:,self.features])
         with pymc.Model(coords=self._coords) as BEST_model:
