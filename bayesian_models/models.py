@@ -776,7 +776,7 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             self.common_shape=not self.common_shape
             
     
-    def _preprocessing_(self, data, group_var):
+    def _preprocessing_(self, data):
         '''
             Handled data preprocessing steps by 1. checking and 
             handling missing values, 2. collapsing multiindices
@@ -798,9 +798,9 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         '''
         self.nan_present_flag = BEST.check_missing_nan(
             data, self.nan_handling)
-        self.levels = data.loc[:,group_var].dropna().unique()
+        self.levels = data.loc[:,self.group_var].dropna().unique()
         self.num_levels=len(self.levels)
-        self.features = data.columns.difference([group_var])
+        self.features = data.columns.difference([self.group_var])
         
         # May result in an unindentifiable model. Requires updating along
         # with additional options for handdling multivariate inputs. i.e.
@@ -823,7 +823,7 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             filtered_data = data
 
         groups = {level : filtered_data.loc[
-            filtered_data.loc[:,group_var]==level].index for \
+            filtered_data.loc[:,self.group_var]==level].index for \
                 level in self.levels}
 
         self._groups = groups
@@ -964,9 +964,10 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
                 
                 - obj:BEST := The object
         '''
+        self.group_var = group_var
         data =self.tidify_data(data) if self.tidify_data is not None \
             else data
-        self._preprocessing_(data, group_var)
+        self._preprocessing_(data)
         if self.scaler is not None:
             data = self.scaler(data.loc[:,self.features])
         with pymc.Model(coords=self._coords) as BEST_model:
