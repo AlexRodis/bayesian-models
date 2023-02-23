@@ -1070,8 +1070,7 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         return self
     
 
-    def fit(self, sampler=pymc.sample , *args, **kwargs
-        )->az.InferenceData:
+    def fit(self, *args, sampler=pymc.sample , **kwargs)->az.InferenceData:
         '''
             Perform inference by sampling from the posterior. `infer` is
             an alias for `fit`
