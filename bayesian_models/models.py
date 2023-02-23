@@ -687,6 +687,22 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
     jax_device:str = 'gpu'
     jax_device_count: int =1
     
+    def _consistency_checks_(self):
+        '''
+            Ensures all options specified are mutualy compatible
+        '''
+        from warnings import warn
+        if not self.common_shape:
+            warn(("Allowing independant degrees of freedom for all"
+            " features may result in unidentifiable models, overfitting" 
+            " and multimodal posteriors"))
+        if self.multivariate_likelihood and not self.common_shape:
+            warn(("Degrees of freedom parameter for a multivariate"
+            " StudentT must be a scalar. `common_shape` will be "
+            "ignored"))
+            self.common_shape=not self.common_shape
+    
+    
     def __init__(self, effect_magnitude:bool=False,
                 std_difference:bool=False,
                 tidify_data:typing.Callable[...,Any]=tidy_multiindex,
@@ -705,6 +721,7 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
         self.std_difference = std_difference or effect_magnitude
         self.common_shape = common_shape
         self.multivariate_likelihood = multivariate_likelihood
+        self._consistency_checks_()
         self._levels=None
         self._ndims=None
         self.num_levels=None
@@ -763,22 +780,6 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
     @initialized.setter
     def initialized(self, val:bool)->None:
         self._initialized = val
-
-
-    def _consistency_checks_(self):
-        '''
-            Ensures all options specified are mutualy compatible
-        '''
-        from warnings import warn
-        if not self.common_shape:
-            warn(("Allowing independant degrees of freedom for all"
-            " features may result in unidentifiable models, overfitting" 
-            " and multimodal posteriors"))
-        if self.multivariate_likelihood and not self.common_shape:
-            warn(("Degrees of freedom parameter for a multivariate"
-            " StudentT must be a scalar. `common_shape` will be "
-            "ignored"))
-            self.common_shape=not self.common_shape
             
     
     def _preprocessing_(self, data):
