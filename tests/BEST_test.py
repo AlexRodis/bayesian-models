@@ -208,8 +208,6 @@ class TestBESTModel(unittest.TestCase):
         sig = results["Δσ"].loc[:,"Significance"]
         self.assertTrue( Δμ.iloc[0]-ref_val_mu <= ε)
 
-     # See issue #14
-    @unittest.expectedFailure
     def test_decition_rule(self):
         obj = BEST()(self.df, "group")
         obj.fit(tune=1000, draws=2000, chains=2,

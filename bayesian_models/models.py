@@ -1189,6 +1189,8 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             warn(("Length of variables, ropes and hdis not equal. The"
                   " shortest value will be considered"))
         results=dict()
+        null_interval = Interval(0,0, lower_closed=False, 
+                                 upper_closed=False)
         for var_name, rope,hdi in zip(var_names,ropes, hdis):
             raw_summary = az.summary(self.idata, var_names=[var_name],
             filter_vars='like', hdi_prob=hdi)
@@ -1198,7 +1200,7 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
                 ci=Interval(row[2],row[3])
                 if ci in rope:
                     out.append("Not Significant")
-                elif ci & rope != Interval(0,0):
+                elif ci & rope != null_interval:
                     out.append("Indeterminate")
                 else:
                     out.append("Significant")
