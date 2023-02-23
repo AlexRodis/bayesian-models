@@ -36,13 +36,15 @@ class TestBESTModel(unittest.TestCase):
 
     def test_no_errors_run(self):
         obj = BEST()(self.df, "group")
-        obj.fit(draws=100, chains=2, tune=100)
+        obj.fit(draws=100, chains=2, tune=100,
+                progressbar=False)
         obj.predict()
         self.assertTrue(True)
 
     def test_save_netcdf(self):
         obj = BEST(save_path='ignored_path.netcdf')(self.df, "group")
-        obj.fit(draws=100, chains=2, tune=100)
+        obj.fit(draws=100, chains=2, tune=100,
+                progressbar=False)
         obj.save("temp_model.netcdf")
         obj_other=BEST()(self.df, "group")
         obj_other.load("temp_model.netcdf")
@@ -53,7 +55,8 @@ class TestBESTModel(unittest.TestCase):
     def test_save_pickle(self):
         import pickle
         obj = BEST()(self.df, "group")
-        obj.fit(draws=100, chains=2, tune=100)
+        obj.fit(draws=100, chains=2, tune=100,
+                progressbar=False)
         obj.save("temp_model.pickle", method="pickle")
         with open("temp_model.pickle", "rb") as file:
             obj_other = pickle.load(file)
@@ -75,7 +78,8 @@ class TestBESTModel(unittest.TestCase):
         missing_nan.loc[missing_nan.shape[-1]+1]=[None, "placebo"]
         obj = BEST()(missing_nan, "group")
         with self.assertWarns(UserWarning):
-            obj.fit(tune=50, draws=10, chains=2)
+            obj.fit(tune=50, draws=10, chains=2,
+                progressbar=False)
 
     # See issue #8
     @unittest.expectedFailure
@@ -185,17 +189,19 @@ class TestBESTModel(unittest.TestCase):
         )
 
     def test_fit(self):
-        BEST()(self.df, "group").fit(chains=2, tune=50, draws=50)
+        BEST()(self.df, "group").fit(chains=2, tune=50, draws=50,
+                progressbar=False)
 
     # See issue #13
-    @unittest.skip("See issue #13")
+    @unittest.expectedFailure
     def test_ground_truth(self):
         ε = 1e-1
         ref_val_mu = 1.0
         ref_val_sigma = .93
         ref_val_sig = "Not Significant"
         obj = BEST()(self.df, "group")
-        obj.fit(tune=1000, draws=1000, chains=2)
+        obj.fit(tune=1000, draws=1000, chains=2,
+                progressbar=False)
         results = obj.predict(var_names=["Δμ"],
                           ropes=[(0,3)],
                           hdis=[.94,])
@@ -207,7 +213,8 @@ class TestBESTModel(unittest.TestCase):
     @unittest.expectedFailure
     def test_decition_rule(self):
         obj = BEST()(self.df, "group")
-        obj.fit(tune=1000, draws=2000, chains=2)
+        obj.fit(tune=1000, draws=2000, chains=2,
+                progressbar=False)
         not_sig_results = obj.predict(var_names=["Δμ"],
                           ropes=[(0.0,3.0)],
                           hdis=[.94,])["Δμ"]
@@ -229,7 +236,7 @@ class TestBESTModel(unittest.TestCase):
         complex_df = self.df.copy(deep=True)
         complex_df["iq"] = complex_df.value*.9
         obj = BEST(multivariate_likelihood = True)(complex_df, "group")
-        obj.fit()
+        obj.fit(progressbar=False)
         obj.predict()
 
 
@@ -237,7 +244,7 @@ class TestBESTModel(unittest.TestCase):
         complex_df = self.df.copy(deep=True)
         complex_df["iq"] = complex_df.value*.9
         obj = BEST(common_shape=False)(complex_df, "group")
-        obj.fit()
+        obj.fit(progressbar=False)
         obj.predict()
 
     # See issue #17
