@@ -197,6 +197,9 @@ this decition. We then define a **decition function**:
 
     \delta :\Theta \rightarrow \Alpha
 
+From this, justification can be derived in a general way. In practice formulating
+a problem specific loss function is usually difficult in practice
+
 
 
 
