@@ -7,8 +7,9 @@ principles of the library.
 
 .. toctree::
     :caption: Discussion
-    :maxdepth: 1
+    :maxdepth: 2
 
     intro
     model_interface
     documentation
+    models/index

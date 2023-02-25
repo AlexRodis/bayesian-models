@@ -57,3 +57,18 @@ decoupling the data-generating process itself from the software. For example
 many bayesian optimization packages couple the cost function evalutation
 process to the software itself, which hinders application of this "model" to 
 scientific experiments, since there the evalutation itself is a physical process.
+
+
+Errors
+-------
+
+Bearing in mind the fact that this library does not assume much prior knowledge,
+especially technical knowledge on the part of the user, informative error messages
+are important. Several libraries, including `pymc` itself are pretty (in)famous
+for their sometimes cryptic error messages.  Where possible, error messsages
+should list the received problematic input or value and the expected value
+itself. Where possible, underlying errors should be wrapped rather than be
+allowed to bubble up to the user, with custom error types, where feasible.
+
+
+

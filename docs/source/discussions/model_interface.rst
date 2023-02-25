@@ -129,8 +129,8 @@ process itself is the crux of `pymc` and hence, it is essentially identicall
 between all models.
 
 
-Stage 4: outputs
--------------------
+Stage 4: Output Generation
+---------------------------
 
 After inference is performed, the user usually expects some sort of conclusive
 output. This may be predictions on new data but for varies greatly between models.
@@ -139,4 +139,16 @@ comparisons, the output is a dictionary of dataframes, for predictive-style mode
 it a tensor (as an `xarray.DataArray`) containing probabilistic predictions but
 other, more exotic cases exist. For example, for `BayesianOptimization` the entire
 model is iterative, and the output is a Generator.
+
+While this structure may appear overly verbose, we've found it strikes just the
+right balance between flexibility and simplicity for a diverse set of models.
+The key issue with the more common "three" step approaches is they are overly
+restrictive, to the user and make it difficult to enable more advanced users to
+to hook into and modify models, when they need to. For similar reasons they
+model objects themselves tend expose many of their internals, allowing  advanced
+users to hook into and modify them (for example by adding potentials).
+The above structure is reflected in the structure of model objects themselves.
+All models implement these four stages as destinct methods. These are the objects'
+`__init__`, `__call__`, `fit` and `predict` methods
+
 
