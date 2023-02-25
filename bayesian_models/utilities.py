@@ -1,5 +1,6 @@
 import pandas as pd
 import sklearn
+from abc import ABC, abstractmethod
 from sklearn.preprocessing import StandardScaler
 from collections.abc import Iterable
 import typing
@@ -629,3 +630,5 @@ def gen_masked_predictions(model, masked_generator,
 #         return dir_moments.assign(dict(std_dev=np.sqrt(var)))
 #     else:
 #         return dir_moments
+    
+    
