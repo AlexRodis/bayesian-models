@@ -5,6 +5,12 @@ import pandas
 import xarray
 import numpy
 
+dict_arr_compare = lambda one, other : all([(v1 == v2).all() \
+            for (k1,v1), (k2,v2) in zip(one.items(),
+                                        other.items()
+                                        )
+         ])
+
 
 class TestDataAdaptor(unittest.TestCase):
     
@@ -46,8 +52,8 @@ class TestDataAdaptor(unittest.TestCase):
     def test_pd_all(self):
         rank2 = DataFrameAdaptor(self.B)
         cond1 = rank2.all()
-        cond2  = rank2.all(axis=1).shape == (self.B.shape[0],)
-        cond3 = rank2.all(axis = 0).shape == (self.B.shape[1],)
+        cond2  = rank2.all(axis=1).shape == (self.B.shape[0],1)
+        cond3 = rank2.all(axis = 0).shape == (1,self.B.shape[1],)
         self.assertTrue(
             cond1 and cond2 and cond3
         )
@@ -91,10 +97,16 @@ class TestDataAdaptor(unittest.TestCase):
     def test_pd_any(self):
         rank2 = DataFrameAdaptor(self.B)
         cond1 = rank2.any()
-        cond2  = rank2.any(axis=1).shape == (self.B.shape[0],)
-        cond3 = rank2.any(axis = 0).shape == (self.B.shape[1],)
+        cond2  = rank2.any(axis=1).shape == (self.B.shape[0], 1)
+        cond3 = rank2.any(axis = 0).shape == (1, self.B.shape[1])
         self.assertTrue(
             cond1 and cond2 and cond3)
+        
+    def test_pd_any_error(self):
+        self.assertRaises(
+            ValueError,
+            DataFrameAdaptor(self.B).any, axis = 5
+        )
     
     def test_xr_any(self):
         rank3 = DataArrayAdaptor(self.C)
@@ -151,3 +163,109 @@ class TestDataAdaptor(unittest.TestCase):
         cond_dirty_correct:bool = obj_dirty.isna().any()
         self.assertTrue(cond_shape_full and cond_clean_correct and\
             cond_dirty_correct)
+        
+        
+    def test_np_transpose(self):
+        obj = NDArrayAdaptor(self.A).transpose()
+        rev_coords = dict(
+            dim_2 = numpy.asarray(list(range(self.A.shape[-1]))),
+            dim_1 = numpy.asarray(list(range(self.A.shape[1]))),
+            dim_0 = numpy.asarray(list(range(self.A.shape[0])))
+        )
+        obj.T((1,0,2))
+        self.assertTrue(
+            obj._dims == ["dim_2", "dim_1", "dim_0"] and \
+            dict_arr_compare(rev_coords, obj._coords)
+        )
+        
+    def test_pd_tranpose(self):
+        # No need to retest. Core shuffles are inherited from the numpy
+        # adaptor
+        DataFrameAdaptor(self.B).T
+        
+    def test_xr_transpose(self):
+        DataArrayAdaptor(self.C).transpose((1,0,2))
+    
+    @unittest.expectedFailure
+    def test_multidim_iterrows_warn(self):
+        obj1 = NDArrayAdaptor(self.A)
+        self.assertWarns(UserWarning, 
+                         obj1.iterrows)
+            
+    
+    def test_np_iterrows(self):
+        obj = NDArrayAdaptor(self.A)
+        ind=[]
+        rows=[]
+        for i, row in  obj.iterrows():
+            ind.append(i)
+            rows.append(row)
+        shape_cond = all(row.shape == obj.shape[1:]for row in rows)
+        dim_cond = all(row.dims == ["dim_1", "dim_2"] for row in rows)
+        cut_coords = {
+            k:v for i,(k,v) in enumerate(obj.coords.items()) if i!=0
+        }
+        coords_cond = all(
+            dict_arr_compare(row.coords, cut_coords) for row in rows
+        )
+        self.assertTrue(shape_cond and dim_cond and coords_cond)
+    
+    def test_np_itercolumns(self):
+        obj = NDArrayAdaptor(self.A)
+        tshape = list(obj.shape)
+        tshape.pop(1)
+        tshape = tuple(tshape)
+        ind=[]
+        cols=[]
+        for i, col in  obj.itercolumns():
+            ind.append(i)
+            cols.append(col)
+        shape_cond = all(col.shape == tshape for col in cols)
+        dim_cond = all(col.dims == ["dim_0", "dim_2"] for col in cols)
+        cut_coords = {
+            k:v for i,(k,v) in enumerate(obj.coords.items()) if i!=1
+        }
+        coords_cond = all(
+            dict_arr_compare(col.coords, cut_coords) for col in cols
+        )
+        self.assertTrue(shape_cond and dim_cond and coords_cond)
+        
+    def test_pd_iterrows(self):
+        obj = DataFrameAdaptor(self.B)
+        tshape = list(obj.shape)
+        tshape.pop(1)
+        tshape = tuple(tshape)
+        ind=[]
+        cols=[]
+        for i, col in  obj.itercolumns():
+            ind.append(i)
+            cols.append(col)
+        shape_cond = all(col.shape == tshape for col in cols)
+        dim_cond = all(col.dims == ["dim_0", "dim_2"] for col in cols)
+        cut_coords = {
+            k:v for i,(k,v) in enumerate(obj.coords.items()) if i!=1
+        }
+        coords_cond = all(
+            dict_arr_compare(col.coords, cut_coords) for col in cols
+        )
+        self.assertTrue(shape_cond and dim_cond and coords_cond)
+            
+    def test_pd_itercolumns(self):
+        obj = NDArrayAdaptor(self.A)
+        tshape = list(obj.shape)
+        tshape.pop(1)
+        tshape = tuple(tshape)
+        ind=[]
+        cols=[]
+        for i, col in  obj.itercolumns():
+            ind.append(i)
+            cols.append(col)
+        shape_cond = all(col.shape == tshape for col in cols)
+        dim_cond = all(col.dims == ["dim_0", "dim_2"] for col in cols)
+        cut_coords = {
+            k:v for i,(k,v) in enumerate(obj.coords.items()) if i!=1
+        }
+        coords_cond = all(
+            dict_arr_compare(col.coords, cut_coords) for col in cols
+        )
+        self.assertTrue(shape_cond and dim_cond and coords_cond)
