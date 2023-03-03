@@ -4,6 +4,10 @@ from pandas import DataFrame
 from xarray import DataArray
 
 
-
-InputData = Union[DataArray, DataFrame, NDArray]
 ndarray = NDArray
+InputData = Union[DataArray, DataFrame, NDArray]
+SHAPE = tuple[int, ...]
+DIMS = tuple[str, ...]
+COORDS = dict[str,ndarray ]
+AXIS_PERMUTATION = Optional[Union[list[int], tuple[int, ...]]]
+
