@@ -109,6 +109,13 @@ class DataStructure(ABC):
     @rank.setter
     def rank(self, val:int)->None:
         self._rank = val
+        
+    @property
+    def missing_nan_flag(self)->Optional[bool]:
+        return self._missing_nan_flag
+    @missing_nan_flag.setter
+    def missing_nan_flag(self, val:bool)->None:
+        self._missing_nan_flag = val
     
     @abstractmethod
     def T(self, axes: Optional[AXIS_PERMUTATION] = None):
@@ -171,14 +178,16 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     def __init__(self, obj:ndarray, dims:Optional[DIMS] = None,
                  coords:Optional[COORDS] = None)->None:
         
-        self._obj = obj if len(obj.shape)>=2 else obj[None,:]
-        self._shape:tuple[int] = obj.shape
+        self._obj = obj if len(obj.shape)>=2 else obj[:, None]
+        self._shape:tuple[int] = self.obj.shape
         self._dims = np.asarray([
             f"dim_{i}" for i in range(len(obj.shape))]) if dims is \
                 None else dims
-        self._coords = {i:np.asarray(range(self.obj.shape[k])) for k,i in enumerate(
+        self._coords = {i:np.asarray(range(self.obj.shape[k])
+                                     ) for k,i in enumerate(
             self._dims)} if coords is None else coords
-        self._rank = len(self.obj.shape)       
+        self._rank = len(self.obj.shape)
+        self._missing_nan_flag:Optional[bool] = None 
         
     @property
     def values(self)->ndarray:
@@ -196,6 +205,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             return self.obj.any(axis=axis, **kwargs)
         else:
             ndims, ncoords = self._cut_dims_(axis)
+            temp = self.obj.any(axis=axis)
             return NDArrayStructure(self.obj.any(axis=axis),
                                     dims = ndims,
                                     coords = ncoords)
@@ -248,14 +258,29 @@ class NDArrayStructure(DataStructure, UtilityMixin):
 
 class DataFrameStructure(DataStructure, UtilityMixin):
     
+    accepted_inputs:set=[pd.DataFrame, pd.Series, np.ndarray]
+    
     def __init__(self, obj:pd.DataFrame, dims:Optional[DIMS] = None
                  , coords: Optional[COORDS] = None)->None:
-        self._obj = obj
-        self._shape:tuple[int] = obj.shape
+        if len(obj.shape) not in set([1,2]):
+            raise ValueError(("Unable to coerce input to a DataFrame. "
+                              "Valid objects must be 1D or 2D objects,"
+                              f" but received {len(obj.shape)}D object"
+                              " instead"))
+        elif len(obj.shape) == 1:
+            self._obj = pd.DataFrame(
+                data=obj.values[None, :], columns=obj.index
+            )
+        else:
+            if obj.shape[1] == 1:
+                self._obj = pd.DataFrame(data = obj.values)
+            self._obj = obj
+        self._shape:tuple[int] = self.obj.shape
         self._dims = np.asarray(["dim_0", "dim_1"])
         self._coords = dict(dim_0 = self.obj.index, 
                             dim_1 =self.obj.columns)
         self._rank:int = 2
+        self._missing_nan_flag:Optional[bool] = None
     
     def isna(self):
         return DataFrameStructure( self.obj.isna(), coords=self.coords,
@@ -331,27 +356,61 @@ class DataFrameStructure(DataStructure, UtilityMixin):
 
 class DataArrayStructure(DataStructure, UtilityMixin):
     
+    accepted_inputs:set = set([np.ndarray, pd.DataFrame, pd.Series,
+                               xr.DataArray])
+    
     def __init__(self, obj:xr.DataArray, dims:Optional[DIMS] = None
                 , coords: Optional[COORDS] = None)->None:
-        self._obj:xr.DataArray = obj
-        self._shape:SHAPE = obj.shape
-        self._dims = dims if dims is not None else self.obj.dims
+        _t = type(obj)
+        if _t not in DataArrayStructure.accepted_inputs:
+            raise ValueError(("Received invalid input type. Expected "
+                              "one of `numpy.ndarray`, `pandas.Series`,"
+                              " `pandas.DataArray, or "
+                              "`xarray.DataArray`, but received "
+                              f"{type(obj)} instead"))
+        elif _t == pd.DataFrame:
+            self._obj = xr.DataArray(obj.values, coords =dict(
+                dim_0 = obj.index, dim_1 = obj.columns
+            ))
+        elif _t == pd.Series:
+            self._obj = xr.DataArray(obj.values[None,:], coords =dict(
+                dim_0 = ["0"], dim_1 = obj.index 
+            ))
+            
+        elif _t == np.ndarray:
+            self._obj = xr.DataArray(obj, coords = {
+                f"dim_{i}": np.asarray(range(axis)) for i, axis in \
+                    enumerate(obj.shape)
+            })
+        else:
+            self._obj:xr.DataArray = obj
+        self._shape:SHAPE = self._obj.shape
+        self._dims = dims if dims is not None else np.asarray(
+            self.obj.dims)
         self._coords = coords if coords is not None else {
             k:v.values for k,v in dict(self.obj.coords).items()
             }
-        self._rank:int = len(self._coords)        
+        self._rank:int = len(self._coords)
+        self._missing_nan_flag:Optional[bool] = None      
         
     def all(self, axis: Optional[int] = None, **kwargs)->Union[bool,
                                                 DataArrayStructure]:
         ndims, ncoords = self._cut_dims_(axis)
-        return DataArrayStructure(self.obj.values.all(axis = axis,
-                                                      **kwargs),
-                                  dims=ndims, coords = ncoords)
+        core_obj = self.obj.values.any(axis=axis,**kwargs)
+        if axis is None:
+            return core_obj
+        else:
+            return DataArrayStructure(core_obj, dims=ndims,
+                                      coords = ncoords)
     
     def any(self, axis: Optional[int] = None, **kwargs):
         ndims, ncoords = self._cut_dims_(axis)
-        return DataArrayStructure(self.obj.values.any(axis=axis,
-                                                      **kwargs),
+        core_obj = self.obj.values.any(axis=axis,**kwargs)
+        if axis is None:
+            return core_obj
+        else:
+            return DataArrayStructure(
+        core_obj if len(core_obj.shape)>=2 else core_obj[:,None],
                                   dims=ndims, coords=ncoords
                                   )
     
@@ -530,6 +589,11 @@ class CommonDataStructureInterface(DataStructureInterface):
     
     
     _data_structure:Optional[DataStructure] = None
+    _implementor:Optional[Type[DataStructure]] = None
+    
+        
+    def __post_init__(self):
+        self._implementor = type(self._data_structure) #type: ignore
     
     @property
     def data_structure(self) -> DataStructure:
@@ -554,24 +618,217 @@ class CommonDataStructureInterface(DataStructureInterface):
     def rank(self)->int:
         return self.data_structure.rank
     
-    def transpose(self, axes: Optional[AXIS_PERMUTATION] = None):
-        return self.data_structure.transpose(axes = axes)
+    def transpose(self, axes: Optional[AXIS_PERMUTATION] = None
+                 )->CommonDataStructureInterface:
+        return CommonDataStructureInterface(
+            _data_structure = self.data_structure.transpose(axes = axes)
+            )
     
     T = transpose
     
     def iterrows(self):
-        return self.data_structure.iterrows()
+        return CommonDataStructureInterface(
+            _data_structure = self.data_structure.iterrows()
+            )
     
     def itercolumns(self):
-        return self.data_structure.itercolumns()
+        return CommonDataStructureInterface(
+            _data_structure = self.data_structure.itercolumns()
+            )
     
     def isna(self):
-        return self.data_structure.isna()
+        struct = self.data_structure.isna()
+        if isinstance(struct, np.bool_):
+            return bool(struct)
+        return CommonDataStructureInterface(
+            _data_structure = struct)
     
-    def any(self, axis: Optional[int] = None, **kwargs):
-        return self.data_structure.any(axis = axis, **kwargs)
+    def any(self, axis: Optional[int] = None, **kwargs)->Union[
+        CommonDataStructureInterface, np.bool_]:
+        struct = self.data_structure.any(axis = axis, **kwargs)
+        if isinstance(struct, np.bool_):
+           return bool(struct) 
+        return CommonDataStructureInterface(
+            _data_structure = struct
+        )
     
     def all(self,axis: Optional[int] = None, **kwargs):
-        return self.data_structure.all(axis = axis, **kwargs)
-        
+        struct = self.data_structure.all(axis = axis, **kwargs)
+        if isinstance(struct, np.bool_):
+            return bool(struct)
+        return CommonDataStructureInterface(
+            _data_structure = struct
+        )
     
+    def missing_nan_flag(self)->Optional[bool]:
+        return self.data_structure.missing_nan_flag
+    
+    
+
+class NANHandler(ABC):
+    
+    def __call__(self, data: DataStructureInterface
+                 )->DataStructureInterface:
+        raise NotImplementedError()
+
+@dataclass
+class ImputeMissingNAN(NANHandler):
+    
+    def __call__(self, data: DataStructureInterface
+                 )->DataStructureInterface:
+        raise NotImplementedError(("Data Imputation not yet "
+                                   "implemented"))
+
+@dataclass
+class ExcludeMissingNAN(NANHandler):
+    
+    new_coords:Optional[COORDS] = None
+    new_dims:Optional[DIMS] = None
+    axis:int = 1
+    constructor:Optional[DataStructure] = None
+    
+    
+    def __call__(self, data: DataStructureInterface
+                 )->DataStructureInterface:
+        from copy import copy
+        
+        self.constructor = type(data._data_structure)
+        
+        indices:CommonDataStructureInterface = data.isna()
+        
+        for i,_ in enumerate(data.dims()[1:], 1):
+            indices = indices.any(axis=1) # type:ignore
+        
+        # Try reshape
+        not_nan = np.logical_not(indices.values()[:,0])
+        
+        clean_data= data._data_structure._obj[not_nan]
+        
+        self.new_coords = copy(data.coords())
+        self.new_coords[data.dims()[0]] = np.asarray([
+            coord  for i, coord in enumerate(
+                data.coords()[data.dims()[0]]
+                ) if i in np.where(not_nan)[0]
+        ])
+        self.new_dims = data.dims()
+        this = CommonDataStructureInterface(
+            _data_structure = self.constructor(clean_data,
+                                    coords=self.new_coords,
+                                    dims = self.new_dims
+                                    )
+            )
+        return this
+
+@dataclass
+class IgnoreMissingNAN(NANHandler):
+    
+    def __call__(self, data: DataStructureInterface
+                 )->DataStructureInterface:
+        return data
+
+
+@dataclass(kw_only = True)
+class NANHandlingContext:
+    _nan_handler:NANHandler = ExcludeMissingNAN()
+    
+    @property
+    def nan_handler(self)->NANHandler:
+        return self._nan_handler
+    
+    @nan_handler.setter
+    def nan_handler(self, val:NANHandler)->None:
+        self._nan_handler = val
+        
+    def __call__(self, data:DataStructureInterface):
+        return self.nan_handler(data)
+
+
+class DataProcessingProcessor(ABC):
+    
+    @abstractmethod
+    def __call__(self, data: DataStructure)->DataStructureInterface:
+        raise NotImplementedError()
+
+@dataclass(kw_only = True)
+class CommonDataProcessor(DataProcessingProcessor):
+    
+    nan_handler:NANHandler = ExcludeMissingNAN()
+    casting_logic:Any = None
+    
+    def _convert_structure(self, data: InputData
+                           )->DataStructureInterface:
+        core_type:str = str(type(data)).split(".")[-1][:-2]
+        struct:Optional[Type[DataStructure]] = None
+        if core_type == "ndarray":
+            struct = NDArrayStructure
+        elif core_type == "DataFrame":
+            struct = DataFrameStructure
+        elif core_type == "DataArray":
+            struct = DataArrayStructure
+        else:
+            raise RuntimeError("Unable to convert data type")
+            
+        return CommonDataStructureInterface(
+            _data_structure = struct(data) ) # type: ignore
+    
+    def _handle_nan(self, data:DataStructureInterface
+                    )->DataStructureInterface:
+        return self.nan_handler(data)
+    
+    def _cast_data(self, data:DataStructureInterface
+                   )->DataStructureInterface:
+        return data
+        
+    def _detect_missing_nan(self, data:DataStructureInterface)->bool:
+        return data.isna()
+    
+    def __call__(self, data: InputData)->DataStructureInterface:
+        _data = self._convert_structure(data)
+        _data = self._handle_nan(_data)
+        _data = self._cast_data(_data)
+        return _data
+    
+
+
+@dataclass(kw_only=True)
+class DataProcessingDirector:
+    processor:Union[Type[DataProcessingProcessor],
+                    CommonDataProcessor] = CommonDataProcessor
+    nan_handler:Type[NANHandler] = ExcludeMissingNAN
+    
+    def __post_init__(self)->None:
+        self.processor = self.processor(nan_handler = self.nan_handler)
+    
+    def __call__(self, data: DataStructure):
+        if self.processor is not None:
+            return self.processor(data)
+
+
+class Data:
+
+    nan_handlers:set[str] = set(["exclude", "impute", "ignore"])
+    input_types:set[str] = set(["ndarray", "DataFrame", "DataArray"])
+
+    def __init__(self,data:InputData, nan_handling:str='impute',
+                 preprocessing_director:Optional[
+                     DataProcessingDirector] = DataProcessingDirector()
+                 )->None:
+        if nan_handling not in Data.nan_handlers:
+            raise ValueError(("Receive illegal value for 'nan_handling'"
+                              " argument. Expected on of 'ignore' "
+                              "'impute' or 'ignore', received "
+                             f"{nan_handling} instead"))
+        self.nan_handling:str = nan_handling
+        self.raw_data = data
+        self.data:Optional[DataStructureInterface] = None
+        self.data_processor:Optional[Any] = None
+    
+    def __call__(self):
+        inpt_type:str = str(type(self.data)).split(".")[-1]
+        if inpt_type not in Data.input_types:
+            raise TypeError(("Unsupported input data type received. "
+                             "Supported input data types are "
+                             "`numpy.ndarray`, `pandas.DataFrame` or "
+                             f"`xarray.DataArray`. Received {inpt_type}"
+                             "instead"))
+        pass

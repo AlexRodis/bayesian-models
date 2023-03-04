@@ -1,6 +1,9 @@
 import unittest
 from bayesian_models.data import NDArrayStructure, DataFrameStructure, \
-    DataArrayStructure, CommonDataStructureInterface
+    DataArrayStructure, CommonDataStructureInterface, \
+        CommonDataProcessor, ExcludeMissingNAN, ImputeMissingNAN, \
+        IgnoreMissingNAN, DataProcessingDirector, NANHandlingContext
+        
 import pandas
 import xarray
 import numpy
@@ -29,7 +32,22 @@ class TestDataAdaptor(unittest.TestCase):
         self.A = A
         self.B = B
         self.C = C
-        
+    
+    
+    def test_pd_series_input(self):
+        ser_row = self.B.iloc[0,:]
+        ser_col = self.B.iloc[:,0]
+        serA = DataFrameStructure(ser_row)
+        serB = DataFrameStructure(ser_col)
+        c = isinstance(serA.obj, pandas.DataFrame)
+        self.assertTrue(
+            all([
+                isinstance(serA.obj, pandas.DataFrame),
+                isinstance(serB.obj, pandas.DataFrame),
+                serA.shape == (1, self.B.shape[1]),
+                serB.shape == (1, self.B.shape[0])
+                ])
+        )
         
     def test_np_all(self):
         rank3 = NDArrayStructure(self.A)
@@ -45,9 +63,9 @@ class TestDataAdaptor(unittest.TestCase):
         cond5 = rank2.all()
         cond6 = rank1.all()
         cond7 = rank2.all(axis = 1).shape == numpy.ones(
-            shape=rank2.obj.shape[0]).shape
-        self.assertTrue(cond1 and cond2 and cond3 and cond4 and cond5 \
-            and cond6 and cond7)
+            shape=(rank2.obj.shape[0],1)).shape
+        self.assertTrue(
+            all([cond1, cond2, cond3, cond4, cond5, cond6, cond7]))
         
     def test_pd_all(self):
         rank2 = DataFrameStructure(self.B)
@@ -90,9 +108,9 @@ class TestDataAdaptor(unittest.TestCase):
         cond5 = rank2.any()
         cond6 = rank1.any()
         cond7 = rank2.any(axis = 1).shape == numpy.ones(
-            shape=rank2.obj.shape[0]).shape
-        self.assertTrue(cond1 and cond2 and cond3 and cond4 and cond5 \
-            and cond6 and cond7)
+            shape=(rank2.obj.shape[0],1)).shape
+        self.assertTrue(all([cond1, cond2, cond3, cond4, cond5, cond6,
+                             cond7]))
         
     def test_pd_any(self):
         rank2 = DataFrameStructure(self.B)
@@ -311,3 +329,118 @@ class TestDataAdaptor(unittest.TestCase):
         bridge.any(axis=1)
         bridge.isna()
         bridge.values()
+    
+    def test_processor_nan_handling_exclude_np(self):
+        obj = self.A.copy()
+
+        obj[0,0,0] = numpy.nan
+        obj[-2,0,0] = numpy.nan
+        
+        processor = CommonDataProcessor(
+            nan_handler = ExcludeMissingNAN()
+        )
+        processed_dirty = processor(obj)
+        processed_clean = processor(self.A)
+        bridge = CommonDataStructureInterface(
+            _data_structure = NDArrayStructure(
+                self.A
+            )
+        )
+        coords_cond:bool = all(numpy.asarray([
+            i for i in range(obj.shape[0]) if i not in (0,88)
+            ]) == processed_dirty.coords()[processed_dirty.dims()[0]])
+        not_nan_cond:bool = not processed_dirty.isna().any()
+        clean_coords_cond  = dict_arr_compare(processed_clean.coords(),
+                                              bridge.coords())
+        clean_dims_cond = all(processed_clean.dims() == bridge.dims())
+        val_unchanged_cond = (
+            processed_clean.values()==bridge.values()).all()
+        return self.assertTrue(
+            all((coords_cond, not_nan_cond,  clean_dims_cond,
+                val_unchanged_cond and clean_coords_cond)
+                )
+            )
+    
+    def test_processor_nan_handling_exclude_pd(self):
+        obj = self.B.copy(deep=True)
+        obj.iloc[0,0] = numpy.nan
+        obj.iloc[-2,0] = numpy.nan     
+        processor = CommonDataProcessor(
+            nan_handler = ExcludeMissingNAN()
+        )
+        processed_dirty = processor(obj)
+        processed_clean = processor(self.B)
+        bridge = CommonDataStructureInterface(
+            _data_structure = DataFrameStructure(
+                self.B
+            )
+        )
+        coords_cond:bool = all(numpy.asarray([
+            i for i in range(obj.shape[0]) if i not in (0,88)
+            ]) == processed_dirty.coords()[processed_dirty.dims()[0]])
+        not_nan_cond:bool = not processed_dirty.isna().any()
+        clean_coords_cond  = dict_arr_compare(processed_clean.coords(),
+                                              bridge.coords())
+        clean_dims_cond = all(processed_clean.dims() == bridge.dims())
+        val_unchanged_cond = (
+            processed_clean.values()==bridge.values()).all()
+        return self.assertTrue(
+            all((coords_cond, not_nan_cond,  clean_dims_cond,
+                val_unchanged_cond and clean_coords_cond)
+                )
+            )
+        
+    def test_processor_nan_handling_exclude_xr(self):
+        obj = self.C.copy()
+        obj[0,0,0] = numpy.nan
+        obj[-2,0,0] = numpy.nan
+        processor = CommonDataProcessor(
+            nan_handler = ExcludeMissingNAN()
+        )
+        processed_dirty = processor(obj)
+        processed_clean = processor(self.C)
+        bridge = CommonDataStructureInterface(
+            _data_structure = DataArrayStructure(
+                self.C
+            )
+        )
+        coords_cond:bool = all(numpy.asarray([
+            i for i in range(obj.shape[0]) if i not in (0,88)
+            ]) == processed_dirty.coords()[processed_dirty.dims()[0]])
+        not_nan_cond:bool = not processed_dirty.isna().any()
+        clean_coords_cond  = dict_arr_compare(processed_clean.coords(),
+                                              bridge.coords())
+        clean_dims_cond = all(processed_clean.dims() == bridge.dims())
+        val_unchanged_cond = (
+            processed_clean.values()==bridge.values()).all()
+        return self.assertTrue(
+            all((coords_cond, not_nan_cond,  clean_dims_cond,
+                val_unchanged_cond, clean_coords_cond)
+                )
+            )
+    
+    def test_nan_handling_ignore(self):
+        obj = self.A.copy()
+        obj[0,0,0] = numpy.nan
+        obj[-2,0,0] = numpy.nan
+        bridge = CommonDataStructureInterface(
+            _data_structure = NDArrayStructure(obj)
+            )
+        processor = CommonDataProcessor(
+            nan_handler = IgnoreMissingNAN()
+        )
+        processed = processor(obj)
+        coords_cond = dict_arr_compare(
+            processed.coords(), bridge.coords()
+        )
+        
+        return self.assertTrue(coords_cond and
+            processed.isna().any()
+                               )
+    
+    def test_nan_handling_impute(self):
+         self.assertRaises(
+             NotImplementedError, CommonDataProcessor(
+                 nan_handler = ImputeMissingNAN()
+             ).__call__, self.A
+         )
