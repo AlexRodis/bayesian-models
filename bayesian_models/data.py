@@ -33,6 +33,9 @@ class DataStructure(ABC):
             
             - rank:int := The tensors rank
             
+            - dtype := The datatype for the elements. For consistancy
+            all `DataStructure` are coerced into homogenous types
+            
         Methods:
         ---------
         
@@ -65,6 +68,11 @@ class DataStructure(ABC):
             
             - itercolumns() := Iterate over the second axis of the 
             structure. Similar to `pandas.DataFrame.itercolumns`
+            
+            - cast(dtype, **kwargs) := Attemp to cast tensor elements to
+            to `dtype`. All kwargs are forwarded to `numpy`. Returns a
+            new copy of the tensor (as a DataStructure object) with the
+            update data type
             
             
     '''
@@ -109,6 +117,13 @@ class DataStructure(ABC):
     @rank.setter
     def rank(self, val:int)->None:
         self._rank = val
+    
+    @property
+    def dtype(self)->Any:
+        return self._dtype
+    @dtype.setter
+    def dtype(self, val:Any)->None:
+        self._dtype = val
         
     @property
     def missing_nan_flag(self)->Optional[bool]:
@@ -148,6 +163,10 @@ class DataStructure(ABC):
     def itercolumns(self)->DataStructure:
         raise NotImplementedError()
     
+    @abstractmethod
+    def cast(self, typ_spec)->DataStructure:
+        raise NotImplementedError()
+    
 
 class UtilityMixin:
     
@@ -175,8 +194,10 @@ class UtilityMixin:
 
 class NDArrayStructure(DataStructure, UtilityMixin):
     
-    def __init__(self, obj:ndarray, dims:Optional[DIMS] = None,
-                 coords:Optional[COORDS] = None)->None:
+    def __init__(self, obj:Union[ndarray, DataStructure],
+                 dims:Optional[DIMS] = None,
+                 coords:Optional[COORDS] = None,
+                 dtype:Optional[Any] = None)->None:
         
         self._obj = obj if len(obj.shape)>=2 else obj[:, None]
         self._shape:tuple[int] = self.obj.shape
@@ -187,6 +208,8 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                                      ) for k,i in enumerate(
             self._dims)} if coords is None else coords
         self._rank = len(self.obj.shape)
+        unpacked = obj if isinstance(obj, np.ndarray) else obj.values
+        self._dtype = unpacked.dtype if dtype is None else dtype
         self._missing_nan_flag:Optional[bool] = None 
         
     @property
@@ -255,13 +278,19 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 col, dims = ndims, coords = ncoords
             )
             
+            
+    def cast(self, dtype, **kwargs):
+        return NDArrayStructure(
+            self.obj.astype(dtype, **kwargs),
+            dims = self.dims, coords = self.coords, dtype=dtype
+        )
 
 class DataFrameStructure(DataStructure, UtilityMixin):
     
     accepted_inputs:set=[pd.DataFrame, pd.Series, np.ndarray]
     
     def __init__(self, obj:pd.DataFrame, dims:Optional[DIMS] = None
-                 , coords: Optional[COORDS] = None)->None:
+                 , coords: Optional[COORDS] = None, dtype = None)->None:
         if len(obj.shape) not in set([1,2]):
             raise ValueError(("Unable to coerce input to a DataFrame. "
                               "Valid objects must be 1D or 2D objects,"
@@ -280,6 +309,7 @@ class DataFrameStructure(DataStructure, UtilityMixin):
         self._coords = dict(dim_0 = self.obj.index, 
                             dim_1 =self.obj.columns)
         self._rank:int = 2
+        self._dtype = obj.values.dtype if dtype is None else dtype
         self._missing_nan_flag:Optional[bool] = None
     
     def isna(self):
@@ -352,6 +382,14 @@ class DataFrameStructure(DataStructure, UtilityMixin):
                   row.values[None,:], columns = row.index
                 )
             )
+            
+    def cast(self, dtype, **kwargs):
+        return DataFrameStructure(pd.DataFrame(
+            self.obj.values.astype(dtype, **kwargs),
+                            index= self.coords["dim_0"],
+                            columns= self.coords["dim_1"]),
+                                  dims=self.dims, coords=self.coords,
+                                  dtype=dtype)
         
 
 class DataArrayStructure(DataStructure, UtilityMixin):
@@ -360,7 +398,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                                xr.DataArray])
     
     def __init__(self, obj:xr.DataArray, dims:Optional[DIMS] = None
-                , coords: Optional[COORDS] = None)->None:
+                , coords: Optional[COORDS] = None, dtype=None)->None:
         _t = type(obj)
         if _t not in DataArrayStructure.accepted_inputs:
             raise ValueError(("Received invalid input type. Expected "
@@ -372,16 +410,21 @@ class DataArrayStructure(DataStructure, UtilityMixin):
             self._obj = xr.DataArray(obj.values, coords =dict(
                 dim_0 = obj.index, dim_1 = obj.columns
             ))
+            self._dtype = dtype if dtype is not None else \
+                obj.values.dtype
         elif _t == pd.Series:
             self._obj = xr.DataArray(obj.values[None,:], coords =dict(
                 dim_0 = ["0"], dim_1 = obj.index 
             ))
+            self._dtype = dtype if dtype is not None else \
+                obj.values.dtype
             
         elif _t == np.ndarray:
             self._obj = xr.DataArray(obj, coords = {
                 f"dim_{i}": np.asarray(range(axis)) for i, axis in \
                     enumerate(obj.shape)
             })
+            self._dtype = dtype if dtype is not None else obj.dtype
         else:
             self._obj:xr.DataArray = obj
         self._shape:SHAPE = self._obj.shape
@@ -445,6 +488,12 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                     col.values, dims=ndims, coords=ncoords
                 )
             )
+    def cast(self, dtype, **kwargs):
+        return DataArrayStructure(
+            xr.DataArray(self.obj.values.astype(dtype, **kwargs),
+                         dims = self.dims, coords = self.coords),
+            dims = self.dims, coords = self.coords, dtype = dtype
+        )
 
 
 class DataStructureInterface(ABC):
@@ -522,6 +571,10 @@ class DataStructureInterface(ABC):
         raise NotImplementedError()
     
     @abstractmethod
+    def dtype(self):
+        raise NotImplementedError()
+    
+    @abstractmethod
     def any(self):
         raise NotImplementedError()
     
@@ -540,12 +593,16 @@ class DataStructureInterface(ABC):
     @abstractmethod
     def iterrows(self):
         raise NotImplementedError()
+    
+    @abstractmethod
+    def astype(self, dtype, kwargs):
+        raise NotImplementedError()
 
 @dataclass(kw_only=True)
 class CommonDataStructureInterface(DataStructureInterface):
     '''
         Core interface for supported data structures. Should be the only
-        'abstraction' provided
+        'refined abstraction' provided
         
         Properties:
         ------------
@@ -626,6 +683,9 @@ class CommonDataStructureInterface(DataStructureInterface):
     
     T = transpose
     
+    def dtype(self):
+        return self.data_structure.dtype
+    
     def iterrows(self):
         return CommonDataStructureInterface(
             _data_structure = self.data_structure.iterrows()
@@ -662,6 +722,9 @@ class CommonDataStructureInterface(DataStructureInterface):
     
     def missing_nan_flag(self)->Optional[bool]:
         return self.data_structure.missing_nan_flag
+    
+    def astype(self, dtype, **kwargs):
+        return self.data_structure.cast(dtype, **kwargs)
     
     
 
@@ -753,7 +816,8 @@ class DataProcessingProcessor(ABC):
 class CommonDataProcessor(DataProcessingProcessor):
     
     nan_handler:NANHandler = ExcludeMissingNAN()
-    casting_logic:Any = None
+    cast = None
+    type_spec = None
     
     def _convert_structure(self, data: InputData
                            )->DataStructureInterface:
@@ -777,7 +841,17 @@ class CommonDataProcessor(DataProcessingProcessor):
     
     def _cast_data(self, data:DataStructureInterface
                    )->DataStructureInterface:
-        return data
+        if self.cast is None:
+            return data
+        else:
+            data.astype(self.cast)
+            
+    def _validate_dtypes(self, data:DataStructureInterface
+                         )->DataStructureInterface:
+        if self.type_spec is None:
+            return data
+        else:
+            return data
         
     def _detect_missing_nan(self, data:DataStructureInterface)->bool:
         return data.isna()

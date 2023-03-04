@@ -15,7 +15,7 @@ dict_arr_compare = lambda one, other : all([(v1 == v2).all() \
          ])
 
 
-class TestDataAdaptor(unittest.TestCase):
+class TestDataModule(unittest.TestCase):
     
     
     def setUp(self) -> None:
@@ -140,7 +140,7 @@ class TestDataAdaptor(unittest.TestCase):
         cond5 = rank2.any()
         cond6 = rank1.any()
         cond7 = rank2.any(axis = 1).shape == numpy.ones(
-            shape=rank2.obj.shape[0]).shape
+            shape=(rank2.obj.shape[0],1)).shape
         self.assertTrue(cond1 and cond2 and cond3 and cond4 and cond5 \
             and cond6 and cond7)
         
@@ -275,6 +275,34 @@ class TestDataAdaptor(unittest.TestCase):
         for i, col in obj.itercolumns():
             print(col)
         self.assertTrue(True)
+        
+        
+    def test_np_casting(self):
+        obj = NDArrayStructure(
+            self.A
+        )
+        nobj=obj.cast(numpy.float32)
+        self.assertTrue(
+            nobj.values.dtype == numpy.float32
+        )
+        
+    def test_pd_casting(self):
+        obj = DataFrameStructure(
+            self.B
+        )
+        nobj = obj.cast(numpy.float32)
+        self.assertTrue(
+            nobj.values.dtype == numpy.float32
+        )
+    
+    def test_xr_casting(self):
+        obj = DataArrayStructure(
+            self.C
+        )
+        nobj = obj.cast(numpy.float32)
+        self.assertTrue(
+            nobj.values.dtype == numpy.float32
+        )
         
     def test_np_interface(self):
         '''
@@ -444,3 +472,4 @@ class TestDataAdaptor(unittest.TestCase):
                  nan_handler = ImputeMissingNAN()
              ).__call__, self.A
          )
+          
