@@ -366,7 +366,7 @@ class TestDataModule(unittest.TestCase):
         obj[-2,0,0] = numpy.nan
         
         processor = CommonDataProcessor(
-            nan_handler = ExcludeMissingNAN()
+            nan_handler = ExcludeMissingNAN
         )
         processed_dirty = processor(obj)
         processed_clean = processor(self.A)
@@ -395,7 +395,7 @@ class TestDataModule(unittest.TestCase):
         obj.iloc[0,0] = numpy.nan
         obj.iloc[-2,0] = numpy.nan     
         processor = CommonDataProcessor(
-            nan_handler = ExcludeMissingNAN()
+            nan_handler = ExcludeMissingNAN
         )
         processed_dirty = processor(obj)
         processed_clean = processor(self.B)
@@ -424,7 +424,7 @@ class TestDataModule(unittest.TestCase):
         obj[0,0,0] = numpy.nan
         obj[-2,0,0] = numpy.nan
         processor = CommonDataProcessor(
-            nan_handler = ExcludeMissingNAN()
+            nan_handler = ExcludeMissingNAN
         )
         processed_dirty = processor(obj)
         processed_clean = processor(self.C)
@@ -456,7 +456,7 @@ class TestDataModule(unittest.TestCase):
             _data_structure = NDArrayStructure(obj)
             )
         processor = CommonDataProcessor(
-            nan_handler = IgnoreMissingNAN()
+            nan_handler = IgnoreMissingNAN
         )
         processed = processor(obj)
         coords_cond = dict_arr_compare(
@@ -470,7 +470,7 @@ class TestDataModule(unittest.TestCase):
     def test_nan_handling_impute(self):
          self.assertRaises(
              NotImplementedError, CommonDataProcessor(
-                 nan_handler = ImputeMissingNAN()
+                 nan_handler = ImputeMissingNAN
              ).__call__, self.A
          )
     
