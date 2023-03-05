@@ -6,7 +6,7 @@ from abc import ABC, abstractmethod
 from typing import Optional, Union, Any, Hashable, Iterable, Type
 from .typing import ndarray, InputData, SHAPE, DIMS, COORDS, \
     AXIS_PERMUTATION
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 
 
@@ -427,6 +427,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
             self._dtype = dtype if dtype is not None else obj.dtype
         else:
             self._obj:xr.DataArray = obj
+            self._dtype = obj.dtype
         self._shape:SHAPE = self._obj.shape
         self._dims = dims if dims is not None else np.asarray(
             self.obj.dims)
@@ -547,55 +548,55 @@ class DataStructureInterface(ABC):
         raise NotImplementedError()
     
     @abstractmethod
-    def transpose(self):
+    def transpose(self)->DataStructureInterface:
         raise NotImplementedError()
     
     @abstractmethod
-    def values(self):
+    def values(self)->np.ndarray:
         raise NotImplementedError()
     
     @abstractmethod
-    def rank(self):
+    def rank(self)->int:
         raise NotImplementedError()
     
     @abstractmethod
-    def shape(self):
+    def shape(self)->SHAPE:
         raise NotImplementedError()
     
     @abstractmethod
-    def dims(self):
+    def dims(self)->DIMS:
         raise NotImplementedError()
     
     @abstractmethod
-    def coords(self):
+    def coords(self)->COORDS:
         raise NotImplementedError()
     
     @abstractmethod
-    def dtype(self):
+    def dtype(self)->Any:
         raise NotImplementedError()
     
     @abstractmethod
-    def any(self):
+    def any(self)->Union[DataStructureInterface, bool, np.bool_]:
         raise NotImplementedError()
     
     @abstractmethod
-    def all(self):
+    def all(self)->Union[DataStructureInterface, bool, np.bool_]:
         raise NotImplementedError()
     
     @abstractmethod
-    def isna(self):
+    def isna(self)->Union[DataStructureInterface, bool, np.bool_]:
         raise NotImplementedError()
     
     @abstractmethod
-    def itercolumns(self):
+    def itercolumns(self)->DataStructureInterface:
         raise NotImplementedError()
     
     @abstractmethod
-    def iterrows(self):
+    def iterrows(self)->DataStructureInterface:
         raise NotImplementedError()
     
     @abstractmethod
-    def astype(self, dtype, kwargs):
+    def astype(self, dtype, kwargs)->DataStructureInterface:
         raise NotImplementedError()
 
 @dataclass(kw_only=True)
@@ -724,8 +725,9 @@ class CommonDataStructureInterface(DataStructureInterface):
         return self.data_structure.missing_nan_flag
     
     def astype(self, dtype, **kwargs):
-        return self.data_structure.cast(dtype, **kwargs)
-    
+        return CommonDataStructureInterface(
+            _data_structure = self.data_structure.cast(dtype, **kwargs)
+        )
     
 
 class NANHandler(ABC):
@@ -747,7 +749,7 @@ class ExcludeMissingNAN(NANHandler):
     
     new_coords:Optional[COORDS] = None
     new_dims:Optional[DIMS] = None
-    axis:int = 1
+    axis:int = 1 # Unused
     constructor:Optional[DataStructure] = None
     
     
@@ -806,18 +808,25 @@ class NANHandlingContext:
         return self.nan_handler(data)
 
 
-class DataProcessingProcessor(ABC):
+class DataProcessor(ABC):
     
     @abstractmethod
     def __call__(self, data: DataStructure)->DataStructureInterface:
         raise NotImplementedError()
 
 @dataclass(kw_only = True)
-class CommonDataProcessor(DataProcessingProcessor):
+class CommonDataProcessor(DataProcessor):
     
-    nan_handler:NANHandler = ExcludeMissingNAN()
-    cast = None
-    type_spec = None
+    nan_handler:Union[Type[NANHandler], NANHandler] = ExcludeMissingNAN
+    cast:Any = None
+    type_spec:Any = None
+    casting_kwargs:dict = field(default_factory = dict)
+    
+    def __post_init__(self):
+        '''
+            Initialize the handler
+        '''
+        self.nan_handler = self.nan_handler()
     
     def _convert_structure(self, data: InputData
                            )->DataStructureInterface:
@@ -839,12 +848,12 @@ class CommonDataProcessor(DataProcessingProcessor):
                     )->DataStructureInterface:
         return self.nan_handler(data)
     
-    def _cast_data(self, data:DataStructureInterface
+    def _cast_data(self, data:DataStructureInterface,
                    )->DataStructureInterface:
         if self.cast is None:
             return data
         else:
-            data.astype(self.cast)
+            return data.astype(self.cast, **self.casting_kwargs)
             
     def _validate_dtypes(self, data:DataStructureInterface
                          )->DataStructureInterface:
@@ -858,6 +867,8 @@ class CommonDataProcessor(DataProcessingProcessor):
     
     def __call__(self, data: InputData)->DataStructureInterface:
         _data = self._convert_structure(data)
+        _data.data_structure._missing_nan_flag = \
+            self._detect_missing_nan(_data)
         _data = self._handle_nan(_data)
         _data = self._cast_data(_data)
         return _data
@@ -866,43 +877,150 @@ class CommonDataProcessor(DataProcessingProcessor):
 
 @dataclass(kw_only=True)
 class DataProcessingDirector:
-    processor:Union[Type[DataProcessingProcessor],
+    processor:Union[Type[DataProcessor],
                     CommonDataProcessor] = CommonDataProcessor
     nan_handler:Type[NANHandler] = ExcludeMissingNAN
+    processor_kwargs:dict = field(default_factory = dict)
     
     def __post_init__(self)->None:
-        self.processor = self.processor(nan_handler = self.nan_handler)
+        self.processor = self.processor(
+            nan_handler = self.nan_handler,
+            **self.processor_kwargs)
     
-    def __call__(self, data: DataStructure):
+    def __call__(self, data: InputData):
         if self.processor is not None:
             return self.processor(data)
 
 
 class Data:
+    '''
+        Container for model data with optional preprocessing
+        functionality.
+        
+        Class Attributes:
+        ------------------
+        
+            - nan_handlers:set[str]=['exlude', 'impute', 'ignore'] := 
+            Valid strategies for missing value handling
+            
+            - input_types:set[str]=['ndarray', 'DataFrame', 'DataArray'] := 
+            Supported input data structures
+            
+        Object Attributes:
+        -------------------
+            
+            - nan_handling:str='exclude' := The missing data handling 
+            strategy. Has to be one of Data.nan_handlers. Optional. Defaults
+            to 'exclude' and discards all axis=0 coordinates with missing
+            values (i.e rows).
+            
+            - cast:Any := A data type to force-cast the data to. Optional.
+            Defaults to `numpy.float32`. Set to `None` to disable casting
+            
+            - type_spec:dict={} := Dictionary specification data validation
+            across the second dimention. Keys should be coordinates (labels)
+            along the second axis(=1) and values should be valid numpy dtypes.
+            Currently ignored
+            
+            - casting_kwargs:dict={} := Optional keyword arguments to be
+            forwarded to the type caster. Optional. Defaults to an empty dict.
+            See the `numpy` documentation for further details. Ignored if
+            `cast=None`
+            
+            - processor:Type[DataProcessor]=CommonDataProcessor := The 
+            processor to be used for data processing. Optional and defaults to
+            the generic data processor. Can be overriden to customized
+            with a user specified processor that subclasses `DataProcessor` or
+            `CommonDataProcessor`
+            
+            Private:
+            =========
+            
+                - process_director:Optional[DataProcessDirector] := The 
+                director for data processing. Optional
+                
+                - nan_handler:Optional[NANHandler]=None := The class that
+                handles missing values. None only when unset
+                
+        Object Methods:
+        ----------------
+        
+            - __call__(data:InputData) := Process the data and return
+            the result
+    
+    '''
 
     nan_handlers:set[str] = set(["exclude", "impute", "ignore"])
     input_types:set[str] = set(["ndarray", "DataFrame", "DataArray"])
 
-    def __init__(self,data:InputData, nan_handling:str='impute',
-                 preprocessing_director:Optional[
-                     DataProcessingDirector] = DataProcessingDirector()
+    def __init__(self, nan_handling:str='exclude',
+                 processor:Type[DataProcessor] = \
+                     CommonDataProcessor,
+                 cast:Any = np.float32, type_spec:dict = {},
+                 casting_kwargs:dict = {}, 
                  )->None:
+        
         if nan_handling not in Data.nan_handlers:
             raise ValueError(("Receive illegal value for 'nan_handling'"
                               " argument. Expected on of 'ignore' "
                               "'impute' or 'ignore', received "
                              f"{nan_handling} instead"))
         self.nan_handling:str = nan_handling
-        self.raw_data = data
-        self.data:Optional[DataStructureInterface] = None
-        self.data_processor:Optional[Any] = None
+        self.nan_handler:Optional[Type[NANHandler]] = None
+        self.data_processor:Type[DataProcessor] = processor
+        self.cast = cast
+        self.process_director:Optional[DataProcessingDirector] = None
+        self.type_spec = type_spec
+        self.casting_kwargs = casting_kwargs
     
-    def __call__(self):
-        inpt_type:str = str(type(self.data)).split(".")[-1]
+    def __call__(self,data:InputData):
+        '''
+            Process input data according to specifications
+            
+            Args:
+            -----
+            
+                - data:InputData := The data to process
+                
+            Returns:
+            -------
+            
+                - processed:DataStructureInterface := Container for the
+                processed and harmonized data
+                
+            Raises:
+            -------
+            
+                - ValueError := (1) If the objects' type is not included
+                as one of the valid options, (2) if `nan_handling` is not a
+                valid option
+        '''
+        inpt_type:str = str(type(data)).split(".")[-1].strip(">`'")    
         if inpt_type not in Data.input_types:
-            raise TypeError(("Unsupported input data type received. "
-                             "Supported input data types are "
-                             "`numpy.ndarray`, `pandas.DataFrame` or "
-                             f"`xarray.DataArray`. Received {inpt_type}"
-                             "instead"))
-        pass
+            raise ValueError(("Uknown data type received. Expected "
+                              "one of `numpy.ndarray`, "
+                              "`pandas.DataFrame` or `xarray.DataArray`"
+                              f" but received {inpt_type} instead"))
+        if self.nan_handling == "exclude":
+            self.nan_handler = ExcludeMissingNAN
+        elif self.nan_handling == "impute":
+            self.nan_handler = ImputeMissingNAN
+        elif self.nan_handling == "ignore":
+            self.nan_handler = IgnoreMissingNAN
+        else:
+            raise ValueError(("Unrecognized strategy for missing nan."
+                              "Valid options are 'ignore', 'impute' "
+                              "and 'exclude'. Received "
+                              f"{self.nan_handling} instead"))
+            
+        self.process_director = DataProcessingDirector(
+            processor = self.data_processor,
+            nan_handler = self.nan_handler,
+            processor_kwargs = dict(
+                cast = self.cast,
+                type_spec = self.type_spec,
+                casting_kwargs = self.casting_kwargs
+                               )
+            )
+        return self.process_director(data)
+        

@@ -2,7 +2,8 @@ import unittest
 from bayesian_models.data import NDArrayStructure, DataFrameStructure, \
     DataArrayStructure, CommonDataStructureInterface, \
         CommonDataProcessor, ExcludeMissingNAN, ImputeMissingNAN, \
-        IgnoreMissingNAN, DataProcessingDirector, NANHandlingContext
+        IgnoreMissingNAN, DataProcessingDirector, NANHandlingContext,\
+        Data
         
 import pandas
 import xarray
@@ -472,4 +473,192 @@ class TestDataModule(unittest.TestCase):
                  nan_handler = ImputeMissingNAN()
              ).__call__, self.A
          )
-          
+    
+    
+    
+    def test_common_processor(self):
+        from copy import copy
+        p_core = CommonDataProcessor(nan_handler = ExcludeMissingNAN,
+                                 cast = numpy.float32)
+        evals:dict[str, bool] = {}
+        np_clean = self.A
+        np_dirty = self.A.copy()
+        pd_clean = self.B
+        pd_dirty = self.B.copy(deep=True)
+        xr_clean = self.C
+        xr_dirty = self.C.copy(deep=True)
+        np_dirty[0,0,0], np_dirty[-2,0,0] = numpy.nan, numpy.nan
+        xr_dirty[0,0,0], xr_dirty[-2,0,0] = numpy.nan, numpy.nan
+        pd_dirty.iloc[0,0], pd_dirty.iloc[-2,0] = numpy.nan, numpy.nan
+        
+        np_clean_processed = p_core(np_clean)
+        np_dirty_processed = p_core(np_dirty)
+        pd_clean_processed = p_core(pd_clean)
+        pd_dirty_processed = p_core(pd_dirty)
+        xr_clean_processed = p_core(xr_clean)
+        xr_dirty_processed = p_core(xr_dirty)
+        
+        evals = dict(
+        cond_np_clean_nan = not np_clean_processed.isna().any(),
+        cond_np_dirty_nan = not np_dirty_processed.isna().any(),
+        cond_pd_clean_nan = not pd_clean_processed.isna().any(),
+        cond_pd_dirty_nan = not pd_dirty_processed.isna().any(),
+        cond_xr_clean_nan = not xr_clean_processed.isna().any(),
+        cond_xr_dirty_nan = not xr_dirty_processed.isna().any(),
+        )|evals
+
+        evals = dict(
+        cond_np_clean_dtype = np_clean_processed.dtype() == numpy.float32,
+        cond_np_dirty_dtype = np_dirty_processed.dtype() == numpy.float32,
+        cond_pd_clean_dtype = pd_clean_processed.dtype() == numpy.float32,
+        cond_pd_dirty_dtype = pd_dirty_processed.dtype() == numpy.float32,
+        cond_xr_clean_dtype = xr_clean_processed.dtype() == numpy.float32,
+        cond_xr_dirty_dtype = xr_dirty_processed.dtype() == numpy.float32,
+        )|evals
+        
+        
+        np_clean_coords = dict(
+            dim_0 = numpy.asarray(range(np_clean.shape[0])),
+            dim_1 = numpy.asarray(range(np_clean.shape[1])),
+            dim_2 = numpy.asarray(range(np_clean.shape[2])),
+            
+        )
+        np_dirty_coords = copy(np_clean_coords)
+        modded = list(range(np_clean.shape[0]))
+        modded.pop(0)
+        modded.pop(-2)
+        np_dirty_coords["dim_0"] = numpy.asarray(modded)
+        
+        xr_clean_coords = dict(
+            dim_0 = numpy.asarray(range(np_clean.shape[0])),
+            dim_1 = numpy.asarray(range(np_clean.shape[1])),
+            dim_2 = numpy.asarray(range(np_clean.shape[2])),
+            
+        )
+        xr_dirty_coords = copy(xr_clean_coords)
+        modded = list(range(np_clean.shape[0]))
+        modded.pop(0)
+        modded.pop(-2)
+        xr_dirty_coords["dim_0"] = numpy.asarray(modded)
+        
+        pd_clean_coords = dict(
+            dim_0 = numpy.asarray(range(pd_clean.shape[0])),
+            dim_1 = numpy.asarray([f"var{i}" for i in range(pd_clean.shape[1])], dtype='object'),
+        )
+        
+        dict_arr_compare(np_clean_coords, np_clean_processed.coords())
+        
+        pd_dirty_coords = copy(pd_clean_coords)
+        modded = numpy.asarray([i for i in range(pd_clean.shape[0]) if i not in (0, 88)])
+        pd_dirty_coords["dim_0"] = modded
+        
+        evals = dict(
+        np_dims_cond_clean = (np_clean_processed.dims() ==numpy.asarray(
+            ["dim_0", "dim_1", "dim_2"]) ).all(),
+        np_dims_cond_dirty = (np_dirty_processed.dims() ==numpy.asarray(
+            ["dim_0", "dim_1", "dim_2"])).all(),
+        np_coords_cond_clean = dict_arr_compare(np_clean_coords,
+                                                np_clean_processed.coords()),
+        np_coords_cond_dirty = dict_arr_compare(np_dirty_coords,
+                                                np_dirty_processed.coords()),
+        
+        pd_clean_dims_cond = (pd_clean_processed.dims()==numpy.asarray([
+            "dim_0", "dim_1"])).all(),
+        pd_dirty_dims_cond = (pd_dirty_processed.dims()==numpy.asarray([
+            "dim_0", "dim_1"])).all(),
+        pd_clean_coords_cond = dict_arr_compare(pd_clean_processed.coords(),
+                                                pd_clean_coords),
+        pd_dirty_coords_cond = dict_arr_compare(pd_dirty_processed.coords(),
+                                                pd_dirty_coords),
+        xr_dims_cond_clean = (xr_clean_processed.dims() ==numpy.asarray(
+            ["dim0", "dim1", "dim2"])).all(),
+        xr_dims_cond_dirty = (xr_dirty_processed.dims() ==numpy.asarray(
+            ["dim0", "dim1", "dim2"])).all(),
+        xr_coords_cond_clean = dict_arr_compare(xr_clean_coords,
+                                                xr_clean_processed.coords()),
+        xr_coords_cond_dirty = dict_arr_compare(xr_dirty_coords,
+                                                xr_dirty_processed.coords()),
+        
+        )|evals
+        cols = [f"dummy_{i}" for i in range(9)]
+        idx = [f"idx_{i}" for i in range(90)]
+        new_pd_obj = pandas.DataFrame(data=self.B.values,
+                                      columns = cols, index=idx)
+        new_xr_obj = xarray.DataArray(
+            self.C.values, coords = {
+                "dummydim_0": pandas.RangeIndex(0,90),
+                "dummydim1":[f"dummy_{i}" for i in range(9)],
+                "dummydim2":[f"ddummy_{i}" for i in range(3)],
+            }
+        )
+        new_pd_processed = p_core(new_pd_obj)
+        new_xr_processed = p_core(new_xr_obj)
+        evals = dict(
+            custom_pd_dims = (new_pd_processed.dims()==numpy.asarray([
+                "dim_0","dim_1"])).all(),
+            custom_pd_coords = dict_arr_compare(new_pd_processed.coords(),
+                                                dict(
+                                                    dim_0 = numpy.asarray(idx),
+                                                    dim_1 = numpy.asarray(cols)
+                                                )),
+            custom_xr_dims = (
+                numpy.asarray(["dummydim_0", "dummydim1", "dummydim2"]
+                              ) == new_xr_processed.dims()).all(),
+            custom_xr_coords = dict_arr_compare(
+                new_xr_processed.coords(), dict(
+                    dummydim_0=numpy.asarray([range(90)]),
+                    dummydim1=numpy.asarray([f"dummy_{i}" for i in range(9)]),
+                    dummydim2=numpy.asarray([f"ddummy_{i}" for i in range(3)]),
+                    
+                )),
+            )|evals
+        
+
+        self.assertTrue(all([v for _,v in evals.items()]))
+ 
+        
+    
+    def test_data_director(self):
+        '''
+            Check for exceptions only. Functionality tested elsewhere
+        '''
+        d = DataProcessingDirector(
+            processor = CommonDataProcessor,
+            nan_handler = ExcludeMissingNAN
+        )
+        d(self.A)
+        
+        
+    def test_data_facade(self):
+        conditionals={}
+        default = Data()
+        no_cast = Data(cast=None)
+        ignore = Data(nan_handling='ignore')
+        impute = Data(nan_handling='impute')
+        exclude_explicit = Data(nan_handling="exclude")
+        exclude_explicit(self.A)
+        ignore(self.A)
+        np_processed = default(self.A)
+        pd_processed = default(self.B)
+        xr_processed = default(self.C)
+        conditionals = dict(
+        cond1 = np_processed.dtype() ==numpy.float32,
+        cond2 = pd_processed.dtype() == numpy.float32,
+        cond3 = xr_processed.dtype() == numpy.float32,
+        cond4 = no_cast(self.A).dtype() == numpy.float64,
+        ignore = ignore.nan_handler == IgnoreMissingNAN,
+        exclude_explicit = exclude_explicit.nan_handler == ExcludeMissingNAN,
+        exclude_implicit = default.nan_handler == ExcludeMissingNAN,
+        )|conditionals
+        
+        self.assertTrue(
+            all([v for _,v in conditionals.items()])
+        )
+        self.assertRaises(
+            NotImplementedError, impute.__call__, self.A
+        )
+        self.assertRaises(
+            ValueError, Data, nan_handling="hello"
+        )
+        
+        
