@@ -8,7 +8,8 @@ from .typing import ndarray, InputData, SHAPE, DIMS, COORDS, \
     AXIS_PERMUTATION
 from dataclasses import dataclass, field
 
-
+# TODO: Impute missing data. Maybe add slicing to the common data 
+# interface
 
 
 
@@ -731,6 +732,9 @@ class CommonDataStructureInterface(DataStructureInterface):
     
 
 class NANHandler(ABC):
+    '''
+        Abstract Base Class for missing value handlers
+    '''
     
     def __call__(self, data: DataStructureInterface
                  )->DataStructureInterface:
@@ -738,6 +742,10 @@ class NANHandler(ABC):
 
 @dataclass
 class ImputeMissingNAN(NANHandler):
+    '''
+        Core class from missing data imputation strategy. Currently not
+        implemented and will raise
+    '''
     
     def __call__(self, data: DataStructureInterface
                  )->DataStructureInterface:
@@ -746,10 +754,36 @@ class ImputeMissingNAN(NANHandler):
 
 @dataclass
 class ExcludeMissingNAN(NANHandler):
+    '''
+        Common use-case for missing value handling. Discards all coordinates
+        on the first dimention (i.e. rows) along which there are any missing 
+        values - updating the objects' metadata
+        
+        Object Attributes:
+        --------------------
+        
+            - new_coords:Optional[COORDS]=None := Updated object coordinates
+            
+            - new_dims:Optional[DIMS]=None := Updated object dimentions
+            
+            - axis:int=0 := The dimention along which to exclude. Optional.
+            Defaults to 0 ('rows'). Currently no other options are implemeted
+            and other values are ignored.
+            
+            - constructor:Optional[DataStructure]=None := The DataStructure of
+            the object to convert after processing
+            
+            
+        Object Methods:
+        ----------------
+             - __call__(data:DataStructureInterface)->DataStructureInterface
+             := Handle missing values and return the updated object
+    
+    '''
     
     new_coords:Optional[COORDS] = None
     new_dims:Optional[DIMS] = None
-    axis:int = 1 # Unused
+    axis:int = 0 # Unused
     constructor:Optional[DataStructure] = None
     
     
@@ -786,6 +820,16 @@ class ExcludeMissingNAN(NANHandler):
 
 @dataclass
 class IgnoreMissingNAN(NANHandler):
+    '''
+        Identity strategy for nan handling the does nothing. Only included
+        for completeness' sake. Returns the object unmodified
+        
+        Object Methods:
+        ---------------
+        
+            - __call__(data:DataStructureInterface)->DataStructureInterface :=
+            Returns the data unchanged
+    '''
     
     def __call__(self, data: DataStructureInterface
                  )->DataStructureInterface:
@@ -794,6 +838,21 @@ class IgnoreMissingNAN(NANHandler):
 
 @dataclass(kw_only = True)
 class NANHandlingContext:
+    '''
+        Composite for missing values handlin. Defines the external interface
+        
+        Object Properties:
+        --------------------
+        
+            - nan_handler:NANHandler := The nan handling strategy to apply
+            
+        Objcet Methods:
+        ------------------
+        
+            - __call__(data:DataStructureInterface))->DataStructureInterace :=
+            Delegate missing value handling to the handler and return the
+            results
+    '''
     _nan_handler:NANHandler = ExcludeMissingNAN()
     
     @property
@@ -804,11 +863,15 @@ class NANHandlingContext:
     def nan_handler(self, val:NANHandler)->None:
         self._nan_handler = val
         
-    def __call__(self, data:DataStructureInterface):
+    def __call__(self, data:DataStructureInterface
+                 )->DataStructureInterface:
         return self.nan_handler(data)
 
 
 class DataProcessor(ABC):
+    '''
+        Abstract base class for Data Processors
+    '''
     
     @abstractmethod
     def __call__(self, data: DataStructure)->DataStructureInterface:
@@ -816,9 +879,50 @@ class DataProcessor(ABC):
 
 @dataclass(kw_only = True)
 class CommonDataProcessor(DataProcessor):
+    '''
+        Common use-case data pre processor. Will handle:
+        
+            - converting the data structure to a common internal interface
+            
+            - handling of missing values
+            
+            - casting to data type
+            
+            - validate data types
+        
+        Can be subclassed for extended functionality or overriden.
+        
+        Object Attributes:
+        --------------------
+        
+            - nan_handler:Union[Type[NANHandler], NANHandler]=ExcludeMissingNAN
+            The missing values handler. Optional. Defaults to
+            ExcludeMissingNAN. Initially a ref to the class, will be replaced
+            by a instance of that class.
+            
+            - cast:Optional[np.dtype]=None := Attempt to forcefully cast all
+            inputs to the specified type. Optional. Defaults to `np.float32`.
+            Set to `None` will disable typecasting
+            
+            - type_spec := Schema to validate. Not implemented and will be 
+            ignored
+            
+            - casting_kwargs:dict={} := Keyword arguements to be forwarded to
+            the underlying typecaster. See numpy for details. Defaults to an
+            empty dict. Warning! Poorly tested!
+            
+        Object Methods:
+        ----------------
+        
+            - __call__(data:InputData)->CommonDataStructureInterface :=
+            Preprocess the data according the set options and return the
+            result.
+            
+                   
+    '''
     
     nan_handler:Union[Type[NANHandler], NANHandler] = ExcludeMissingNAN
-    cast:Any = None
+    cast:Optional[np.dtype] = None
     type_spec:Any = None
     casting_kwargs:dict = field(default_factory = dict)
     
@@ -826,10 +930,31 @@ class CommonDataProcessor(DataProcessor):
         '''
             Initialize the handler
         '''
-        self.nan_handler = self.nan_handler()
+        self.nan_handler = self.nan_handler() #type:ignore
     
     def _convert_structure(self, data: InputData
                            )->DataStructureInterface:
+        '''
+            Convert the input structure to a common interface by wrapping
+            it in the appropriate implementation class
+            
+            Args:
+            -----
+            
+                - data:InputData := The data to process
+                
+            Returns:
+            --------
+            
+                - common:CommonDataStructureInterface := The object, converted
+                to a common interface
+                
+            Raises:
+            -------
+            
+                - RuntimeError := When unable to identify the data type. This
+                is a last-resort exception. Should be handled elsewhere
+        '''
         core_type:str = str(type(data)).split(".")[-1][:-2]
         struct:Optional[Type[DataStructure]] = None
         if core_type == "ndarray":
@@ -866,6 +991,20 @@ class CommonDataProcessor(DataProcessor):
         return data.isna()
     
     def __call__(self, data: InputData)->DataStructureInterface:
+        '''
+            Preprocess the object according to set options and return the
+            results
+            
+            Args:
+            -----
+            
+                data:InputData := The data to process
+                
+            Returns:
+            ---------
+            
+                - processed:CommonDataStructureInterface := The processed data
+        '''
         _data = self._convert_structure(data)
         _data.data_structure._missing_nan_flag = \
             self._detect_missing_nan(_data)
@@ -877,8 +1016,31 @@ class CommonDataProcessor(DataProcessor):
 
 @dataclass(kw_only=True)
 class DataProcessingDirector:
+    '''
+        Master composite for data pre processing
+        
+        Object Attributes:
+        ------------------
+        
+            - processor:CommonDataProcessor := A reference to the class
+            that represents the data processor. Converted to an instance
+            on said class. Optional. Defaults to `CommonDataProcessor`
+            
+            - nan_handler:Type[NANHandler] := The class whose instance is
+            the missing NAN handler. Optional. Defaults to `ExcludeMissingNAN`
+            
+            - processor_kwargs:dict = Keyword arguments to be forwarded to
+            the processor instance
+            
+        Object Methods:
+        ----------------
+        
+            - __call__(data:InputeData)->CommonDataStructureInterface := Call
+            the processor and return the pre processed data
+    '''
+    
     processor:Union[Type[DataProcessor],
-                    CommonDataProcessor] = CommonDataProcessor
+                    DataProcessor] = CommonDataProcessor
     nan_handler:Type[NANHandler] = ExcludeMissingNAN
     processor_kwargs:dict = field(default_factory = dict)
     
@@ -887,7 +1049,7 @@ class DataProcessingDirector:
             nan_handler = self.nan_handler,
             **self.processor_kwargs)
     
-    def __call__(self, data: InputData):
+    def __call__(self, data: InputData)->CommonDataStructureInterface:
         if self.processor is not None:
             return self.processor(data)
 
@@ -933,14 +1095,11 @@ class Data:
             with a user specified processor that subclasses `DataProcessor` or
             `CommonDataProcessor`
             
-            Private:
-            =========
+            - process_director:Optional[DataProcessDirector] := The 
+            director for data processing. Optional
             
-                - process_director:Optional[DataProcessDirector] := The 
-                director for data processing. Optional
-                
-                - nan_handler:Optional[NANHandler]=None := The class that
-                handles missing values. None only when unset
+            - nan_handler:Optional[NANHandler]=None := The class that
+            handles missing values. None only when unset
                 
         Object Methods:
         ----------------
@@ -973,7 +1132,7 @@ class Data:
         self.type_spec = type_spec
         self.casting_kwargs = casting_kwargs
     
-    def __call__(self,data:InputData):
+    def __call__(self,data:InputData)->CommonDataStructureInterface:
         '''
             Process input data according to specifications
             
