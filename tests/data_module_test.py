@@ -366,7 +366,8 @@ class TestDataModule(unittest.TestCase):
         obj[-2,0,0] = numpy.nan
         
         processor = CommonDataProcessor(
-            nan_handler = ExcludeMissingNAN
+            nan_handler_context = NANHandlingContext(
+                _nan_strategy = ExcludeMissingNAN)
         )
         processed_dirty = processor(obj)
         processed_clean = processor(self.A)
@@ -395,7 +396,8 @@ class TestDataModule(unittest.TestCase):
         obj.iloc[0,0] = numpy.nan
         obj.iloc[-2,0] = numpy.nan     
         processor = CommonDataProcessor(
-            nan_handler = ExcludeMissingNAN
+            nan_handler_context = NANHandlingContext(
+                _nan_strategy = ExcludeMissingNAN)
         )
         processed_dirty = processor(obj)
         processed_clean = processor(self.B)
@@ -424,7 +426,8 @@ class TestDataModule(unittest.TestCase):
         obj[0,0,0] = numpy.nan
         obj[-2,0,0] = numpy.nan
         processor = CommonDataProcessor(
-            nan_handler = ExcludeMissingNAN
+            nan_handler_context= NANHandlingContext(
+                _nan_strategy = ExcludeMissingNAN)
         )
         processed_dirty = processor(obj)
         processed_clean = processor(self.C)
@@ -456,7 +459,8 @@ class TestDataModule(unittest.TestCase):
             _data_structure = NDArrayStructure(obj)
             )
         processor = CommonDataProcessor(
-            nan_handler = IgnoreMissingNAN
+            nan_handler_context= NANHandlingContext(
+                _nan_strategy = IgnoreMissingNAN)
         )
         processed = processor(obj)
         coords_cond = dict_arr_compare(
@@ -470,7 +474,8 @@ class TestDataModule(unittest.TestCase):
     def test_nan_handling_impute(self):
          self.assertRaises(
              NotImplementedError, CommonDataProcessor(
-                 nan_handler = ImputeMissingNAN
+                 nan_handler_context= NANHandlingContext(
+                _nan_strategy = ImputeMissingNAN)
              ).__call__, self.A
          )
     
@@ -478,7 +483,9 @@ class TestDataModule(unittest.TestCase):
     
     def test_common_processor(self):
         from copy import copy
-        p_core = CommonDataProcessor(nan_handler = ExcludeMissingNAN,
+        p_core = CommonDataProcessor(
+                nan_handler_context= NANHandlingContext(
+                    _nan_strategy = ExcludeMissingNAN),
                                  cast = numpy.float32)
         evals:dict[str, bool] = {}
         np_clean = self.A
@@ -624,7 +631,8 @@ class TestDataModule(unittest.TestCase):
         '''
         d = DataProcessingDirector(
             processor = CommonDataProcessor,
-            nan_handler = ExcludeMissingNAN
+            nan_handler_context = NANHandlingContext(
+                _nan_strategy = ExcludeMissingNAN)
         )
         d(self.A)
         
@@ -646,9 +654,9 @@ class TestDataModule(unittest.TestCase):
         cond2 = pd_processed.dtype() == numpy.float32,
         cond3 = xr_processed.dtype() == numpy.float32,
         cond4 = no_cast(self.A).dtype() == numpy.float64,
-        ignore = ignore.nan_handler == IgnoreMissingNAN,
-        exclude_explicit = exclude_explicit.nan_handler == ExcludeMissingNAN,
-        exclude_implicit = default.nan_handler == ExcludeMissingNAN,
+        ignore = ignore.nan_handler._nan_strategy == IgnoreMissingNAN,
+        exclude_explicit = exclude_explicit.nan_handler._nan_strategy == ExcludeMissingNAN,
+        exclude_implicit = default.nan_handler._nan_strategy == ExcludeMissingNAN,
         )|conditionals
         
         self.assertTrue(

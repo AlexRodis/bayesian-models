@@ -314,7 +314,7 @@ class DataFrameStructure(DataStructure, UtilityMixin):
         self._missing_nan_flag:Optional[bool] = None
     
     def isna(self):
-        return DataFrameStructure( self.obj.isna(), coords=self.coords,
+        return DataFrameStructure( self.obj.isna(), coords=self.coords, #type:ignore
                                 dims=self.dims)  
         
     def any(self, axis: Optional[int] = None, **kwargs):
@@ -322,13 +322,13 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             return self.obj.any(axis = axis)         
         elif axis == 0:
             return DataFrameStructure(
-                pd.DataFrame(self.obj.any(axis=0).values[None, :],
+                pd.DataFrame(self.obj.any(axis=0).values[None, :], #type:ignore
                              columns = self.coords['dim_1'],
                              index = ["0"]),
             )
         elif axis == 1:
             return DataFrameStructure(
-                pd.DataFrame(self.obj.any(axis=1).values[:,None],
+                pd.DataFrame(self.obj.any(axis=1).values[:,None], #type:ignore
                              index = self.coords['dim_0'],
                              columns = ["0"]
                              )
@@ -344,14 +344,14 @@ class DataFrameStructure(DataStructure, UtilityMixin):
         elif axis == 0:
             return DataFrameStructure(
                 pd.DataFrame(
-                    self.obj.all(axis=0).values[None, :],
+                    self.obj.all(axis=0).values[None, :], #type:ignore
                     columns = self.coords['dim_1'],
                     index = ["0"]
                 )
             )
         elif axis == 1:
             return DataFrameStructure(
-                pd.DataFrame(self.obj.all(axis=1).values[:,None],
+                pd.DataFrame(self.obj.all(axis=1).values[:,None], #type:ignore
                              index = self.coords['dim_0'],
                              columns = ["0"]
                              )
@@ -362,8 +362,8 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             
     
     def transpose(self, axes: Optional[AXIS_PERMUTATION] = None):
-        return DataFrameStructure(self.obj.transpose(),
-                                dims = [e for e in reversed(self._dims)],
+        return DataFrameStructure(self.obj.transpose(), #type:ignore
+                                dims = [e for e in reversed(self._dims)], #type:ignore
                                 coords = {k:v for k,v in reversed(
                                     self._coords.items()
                                 )})
@@ -371,13 +371,13 @@ class DataFrameStructure(DataStructure, UtilityMixin):
     T = transpose
     
     def itercolumns(self):
-        for i, col in self.obj.iteritems():
+        for i, col in self.obj.iteritems(): #type:ignore
             yield i, DataFrameStructure(pd.DataFrame(
                 col.values[:,None], index = col.index,
             ))
             
     def iterrows(self):
-        for i, row in self.obj.iterrows():
+        for i, row in self.obj.iterrows(): #type:ignore
             yield i, DataFrameStructure(
                 pd.DataFrame(
                   row.values[None,:], columns = row.index
@@ -853,19 +853,16 @@ class NANHandlingContext:
             Delegate missing value handling to the handler and return the
             results
     '''
-    _nan_handler:NANHandler = ExcludeMissingNAN()
+    _nan_strategy:Type[NANHandler] = ExcludeMissingNAN
+    nan_handler:Optional[NANHandler] = None
+    kwargs:dict = field(default_factory=dict)
     
-    @property
-    def nan_handler(self)->NANHandler:
-        return self._nan_handler
-    
-    @nan_handler.setter
-    def nan_handler(self, val:NANHandler)->None:
-        self._nan_handler = val
+    def __post_init__(self):
+        self.nan_handler = self._nan_strategy(**self.kwargs)# type:ignore
         
     def __call__(self, data:DataStructureInterface
                  )->DataStructureInterface:
-        return self.nan_handler(data)
+        return self.nan_handler(data) #type:ignore
 
 
 class DataProcessor(ABC):
@@ -895,10 +892,9 @@ class CommonDataProcessor(DataProcessor):
         Object Attributes:
         --------------------
         
-            - nan_handler:Union[Type[NANHandler], NANHandler]=ExcludeMissingNAN
-            The missing values handler. Optional. Defaults to
-            ExcludeMissingNAN. Initially a ref to the class, will be replaced
-            by a instance of that class.
+            - nan_handler:NANHandlerContext := The missing values handler.
+            Optional. Defaults to ExcludeMissingNAN. Initially a ref to the 
+            context class, will be replaced by a instance of that class.
             
             - cast:Optional[np.dtype]=None := Attempt to forcefully cast all
             inputs to the specified type. Optional. Defaults to `np.float32`.
@@ -921,16 +917,12 @@ class CommonDataProcessor(DataProcessor):
                    
     '''
     
-    nan_handler:Union[Type[NANHandler], NANHandler] = ExcludeMissingNAN
+    nan_handler_context:NANHandlingContext = NANHandlingContext(
+        _nan_strategy = ExcludeMissingNAN
+    )
     cast:Optional[np.dtype] = None
     type_spec:Any = None
     casting_kwargs:dict = field(default_factory = dict)
-    
-    def __post_init__(self):
-        '''
-            Initialize the handler
-        '''
-        self.nan_handler = self.nan_handler() #type:ignore
     
     def _convert_structure(self, data: InputData
                            )->DataStructureInterface:
@@ -971,7 +963,7 @@ class CommonDataProcessor(DataProcessor):
     
     def _handle_nan(self, data:DataStructureInterface
                     )->DataStructureInterface:
-        return self.nan_handler(data)
+        return self.nan_handler_context(data)
     
     def _cast_data(self, data:DataStructureInterface,
                    )->DataStructureInterface:
@@ -988,7 +980,7 @@ class CommonDataProcessor(DataProcessor):
             return data
         
     def _detect_missing_nan(self, data:DataStructureInterface)->bool:
-        return data.isna()
+        return data.isna() #type:ignore
     
     def __call__(self, data: InputData)->DataStructureInterface:
         '''
@@ -1026,8 +1018,8 @@ class DataProcessingDirector:
             that represents the data processor. Converted to an instance
             on said class. Optional. Defaults to `CommonDataProcessor`
             
-            - nan_handler:Type[NANHandler] := The class whose instance is
-            the missing NAN handler. Optional. Defaults to `ExcludeMissingNAN`
+            - nan_handler_context:NANHanderContext := The missing nan handler
+            
             
             - processor_kwargs:dict = Keyword arguments to be forwarded to
             the processor instance
@@ -1041,17 +1033,19 @@ class DataProcessingDirector:
     
     processor:Union[Type[DataProcessor],
                     DataProcessor] = CommonDataProcessor
-    nan_handler:Type[NANHandler] = ExcludeMissingNAN
+    nan_handler_context:NANHandlingContext = NANHandlingContext(
+        _nan_strategy = ExcludeMissingNAN
+    )
     processor_kwargs:dict = field(default_factory = dict)
     
     def __post_init__(self)->None:
         self.processor = self.processor(
-            nan_handler = self.nan_handler,
-            **self.processor_kwargs)
+            nan_handler_context = self.nan_handler_context,
+            **self.processor_kwargs) #type:ignore
     
     def __call__(self, data: InputData)->CommonDataStructureInterface:
         if self.processor is not None:
-            return self.processor(data)
+            return self.processor(data) #type:ignore
 
 
 class Data:
@@ -1161,11 +1155,16 @@ class Data:
                               "`pandas.DataFrame` or `xarray.DataArray`"
                               f" but received {inpt_type} instead"))
         if self.nan_handling == "exclude":
-            self.nan_handler = ExcludeMissingNAN
+            self.nan_handler = NANHandlingContext(
+                _nan_strategy = ExcludeMissingNAN)
         elif self.nan_handling == "impute":
-            self.nan_handler = ImputeMissingNAN
+            self.nan_handler = NANHandlingContext(
+                _nan_strategy = ImputeMissingNAN
+            )
         elif self.nan_handling == "ignore":
-            self.nan_handler = IgnoreMissingNAN
+            self.nan_handler = NANHandlingContext(
+                _nan_strategy = IgnoreMissingNAN
+            )
         else:
             raise ValueError(("Unrecognized strategy for missing nan."
                               "Valid options are 'ignore', 'impute' "
@@ -1174,7 +1173,7 @@ class Data:
             
         self.process_director = DataProcessingDirector(
             processor = self.data_processor,
-            nan_handler = self.nan_handler,
+            nan_handler_context = self.nan_handler,
             processor_kwargs = dict(
                 cast = self.cast,
                 type_spec = self.type_spec,
