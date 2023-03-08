@@ -4,8 +4,8 @@ import  pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Any, Hashable, Iterable, Type
-from .typing import ndarray, InputData, SHAPE, DIMS, COORDS, \
-    AXIS_PERMUTATION
+from .typing import ndarray, InputData, SHAPE, DIMS, COORDS
+from .typing import AXIS_PERMUTATION
 from dataclasses import dataclass, field
 
 # TODO: Impute missing data. Maybe add slicing to the common data 
