@@ -1,13 +1,15 @@
+# This module contains redundant and irrelevant definitions, which
+# will be removed in the future
 import pandas as pd
-import sklearn
 from abc import ABC, abstractmethod
 from sklearn.preprocessing import StandardScaler
 from collections.abc import Iterable
 import typing
-from typing import Callable, Any
+from typing import Callable, Any, Type
 import numpy as np
 import xarray as xr
 import functools
+from pymc.distributions import Distribution
 
 # Standard Scaling with label support
 std_scale = lambda df: pd.DataFrame(
@@ -564,6 +566,18 @@ def gen_masked_predictions(model, masked_generator,
             measures[0][None,...]
         yield Measures(
             iteration=i, measures=measure_array, inputs=masked)
+        
+        
+def extract_dist_shape(dist:Type[Distribution])->list[str]:
+    from inspect import signature
+    '''
+        Extracts the names of a distributions' shape parameters,
+        returning them as strings. For example:
+        .. code-block::
+            extract_dist_shape(pymc.StudentT)
+            ['mu', 'sigma', 'nu']
+    '''
+    return [e for e in signature(dist.logp) if e != 'value']
 
 # def dirichlet_moments(a,standardize:bool=True):
 #     '''
