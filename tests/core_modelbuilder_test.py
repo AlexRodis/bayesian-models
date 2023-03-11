@@ -865,54 +865,131 @@ class TestResponseFunctions(TestFramework):
                 both_missing_missing_tars = obj_both_padded._missing_targets == set(
                     self.functionlib.keys())-set(newlib.keys()),
             )
-            
             self.assertTrue(all(list(
                 e for _,e in condictions.items()
             )))
+            
+    def test_iterator(self):
+        obj = ResponseFunctions(
+            functions = self.functionlib
+        )
+        for (functuple, func) in zip(obj, self.functionlib.items(), 
+                                     strict=True):
+            
+            predicates = dict(
+                name = functuple.name == func[0],
+                function = functuple.func == func[1],
+                target = functuple.target == "f",
+                record = functuple.record
+                
+            )
+            self.assertTrue(all([
+                k for k in predicates.keys()         
+            ]))
+            
         
 class TestResponseComponent(TestResponseFunctions):
         
-    def test_null_function(self):
-        null_ret = self.func_void
-        isnull = None
-        
-    def test_valid_inputs(self):
-        pass
-    
-    def test_multiple_functions(self):
-        pass
-    
-    
-    def test_record(self):
-        pass
-    
-    
-    def test_single_function_application(self):
+    def test_insertions(self):
+        # Skip null set
+        funclib = (f for i,f in enumerate(
+            dict_powerset(self.functionlib)) if i!=0)
+        for lib in funclib:
+            var_names = (f"f_{k}" for k in lib.keys())
+            component = ResponseFunctionComponent(
+                ResponseFunctions(
+                    functions = {
+                        f"f_{k}":v for k, v in lib.items()
+                        }
+                )
+            )
+            modelvars = dict()
+            X = np.random.rand(100,3)
+            with pymc.Model() as model:
+                W = pymc.Normal('W', mu = [1]*3, sigma=[.1]*3)
+                f = pymc.Deterministic('f', pymc.math.dot(X, W)+15)
+                modelvars['W'], modelvars['f'] = W,f
+                component(modelvars)
+            s1 = set(
+                    e.name for e in model.deterministics if e.name != 'f')
+            s2 = set(var_names)
+            c = s1==s2
+            self.assertTrue(c
+            )
 
-        # Generate all possible combinations of selected functions,
-        # excluding and empty dict
-        function_pset = (
-            e for i,e in enumerate(dict_powerset(
-                self.functionlib)) if i!=0
+    def test_var_catalogue(self):
+        from itertools import product
+        # Skip null set
+        funclib = (f for i,f in enumerate(
+            dict_powerset(self.functionlib)) if i!=0)
+        params = product([True,False], funclib)
+        for (bln, lib) in params:
+            var_names = (f"f_{k}" for k in lib.keys())
+            component = ResponseFunctionComponent(
+                ResponseFunctions(
+                    functions = {
+                        f"f_{k}":v for k, v in lib.items()
+                        },
+                    records = {
+                        f"f_{k}":bln for i, (k, v) in enumerate(
+                            lib.items())
+                        },
+                )
             )
-        # Subtests needed here
-        for func_set in function_pset:
-            # Create a fresh object to work with
-            with pymc.Model() as testmodel:
-                W = pymc.Normal('W', mu =[1.0]*3, sigma= [1.0]*3 )
-                X = pymc.Data("X", self.X)
-                f = pymc.Deterministic('f', pymc.math.dot(X,W)+4)
-            res = ResponseFunctionComponent(
-            )
-            with testmodel:
-                res()
+            X = np.random.rand(100,3)
+            with pymc.Model() as model:
+                W = pymc.Normal('W', mu = [1]*3, sigma=[.1]*3)
+                f = pymc.Deterministic('f', pymc.math.dot(X, W)+15)
+                component(dict(
+                    W = W,
+                    f = f
+                ))
             self.assertTrue(
-                set(
-                    e.name for e in testmodel.deterministics
-                    ) == set() 
+                set(component.variables.keys()) == set(
+                    f"f_{k}" for k in lib.keys())
             )
-    
+            
+    def test_invalid_modelspecs(self):
+        component = ResponseFunctionComponent(
+            ResponseFunctions(
+                functions = {
+                    f"f_{k}":v for k, v in self.functionlib.items()
+                    },
+                records = {
+                    f"f_{k}":True for i, (k, v) in enumerate(
+                        self.functionlib.items())
+                    },
+            )
+        )
+        X = np.random.rand(100,3)
+        with pymc.Model() as model:
+            W = pymc.Normal('W', mu = [1]*3, sigma=[.1]*3)
+            f = pymc.Deterministic('f', pymc.math.dot(X, W)+15)
+            self.assertRaises(
+                ValueError, component.__call__, None
+            )
+            illegals = [
+                ["f","f_star"], True, 15,ResponseFunctions(
+                functions = {
+                    f"f_{k}":v for k, v in self.functionlib.items()
+                    },
+                records = {
+                    f"f_{k}":True for i, (k, v) in enumerate(
+                        self.functionlib.items())
+                    },
+            )
+                ]
+            for illegal in illegals:
+                self.assertRaises(
+                    ValueError, component.__call__, illegal
+                )
+            self.assertRaises(
+                RuntimeError, component.__call__, dict(
+                    W = W
+                )
+            )
 
+            
 class TestLink(TestFramework):
     pass
 

@@ -1,7 +1,7 @@
 # Model builder module, containing tools to construct arbitrary
 # models with a common interface
 from dataclasses import dataclass, field, InitVar
-from typing import Any, Type, Callable, Optional, Union
+from typing import Any, Type, Callable, Optional, Union, Iterable
 from abc import ABC, abstractmethod
 import pymc
 from collections import defaultdict, namedtuple
@@ -142,12 +142,12 @@ class ResponseFunctions:
     functions:dict[str, Callable] = field(default_factory=dict)
     application_targets:dict[str, str] = field(default_factory=dict)
     records:dict[str, bool] = field(default_factory=dict)
-    _iter:Optional[Any] = field(init=False)
+    _iter:Optional[Iterable[str]] = field(init=False)
     
     
     def _validate_inputs(self)->None:
         '''
-            Validate inputs by raises on incompatible specs
+            Validate inputs by raising on incompatible specs
         '''
         if self.functions == dict():
             raise ValueError((
@@ -171,6 +171,11 @@ class ResponseFunctions:
             )
 
     def __post_init__(self)->None:
+        '''
+            Collect specifications, validate inputs and fill missing
+            values with defaults. Also initialized a self iterator for 
+            the object
+        '''
         self._sf = set(self.functions.keys())
         self._st = set(self.application_targets.keys())
         self._sr = set(self.records.keys())
@@ -209,7 +214,7 @@ class ResponseFunctions:
         '''
             Return a namedtuple for the next response function
         '''
-        name = next(self._iter)
+        name = next(self._iter) #type: ignore
         return self.get_function(name)
 
     def __iter__(self):
@@ -220,14 +225,39 @@ class ResponseFunctionComponent:
     '''
         Model component representing Response functions. Accepts response
         functions specified via the `ResponseFunctions` class. Adds them
-        to the model and maintains an internal catalogue for variables as
-        `variables`
+        to the model and maintains an internal catalogue for variables added
+        as `variables`
     '''
     responses:ResponseFunctions
     variables:dict=field(init=False, default_factory=dict)
     
-    def __call__(self):
-        pass
+    def __call__(self, modelvars:dict[str,Any]):
+        '''
+            Add specified response functions to the model stack. 
+            `modelvars` is a general index of all the variables present
+            in the model as a 'var_name':var_ref mapping. Supplied by
+            the builder
+        '''
+        if modelvars is None or not isinstance( modelvars, dict):
+            raise ValueError((
+                f"Illegal model variables received {modelvars}"
+                ))
+        for response in self.responses:
+            try:
+                expr = response.func(modelvars[response.target])
+                f_trans = expr
+                if response.record:
+                    f_trans = pymc.Deterministic(
+                        response.name, f_trans
+                    )
+                self.variables[response.name] = f_trans
+            except KeyError:
+                raise RuntimeError((
+                    f"Response function {response.name} attempted to "
+                    f"operate on non-existant model variable "
+                    f"{response.target}. Variable {response.target} not "
+                    "found on the model"
+                ))
             
     
 @dataclass(kw_only=True, slots=True)
