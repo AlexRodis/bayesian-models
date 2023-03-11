@@ -180,7 +180,8 @@ class ResponseFunctions:
             Returns all data kept on a single response function as
             a namedtuple for ease of access. Looks up all specs for
             a response and returns a namedtuple with the results 
-            packaged
+            packaged. Fields provided are `name`, `func`, `target` and
+            `record`
         '''
         try:
             fetched = Response(
