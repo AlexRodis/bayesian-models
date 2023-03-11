@@ -65,6 +65,41 @@ class FreeVariablesComponent:
     variables:Any = field(init=False, default_factory=dict)
     dists:dict[str, Distribution] = field(default_factory=dict)
     
+    def __post_init__(self):
+        '''
+            Verify inputs
+        '''
+        if self.dists  == dict():
+            raise ValueError((
+                "Attempting to create an free variables but no "
+                "distributions have passed"
+            ))
+        if not isinstance(self.dists, dict):
+            raise TypeError((
+                "Expected a dict of free variables names to Distribution "
+                f"object. Saw {self.dists} instead"
+            ))
+        if not all([
+            isinstance(k,str) for k in self.dists.keys()
+        ]):
+            illegals = {
+                k:type(k) for k in self.dists.keys()
+                }
+            raise TypeError((
+                "Variable names must be strings. Received "
+                f"{illegals} instead"
+            ))
+        if not all([
+            isinstance(v, Distribution) for _,v in self.dists.items()
+        ]):
+            illegals = {
+                v:type(v) for _, v in self.dists.items()
+            }
+            raise TypeError((
+                "Items of of input dicts must be instances of `Distribution`. "
+                f"Received {illegals} instead"
+            ))
+    
     def __call__(self)->None:
         for name, dist in self.dists.items():
             d = dist.dist(dist.name, *dist.dist_args,

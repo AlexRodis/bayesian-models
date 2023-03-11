@@ -1042,6 +1042,40 @@ class TestFreeVars(TestFramework):
         self.assertTrue(
             set(free.variables.keys())=={"sigma","beta"}
         )
+        
+    def test_illegal_inputs(self):
+        ds = {
+            'sigma' : distribution(pymc.Normal, "sigma",0,1,
+                                 ),
+            'beta' : distribution(
+                pymc.Beta, "beta", alpha=1.0, beta=5.0
+            )
+        }
+        illegals = [
+            partial(pymc.Normal,'bob' ,0,1),
+            pymc.Normal,
+            dict(),
+            {
+            1 : distribution(pymc.Normal, "sigma",0,1,
+                                 ),
+            0 : distribution(
+                pymc.Beta, "beta", alpha=1.0, beta=5.0
+            )
+            },
+            {
+            'sigma' : partial(pymc.Normal,'bob' ,0,1),
+            'beta' : partial(pymc.Normal,'alice' ,0,1)
+            }
+        ]
+        for i,illegal in enumerate(illegals):
+            if i in (0,1,3,4): 
+                self.assertRaises(
+                    TypeError, FreeVariablesComponent, illegal
+                )
+            else:
+                self.assertRaises(
+                    ValueError, FreeVariablesComponent, illegal
+                )
 
 class TestBuilder(TestFramework):
     pass
