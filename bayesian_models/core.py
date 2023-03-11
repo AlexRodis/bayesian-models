@@ -4,12 +4,13 @@ from dataclasses import dataclass, field
 from typing import Any, Type, Callable, Optional, Union
 from abc import ABC, abstractmethod
 import pymc
-from collections import defaultdict
+from collections import defaultdict, namedtuple
 from functools import partial
 from bayesian_models.data import Data
 from bayesian_models.utilities import extract_dist_shape
 
 
+Response = namedtuple("Response", ["name", "func", "target", "record"])
 ModelVars = defaultdict(default_factory = lambda : None)
 Real = Union[float, int]
 
@@ -90,19 +91,128 @@ class LinkFunctionComponent:
     def __call__(self):
         raise NotImplementedError()
     
+@dataclass(slots=True)
+class ResponseFunctions:
+    '''
+        Data container for Response functions. Accepts three mappings
+        as dicts. All three map strings representing variable names for
+        the result of the response to a parameter. The `functions` argument
+        maps names to the actual functions themselves. The 
+        `application_targets` parameter maps transformed variable names
+        to the variables that are inputs to the transformation. The
+        `records` parameter maps variable names to a boolean representing
+        whether they should be recorded or not. `True` will wrap the
+        result of the transform into a deterministic node, False will not
+        The `application_targets` and `records` parameters can be partially
+        or completely omitted. In this case, record defaults to True
+        and the application_target default to 'f' a general name for the
+        raw model output. If any variable is found in either 
+        `application_targets` or `records` but not in `functions` an
+        exception is raised, since not reasobly inference can be made for
+        the tranform function instead. Example usage:
+        
+        .. code-block::
+                    # Pass all parameters explicitly (recommended)
+            In [4]: r = ResponseFunctions(
+            ...:     functions = dict(exp = pc.math.exp, tanh = pc.math.tanh),
+            ...:     records = dict(exp=True, tanh=False),
+            ...:     application_targets = dict(exp="f", tanh="exp")
+            ...:     )
+            # Partially ommit application_targets using defaults 'f'
+            In [5]: r = ResponseFunctions(
+            ...:     functions = dict(exp = pc.math.exp, tanh = pc.math.tanh),
+            ...:     records = dict(exp=True, tanh=False),
+            ...:     application_targets = dict(tanh="exp")
+            ...:     )
+            # Pass the desired Callables leaving everything to their defaults
+            # In this case two different response functions are applied
+            # to the same input 'f'. Both are recorded with `pymc.Deterministic`
+            # the name is the key provided
+            In [6]: r = ResponseFunctions(
+            ...:     functions = dict(exp = pc.math.exp, tanh = pc.math.tanh)
+            ...:     )
     
-@dataclass(kw_only=True, slots=True)
+    '''
+    
+    _sf:set[str] = field(init=False, default_factory=set)
+    _st:set[str] = field(init=False, default_factory=set)
+    _sr:set[str] = field(init=False, default_factory=set)
+    _missing_records:set[str] = field(init=False, default_factory=set)
+    _missing_targets:set[str] = field(init=False, default_factory=set)
+    functions:dict[str, Callable] = field(default_factory=dict)
+    application_targets:dict[str, str] = field(default_factory=dict)
+    records:dict[str, bool] = field(default_factory=dict)
+    
+    
+    def _validate_inputs(self)->None:
+        '''
+            Validate inputs by raises on incompatible specs
+        '''
+        if self._sr-self._sf!=set():
+            raise ValueError(
+                ('New response variable specified in records not '
+                 f'specified in function. Variables {self._sr-self._sf} not found'
+                 'in provided functions')
+            )
+        elif self._st-self._sf:
+            raise ValueError(
+                ('New response variable specified in application_targets'
+                 'not '
+                 f'specified in function. Variables {self._st-self._sf} not found'
+                 'in provided functions')
+            )
+
+    def __post_init__(self)->None:
+        self._sf = set(self.functions.keys())
+        self._st = set(self.application_targets.keys())
+        self._sr = set(self.records.keys())
+        self._validate_inputs()
+        self._missing_records:set[str] = self._sf-self._sr
+        self._missing_targets:set[str] = self._sf-self._st
+        self.records = self.records|{
+            k:True for k in self._missing_records}
+        self.application_targets = self.application_targets|{
+            k:"f" for k in self._missing_targets
+        }
+    
+    def get_function(self, func:str)->Response:
+        '''
+            Returns all data kept on a single response function as
+            a namedtuple for ease of access. Looks up all specs for
+            a response and returns a namedtuple with the results 
+            packaged
+        '''
+        try:
+            fetched = Response(
+                name = func,
+                func = self.functions[func],
+                target = self.application_targets[func],
+                record = self.records[func]
+            )
+            return fetched
+        except KeyError:
+            raise RuntimeError((
+                f"Requested response function {func} not found"
+                ))
+
+
+@dataclass( slots=True)
 class ResponseFunctionComponent:
     '''
-        Adds a response function to the model. The models' outputs will be
-        passed through this function, prior to their inclusion to the
-        likelihood. The `record` variable is a boolean which decides if
-        the result will be recorded as Deterministic node of not
-    '''
-    variables:dict=field(init=False,default_factory=dict)
-    record:bool = False
-    response_function:dict[str, Callable] = field(default_factory=dict)
+        Adds on or more response functions to the model.
 
+        response_functions:dict[str, Response]
+    '''
+    responses:ResponseFunctions
+    variables:dict=field(init=False, default_factory=dict)
+    
+
+    def __post_init__(self)->None:
+        '''
+            Validate coherent inputs
+        '''
+        pass
+    
     def __call__(self):
         pass
     
@@ -166,6 +276,21 @@ class LikelihoodComponent:
     
     def __call__(self, observed,
                  **var_mapping:dict[str, pymc.Distribution])->None:
+        if observed is None:
+            raise RuntimeError((
+                "Attempting to specify a likelihood without "
+                f"observations. Observed variable {self.observed} "
+                "not found in the model. Did you forget to specify "
+                "inputs or update their name?"
+                ))
+        if any([
+            var_mapping == dict(), 
+            not isinstance(var_mapping, dict),
+            ]):
+            raise ValueError(
+                ("Invalid variable mapping. Expected "
+                 "a dict of strings to Distribution, received "
+                 f"{var_mapping} instead"))
         y_obs = self.distribution(
             self.name, observed = observed,
             **var_mapping
@@ -199,8 +324,36 @@ class CoreModelComponent:
     # Make this consistant with FreeVars by adding Distribution nametuples
     
     distributions:dict[str, Distribution]= field(default_factory = dict)
-    variables:dict = field(default_factory=dict)
+    variables:dict = field(init=False, default_factory=dict)
     model:Optional[pymc.Model] = None
+    
+    def __post_init__(self)->None:
+        '''
+            Check for illegal inputs
+        '''
+        
+        if self.distributions == dict():
+            raise ValueError(("Attempting to initialize core component "
+                              "with no variables"))
+        if not isinstance(self.distributions, dict):
+            raise ValueError(
+                ("distributions argument must be a dictionary whose "
+                 "keys are variable names and values are "
+                 "`bayesian_models.Distribution` instances. Received "
+                 f"{self.distributions} of type "
+                 f"{type(self.distributions)} instead")
+                )
+        vs = self.distributions.items()
+        try:
+            assert all(isinstance(e, Distribution) for _,e in vs)
+        except AssertionError:
+            illegal:dict[str, Any] = {
+                k:type(v) for k,v in vs if not isinstance(v, Distribution)
+                }
+            raise ValueError((
+                "Core component distributions must be supplied as "
+                "`bayesian_model.Distribution` instances. Received "
+                f"illegal values {illegal}"))
 
     def __call__(self)->None:
         for key_name, dist in self.distributions.items():
@@ -208,8 +361,8 @@ class CoreModelComponent:
                 **dist.dist_kwargs
                 )
             self.variables[key_name] = d
+       
             
-        
 class LinearRegressionCoreComponent(CoreModelComponent):
     '''
         Core model component for linear regression, specified as:
@@ -218,14 +371,61 @@ class LinearRegressionCoreComponent(CoreModelComponent):
         Inserts the deterministic variable 'f' to the model
     '''
     
+    var_names = dict(
+        slope = "W", intercept = "b", 
+        data = "inputs", equation = "f"
+    )
+    model_vars = {"slope", "intercept", "data", "equation"}
+    
+    def __init__(self, distributions:dict[str, Distribution]=dict(),
+                 variables:dict=dict(),
+                 var_names:dict[str, str] = {},
+                 model:Optional[pymc.Model] = None)->None:
+        from warnings import warn
+        super().__init__(distributions = distributions, 
+                         variables = variables, model = model)
+        s1:set[str] = set(var_names.keys())
+        s2:set[str] = set(
+            LinearRegressionCoreComponent.var_names.keys()
+            )
+        cls = LinearRegressionCoreComponent
+        if var_names == dict():
+            self.var_names = LinearRegressionCoreComponent.var_names
+        else:
+            if s1^s2==set():
+                self.var_names = var_names
+            elif s1-s2 != set():
+                warn((
+                    f"Unknown model variable found {s1-s2} and will be "
+                    f"ignored. Valid variables are {cls.model_vars}"
+                    ))
+                self.var_names ={
+                    k:v for k,v in var_names.items() if k not in s1-s2
+                    }
+                
+            else:
+                warn((
+                    f"Missing model variables found {s2-s1} and will be "
+                    "set to their defaults. Valid variables are "
+                    f"{cls.model_vars}"
+                    ))
+                self.var_names = {
+                    k:v for k,v in var_names.items() if k in s1^s2
+                    } | {
+                        k:v for k,v in cls.var_names if k in s2-s1
+                    }
+                
+
+        
     def __call__(self)->None:
         super().__call__()
-        W = self.variables['W']
-        X = self.variables['inputs']
-        b = self.variables['b']
+        W = self.variables[self.var_names['slope']]
+        X = self.variables[self.var_names['data']]
+        b = self.variables[self.var_names['intercept']]
+        f_name = self.var_names['equation']
         expr = W*X + b
-        f = pymc.Deterministic('f', expr)
-        self.variables['f'] = f
+        f = pymc.Deterministic(f_name, expr)
+        self.variables[f_name] = f
 
 
 class NeuralNetCoreComponent(CoreModelComponent):

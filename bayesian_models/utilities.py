@@ -5,7 +5,7 @@ from abc import ABC, abstractmethod
 from sklearn.preprocessing import StandardScaler
 from collections.abc import Iterable
 import typing
-from typing import Callable, Any, Type
+from typing import Callable, Any, Type, Iterable, Sequence
 import numpy as np
 import xarray as xr
 import functools
@@ -578,6 +578,122 @@ def extract_dist_shape(dist:Type[Distribution])->list[str]:
             ['mu', 'sigma', 'nu']
     '''
     return [e for e in signature(dist.logp) if e != 'value']
+
+
+def powerset(sequence:Sequence)->Iterable:
+    '''
+        Powerset implementation in pure python. Returns all possible
+        'subsets' of input sequence, including the empty set. Evaluation
+        is lazy, and each element returned is a tuple of the elements
+        of the original iterable. Example:
+        
+        .. code-block::
+            # The input here are the keys
+            ittr = dict(one=1, two=2, three=3, four=4)
+            In [7]: list(powerset(ittr))
+            Out[7]: 
+            [(),
+            ('one',),
+            ('two',),
+            ('three',),
+            ('four',),
+            ('one', 'two'),
+            ('one', 'three'),
+            ('one', 'four'),
+            ('two', 'three'),
+            ('two', 'four'),
+            ('three', 'four'),
+            ('one', 'two', 'three'),
+            ('one', 'two', 'four'),
+            ('one', 'three', 'four'),
+            ('two', 'three', 'four'),
+            ('one', 'two', 'three', 'four')]
+
+            # Another example, with the iterable being tuples of key/value
+            # pairs
+            In [8]: list(powerset(ittr.items()))
+            Out[8]: 
+            [(),
+            (('one', 1),),
+            (('two', 2),),
+            (('three', 3),),
+            (('four', 4),),
+            (('one', 1), ('two', 2)),
+            (('one', 1), ('three', 3)),
+            (('one', 1), ('four', 4)),
+            (('two', 2), ('three', 3)),
+            (('two', 2), ('four', 4)),
+            (('three', 3), ('four', 4)),
+            (('one', 1), ('two', 2), ('three', 3)),
+            (('one', 1), ('two', 2), ('four', 4)),
+            (('one', 1), ('three', 3), ('four', 4)),
+            (('two', 2), ('three', 3), ('four', 4)),
+            (('one', 1), ('two', 2), ('three', 3), ('four', 4))]
+
+    
+    '''
+    from itertools import chain, combinations
+    return chain.from_iterable(
+        combinations(sequence, r) for r in range(len(sequence)+1)
+        )
+
+def dict_powerset(dictionary:dict, keys_only:bool=False)->Iterable:
+    '''
+        Dictionary powerset function. Lazily returns all possible 
+        'sub-dictionaries' from an input dict - including an emtpy
+        dict. Returns entire dicts if `keys_only=True` or tuples of
+        keys otherwise. Examples:
+        
+        .. code-block::
+            In [1]: ittr = dict(one=1, two=2, three=3, four=4)
+            In [2]: list(dict_powerset(ittr))
+            Out[2]: 
+            [{},
+            {'one': 1},
+            {'two': 2},
+            {'three': 3},
+            {'four': 4},
+            {'one': 1, 'two': 2},
+            {'one': 1, 'three': 3},
+            {'one': 1, 'four': 4},
+            {'two': 2, 'three': 3},
+            {'two': 2, 'four': 4},
+            {'three': 3, 'four': 4},
+            {'one': 1, 'two': 2, 'three': 3},
+            {'one': 1, 'two': 2, 'four': 4},
+            {'one': 1, 'three': 3, 'four': 4},
+            {'two': 2, 'three': 3, 'four': 4},
+            {'one': 1, 'two': 2, 'three': 3, 'four': 4}]
+            
+            
+            In [3]: list(dict_powerset(ittr, keys_only=True))
+            Out[3]: 
+            [(),
+            ('one',),
+            ('two',),
+            ('three',),
+            ('four',),
+            ('one', 'two'),
+            ('one', 'three'),
+            ('one', 'four'),
+            ('two', 'three'),
+            ('two', 'four'),
+            ('three', 'four'),
+            ('one', 'two', 'three'),
+            ('one', 'two', 'four'),
+            ('one', 'three', 'four'),
+            ('two', 'three', 'four'),
+            ('one', 'two', 'three', 'four')]
+
+    '''
+    expr = dictionary.keys if keys_only else dictionary.items
+    if keys_only:
+        return powerset(expr())
+    else:
+        return map(dict, powerset(expr()))
+
+
+
 
 # def dirichlet_moments(a,standardize:bool=True):
 #     '''
