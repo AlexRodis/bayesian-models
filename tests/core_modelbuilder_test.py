@@ -21,6 +21,24 @@ from bayesian_models.utilities import powerset, dict_powerset
 
 def distribution(dist:pymc.Distribution,name:str,
                  *args, **kwargs)->Distribution:
+    '''
+        Convenience method for fresh `Distribution` instance creation.
+        Accepts a a distribution and a name, along with optional args
+        and kwargs and returns a `Distribution` object matching those
+        parameters. Example usage:
+        .. code-block::
+            distribution(pymc.Normal, 'W', 0,1)
+            # Equivalent to Distribution(dist = pymc.Normal, 
+            # dist_name = 'W', dist_args = (0,1), dist_kwargs=dict()
+            # )
+            distribution(pymc.Beta, 'b', alpha=1,beta=1)
+            # Equivalent to Distribution(dist=pymc.Beta, dist_name='b',
+            # dist_args=tuple(), dist_kwargs=dict(alpha=1, beta=1))
+            distribution(pymc.StudentT, 'T', 0, sigma=1, nu=2)
+            # Equivalent to Distribution(dist=pymc.StudentT, 
+            # dist_name='b', dist_args=(0,), dist_kwargs=dict(sigma=1,
+            # nu=2))
+    '''
     return Distribution(dist = dist, name = name,
                         dist_args = args, dist_kwargs = kwargs)
 
@@ -994,7 +1012,36 @@ class TestLink(TestFramework):
     pass
 
 class TestFreeVars(TestFramework):
-    pass
+    
+    def test_insertions(self):
+        ds = dict(
+            sigma = distribution(pymc.Normal, "sigma",0,1,
+                                 ),
+            beta = distribution(
+                pymc.Beta, "beta", alpha=1.0, beta=5.0
+            )
+        )
+        free = FreeVariablesComponent(dists=ds)
+        with pymc.Model() as model:
+            free()
+        self.assertTrue(
+            set(ds.keys()).issubset(set(e.name for e in model.free_RVs)
+        ))
+        
+    def test_variables(self):
+        ds = dict(
+            sigma = distribution(pymc.Normal, "sigma",0,1,
+                                 ),
+            beta = distribution(
+                pymc.Beta, "beta", alpha=1.0, beta=5.0
+            )
+        )
+        free = FreeVariablesComponent(dists=ds)
+        with pymc.Model() as model:
+            free()
+        self.assertTrue(
+            set(free.variables.keys())=={"sigma","beta"}
+        )
 
 class TestBuilder(TestFramework):
     pass
