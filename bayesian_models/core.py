@@ -1,13 +1,13 @@
 # Model builder module, containing tools to construct arbitrary
 # models with a common interface
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, InitVar
 from typing import Any, Type, Callable, Optional, Union
 from abc import ABC, abstractmethod
 import pymc
 from collections import defaultdict, namedtuple
 from functools import partial
 from bayesian_models.data import Data
-from bayesian_models.utilities import extract_dist_shape
+from bayesian_models.utilities import extract_dist_shape, invert_dict
 
 
 Response = namedtuple("Response", ["name", "func", "target", "record"])
@@ -142,6 +142,7 @@ class ResponseFunctions:
     functions:dict[str, Callable] = field(default_factory=dict)
     application_targets:dict[str, str] = field(default_factory=dict)
     records:dict[str, bool] = field(default_factory=dict)
+    _iter:Optional[Any] = field(init=False)
     
     
     def _validate_inputs(self)->None:
@@ -181,6 +182,7 @@ class ResponseFunctions:
         self.application_targets = self.application_targets|{
             k:"f" for k in self._missing_targets
         }
+        self._iter = iter(self.functions.keys())
     
     def get_function(self, func:str)->Response:
         '''
@@ -202,27 +204,31 @@ class ResponseFunctions:
             raise RuntimeError((
                 f"Requested response function {func} not found"
                 ))
+            
+    def __next__(self):
+        '''
+            Return a namedtuple for the next response function
+        '''
+        name = next(self._iter)
+        return self.get_function(name)
 
+    def __iter__(self):
+        return self
 
-@dataclass( slots=True)
+@dataclass(slots=True)
 class ResponseFunctionComponent:
     '''
-        Adds on or more response functions to the model.
-
-        response_functions:dict[str, Response]
+        Model component representing Response functions. Accepts response
+        functions specified via the `ResponseFunctions` class. Adds them
+        to the model and maintains an internal catalogue for variables as
+        `variables`
     '''
     responses:ResponseFunctions
     variables:dict=field(init=False, default_factory=dict)
     
-
-    def __post_init__(self)->None:
-        '''
-            Validate coherent inputs
-        '''
-        pass
-    
     def __call__(self):
         pass
+            
     
 @dataclass(kw_only=True, slots=True)
 class ModelAdaptorComponent:
