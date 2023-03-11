@@ -711,6 +711,11 @@ class TestResponseFunctions(TestFramework):
         cls.custom_func = custom_func
         cls.func_void = func_void
     
+    def test_empty_call(self):
+        self.assertRaises(
+            ValueError, ResponseFunctions
+        )
+    
     def test_basic_functionality(self):
         obj = ResponseFunctions(
             functions = { 
@@ -884,8 +889,11 @@ class TestResponseComponent(TestResponseFunctions):
     
     def test_single_function_application(self):
 
+        # Generate all possible combinations of selected functions,
+        # excluding and empty dict
         function_pset = (
-            e for i,e in enumerate(dict_powerset(functions)) if i!=0
+            e for i,e in enumerate(dict_powerset(
+                self.functionlib)) if i!=0
             )
         # Subtests needed here
         for func_set in function_pset:

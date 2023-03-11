@@ -148,6 +148,13 @@ class ResponseFunctions:
         '''
             Validate inputs by raises on incompatible specs
         '''
+        if self.functions == dict():
+            raise ValueError((
+                "Attempting to add response functions but no functional "
+                "mapping was provided. `functions` must be a dict mapping "
+                f"new variable names to Callables. Received {self.functions} "
+                "instead"
+                ))
         if self._sr-self._sf!=set():
             raise ValueError(
                 ('New response variable specified in records not '
