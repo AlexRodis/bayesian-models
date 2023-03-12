@@ -10,7 +10,7 @@ from bayesian_models.core import CoreModelComponent, ModelDirector
 from bayesian_models.core import FreeVariablesComponent
 from bayesian_models.core import LinearRegressionCoreComponent
 from bayesian_models.core import Distribution, CoreModelBuilder
-from bayesian_models.core import LikelihoodComponent
+from bayesian_models.core import LikelihoodComponent, distribution
 from bayesian_models.core import ModelAdaptorComponent
 from bayesian_models.core import ResponseFunctionComponent
 from bayesian_models.core import ResponseFunctions
@@ -18,31 +18,6 @@ from bayesian_models.core import NeuralNetCoreComponent
 from bayesian_models.data import Data
 from bayesian_models.models import Layer
 from bayesian_models.utilities import powerset, dict_powerset
-
-def distribution(dist:pymc.Distribution,name:str,
-                 *args, transform:Optional[Callable]=None, 
-                 **kwargs)->Distribution:
-    '''
-        Convenience method for fresh `Distribution` instance creation.
-        Accepts a a distribution and a name, along with optional args
-        and kwargs and returns a `Distribution` object matching those
-        parameters. Example usage:
-        .. code-block::
-            distribution(pymc.Normal, 'W', 0,1)
-            # Equivalent to Distribution(dist = pymc.Normal, 
-            # dist_name = 'W', dist_args = (0,1), dist_kwargs=dict()
-            # )
-            distribution(pymc.Beta, 'b', alpha=1,beta=1)
-            # Equivalent to Distribution(dist=pymc.Beta, dist_name='b',
-            # dist_args=tuple(), dist_kwargs=dict(alpha=1, beta=1))
-            distribution(pymc.StudentT, 'T', 0, sigma=1, nu=2)
-            # Equivalent to Distribution(dist=pymc.StudentT, 
-            # dist_name='b', dist_args=(0,), dist_kwargs=dict(sigma=1,
-            # nu=2))
-    '''
-    return Distribution(dist = dist, name = name,
-                        dist_args = args, dist_kwargs = kwargs,
-                        dist_transform = transform)
 
 # class TestCoreModule(unittest.TestCase):
     
@@ -1320,7 +1295,7 @@ class TestBuilder(TestFramework):
         )
         b = ModelDirector(
             core, [like],
-            free_vars_comp = fvars
+            free_vars_component = fvars
             
         )
         m = b()
@@ -1365,7 +1340,7 @@ class TestBuilder(TestFramework):
         )
         b = ModelDirector(
             core, [like],
-            free_vars_comp = fvars
+            free_vars_component = fvars
             
         )
         self.assertRaises(
@@ -1403,7 +1378,7 @@ class TestBuilder(TestFramework):
         )
         b = ModelDirector(
             core, [like],
-            free_vars_comp = fvars
+            free_vars_component = fvars
             
         )
         self.assertRaises(
@@ -1447,7 +1422,7 @@ class TestBuilder(TestFramework):
         )
         b = ModelDirector(
             core, [like],
-            free_vars_comp = fvars
+            free_vars_component = fvars
         )()
         self.assertTrue(all([
             set( v.name for v in b.model.free_RVs)=={'σ', 'ν', 'W','b'},
@@ -1495,7 +1470,7 @@ class TestCompositeModels(TestFramework):
         )
         b = ModelDirector(
             core, [like],
-            free_vars_comp = fvars
+            free_vars_component = fvars
         )()
         self.assertTrue(all([
             {'β0', 'β1', 'ε'}<=set( v.name for v in b.model.free_RVs),

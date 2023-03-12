@@ -1,11 +1,10 @@
 # Model builder module, containing tools to construct arbitrary
 # models with a common interface
-from dataclasses import dataclass, field, InitVar
+from dataclasses import dataclass, field
 from typing import Any, Type, Callable, Optional, Union, Iterable
 from abc import ABC, abstractmethod
 import pymc
 from collections import defaultdict, namedtuple
-from functools import partial
 from bayesian_models.data import Data
 from bayesian_models.utilities import extract_dist_shape, invert_dict
 
@@ -13,8 +12,6 @@ from bayesian_models.utilities import extract_dist_shape, invert_dict
 Response = namedtuple("Response", ["name", "func", "target", "record"])
 ModelVars = defaultdict(default_factory = lambda : None)
 Real = Union[float, int]
-
-
 
 @dataclass(slots=True, kw_only = True)
 class Distribution:
@@ -26,6 +23,25 @@ class Distribution:
         Optionally  a `name` can be provided.
         NOTE: For data nodes, the `dist` argument should by the function 
         `pymc.Data`
+        Example usage:
+        
+        .. code-block::
+        
+            In [2]: dist = Distribution(
+                ...:     dist = pymc.Normal, name = 'some_name', 
+                ...:     dist_args = (0, dist_kwargs = dict(sigma=1)
+                ...:     ) # Basic usage. Internaly equivalent  to 
+                ...:     #`some_name=pymc.Normal('some_name', 0, sigma=1)`
+
+            In [3]: dist = Distribution(
+                ...:     dist = pymc.Exponential, name='exp', dist_args = (1/29.0,),
+                ...:     dist_transform = lambda d:d+1
+                ...: ) # Modify a base distribution
+
+            In [4]: dist = Distribution( name='inputs', dist=pymc.Data,
+                ...:     dist_args = (np.random.rand(50,5), ),# Numpy ndarray,
+                ...:     dist_kwargs = dict(mutable=True)
+                ...:     )
     '''
     name:str = ''
     dist:Union[Type[
@@ -48,6 +64,32 @@ class Distribution:
         ]):
             raise ValueError(("Illegal values received"))
         
+def distribution(dist:pymc.Distribution,name:str,
+                 *args, transform:Optional[Callable]=None, 
+                 **kwargs)->Distribution:
+    '''
+        Convenience method for fresh `Distribution` instance creation.
+        Accepts a a distribution and a name, along with optional args
+        and kwargs and returns a `Distribution` object matching those
+        parameters. Example usage:
+        
+        .. code-block::
+        
+            distribution(pymc.Normal, 'W', 0,1)
+            # Equivalent to Distribution(dist = pymc.Normal, 
+            # dist_name = 'W', dist_args = (0,1), dist_kwargs=dict()
+            # )
+            distribution(pymc.Beta, 'b', alpha=1,beta=1)
+            # Equivalent to Distribution(dist=pymc.Beta, dist_name='b',
+            # dist_args=tuple(), dist_kwargs=dict(alpha=1, beta=1))
+            distribution(pymc.StudentT, 'T', 0, sigma=1, nu=2)
+            # Equivalent to Distribution(dist=pymc.StudentT, 
+            # dist_name='b', dist_args=(0,), dist_kwargs=dict(sigma=1,
+            # nu=2))
+    '''
+    return Distribution(dist = dist, name = name,
+                        dist_args = args, dist_kwargs = kwargs,
+                        dist_transform = transform)
 
 @dataclass(slots=True)
 class FreeVariablesComponent:
@@ -56,7 +98,9 @@ class FreeVariablesComponent:
         model not explicitly involved in the core model itself, i.e. the
         equations describing the model. For example the noise parameter in
         linear regression:
+        
         .. math::
+        
             w0 \thicksim \mathcal{N}(0,1)
             w1 \thicksim \mathcal{N}(0,1)
             μ = X*w0+w1
@@ -64,7 +108,17 @@ class FreeVariablesComponent:
             y \thicksim \mathcal{N}(μ, σ)
         
         The `dists` argument supplied is a `dict` or name to `Distribution`
-        instances, representing the distributions to be inserted to the model
+        instances, representing the distributions to be inserted to the model.
+        Example usage:
+            .. code-block::
+            
+                In [21]: fvars = FreeVariablesComponent(
+                    ...:     dict(
+                    ...:         sigma = Distribution(name='sigma',
+                    ....:        dist=pymc.Normal,
+                    ...:         dist_args=(0,1))
+                    ...:         ) # Insert random variable 'sigma' to 
+                    ...:         # the model   
     '''
     
     variables:Any = field(init=False, default_factory=dict)
@@ -133,15 +187,16 @@ class ResponseFunctions:
         the tranform function instead. Example usage:
         
         .. code-block::
-                    # Pass all parameters explicitly (recommended)
+        
+            # Pass all parameters explicitly (recommended)
             In [4]: r = ResponseFunctions(
-            ...:     functions = dict(exp = pc.math.exp, tanh = pc.math.tanh),
+            ...:     functions = dict(exp = pymc.math.exp, tanh = pymc.math.tanh),
             ...:     records = dict(exp=True, tanh=False),
             ...:     application_targets = dict(exp="f", tanh="exp")
             ...:     )
             # Partially ommit application_targets using defaults 'f'
             In [5]: r = ResponseFunctions(
-            ...:     functions = dict(exp = pc.math.exp, tanh = pc.math.tanh),
+            ...:     functions = dict(exp = pymc.math.exp, tanh = pymc.math.tanh),
             ...:     records = dict(exp=True, tanh=False),
             ...:     application_targets = dict(tanh="exp")
             ...:     )
@@ -150,7 +205,7 @@ class ResponseFunctions:
             # to the same input 'f'. Both are recorded with `pymc.Deterministic`
             # the name is the key provided
             In [6]: r = ResponseFunctions(
-            ...:     functions = dict(exp = pc.math.exp, tanh = pc.math.tanh)
+            ...:     functions = dict(exp = pymc.math.exp, tanh = pymc.math.tanh)
             ...:     )
     
     '''
@@ -247,7 +302,18 @@ class ResponseFunctionComponent:
         Model component representing Response functions. Accepts response
         functions specified via the `ResponseFunctions` class. Adds them
         to the model and maintains an internal catalogue for variables added
-        as `variables`
+        as `variables`. Example usage:
+        
+        .. code-block::
+        
+            In [2]: res_comp = ResponseFunctionComponent(
+                ...:            ResponseFunctions(
+                ...:            functions = dict(exp = pymc.math.exp, 
+                ....:           tanh = pymc.math.tanh),
+                ...:            records = dict(exp=True, tanh=False),
+                ...:            application_targets = dict(exp="f", 
+                ....:           tanh="exp")
+                ...:            ))
     '''
     responses:ResponseFunctions
     variables:dict=field(init=False, default_factory=dict)
@@ -290,7 +356,20 @@ class ModelAdaptorComponent:
         representing variable names, and whose items are Callables that
         accept and return `theano` tensors. The `record` boolean argument
         decides if the result of all "splits" will be wrapped in a
-        deterministic node
+        deterministic node. Example usage:
+        
+        .. code-block::
+        
+            In [2]: adaptor = ModelAdaptorComponent(
+               ...:           record = True, # Keep the new variables as 
+               ...:           # Deterministic nodes for later access
+               ...:           var_mapping = dict(
+               ...:               mu = lambda tensor: tensor.T[0,...],
+               ...:               sigma = lambda tensor: tensor.T[1,...],
+               ...:           ) # Split model output 'f', a tensor, into two 
+               ...:             # tensors named 'mu' and 'sigma', wrapped as 
+               ...:             # deterministics in the model.
+               ...: 
     
     '''
     
@@ -326,7 +405,23 @@ class LikelihoodComponent:
         `observed` correspond to the name of the likelihood object itself
         and the name of the observed data node in the model. Should generaly
         be left to their defaults, except when the model has multiple
-        likelihood/observed nodes
+        likelihood/observed nodes. Example usage:
+        
+        .. code-block::
+        
+            In [37]: like = LikelihoodComponent(
+            ...:     name = 'y_obs', # Default likelihood name
+            ...:     observed = 'observed', # Default name for
+            ...:     # the name of the input data node
+            ...:     distribution = pymc.Dirichlet, # Defaults
+            ...:     # to pymc.Normal
+            ...:     var_mapping = dict(
+            ...:     a = 'f',
+            ...:     ) # Maping of distribution shape parameters
+            ...:     # to model parameter names. 'f' is usually
+            ...:     # the default name for the core model
+            ...:     # output
+            ...:     )
     '''
     name:str = 'y_obs'
     observed:str = 'outputs'
@@ -384,9 +479,21 @@ class CoreModelComponent:
         component and extend its call method by defining the models' 
         equations in deterministic nodes. If a concrete model produces some
         explicit quantity as an output, this should generally  be named
-        'f'. 
+        'f'. Example usage:
+        
+        .. code-block::
+        
+            In [8]: core = CoreModelComponent(
+               ...:     distributions = dict(
+               ...:         beta0 = distribution(pymc.Normal,
+               ...:         'beta0', 0,1),
+               ...:         beta1 = distribution(pymc.Normal,
+               ...:         'beta1', mu = 0, sigma=1),
+               ...:     ) # OLS-like example, using convenience
+               ...:       # method `distribution` to access 
+               ...:       # the `Distribution` class
+               ...: )
     '''
-    # Make this consistant with FreeVars by adding Distribution nametuples
     
     distributions:dict[str, Distribution]= field(default_factory = dict)
     variables:dict = field(init=False, default_factory=dict)
@@ -543,6 +650,19 @@ class CoreModelBuilder(ModelBuilder):
             
             - likelihoods:Sequence[LikelihoodComponent] := A collection
             of likelihood components, to be added to the model. (REQUIRED)
+        Example usage:
+        
+        .. code-block:: python
+        
+            # Will not work with empty objects. All except the first
+            # two arguements are optional and can be ignored
+            d = CoreModelBuilder(
+                core_model=CoreModelComponent(),
+                likelihoods=[LikelihoodComponent(), ...],
+                response  = ResponseFunctionComponent(),
+                free_vars = FreeVariablesComponent(),
+                adaptor = ModelAdaptorComponent(),
+                )
     '''
     
     core_model:Optional[CoreModelComponent] = None
@@ -595,6 +715,11 @@ class CoreModelBuilder(ModelBuilder):
             
     
     def build(self)->None:
+        '''
+            Call specified components, in order, to add the variables of
+            each to the model. Maintains an internal catalogue of variable
+            names maped to refs to the objects
+        '''
         self.core_model()
         self.model_variables = self.model_variables|self.core_model.variables
         if self.free_vars is not None:
@@ -631,8 +756,8 @@ class CoreModelBuilder(ModelBuilder):
             # Lots of back-and-forth between builder and LikelihoodComponent object
             # See if it can be refactored out. Redux has a similar patter
             outputs = self.model_variables.get('outputs')
-            observed = outputs if outputs is not None else self.model_variables.get(
-                                                                                    likelihood.observed)
+            observed = outputs if outputs is not None else \
+                self.model_variables.get(likelihood.observed)
             likelihood(observed,
                             **likelihood_kwargs)
     
@@ -651,7 +776,19 @@ class CoreModelBuilder(ModelBuilder):
 class ModelDirector:
     '''
         Model construction object. Delegates model construction to a
-        specified model builder
+        specified model builder. Example usage:
+        
+        .. code-block::
+        
+            # Will not work with empty objects. All except the first
+            # two arguements are optional and can be ignored
+            d = ModelDirector(
+                CoreModelComponent(),
+                LikelihoodComponent(),
+                response_component  = ResponseFunctionComponent(),
+                free_vars_component = FreeVariablesComponent(),
+                adaptor_component = ModelAdaptorComponent(),
+            )
     '''
     builder:Type[ModelBuilder] = CoreModelBuilder
     
@@ -659,12 +796,12 @@ class ModelDirector:
                  core_component:CoreModelComponent,
                  likelihood_component:list[LikelihoodComponent],
                  response_component:Optional[ResponseFunctionComponent] = None,
-                 free_vars_comp:Optional[FreeVariablesComponent] = None,
+                 free_vars_component:Optional[FreeVariablesComponent] = None,
                  adaptor_component:Optional[ModelAdaptorComponent] = None
                  )->None:
     
         self.builder:ModelBuilder = self.builder(
-            free_vars = free_vars_comp,
+            free_vars = free_vars_component,
             adaptor = adaptor_component,
             response = response_component,
             core_model = core_component,
