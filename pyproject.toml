@@ -6,7 +6,7 @@ build-backend = 'setuptools.build_meta'
 
 [project]
 
-name = "bayesian_models"
+name = "bayesian-models"
 
 version = "0.0.1"
 
@@ -28,24 +28,13 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 
-dependencies = [   
-        'pymc>=5.0.2',
-        'scikit-learn>=1.2.1',
-        'interval',
-        ]
-
 [project.urls]
 
 "Homepage" = "https://github.com/AlexRodis/bayesian_models"
 
 "Bug Tracker" = "https://github.com/AlexRodis/bayesian_models/issues"
 
-[project.optional-dependencies]
-GPU = [
-	'jax==0.4.1',
-	'jaxlib==0.4.1',
-]
 
 [tool.setuptools]
 
-packages = ["bayesian_models"]
+packages = ["bayesian-models"]
