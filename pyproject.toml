@@ -8,7 +8,7 @@ build-backend = 'setuptools.build_meta'
 
 name = "bayesian-models"
 
-version = "0.0.1"
+version = "0.0.3"
 
 authors = [
   { name="Alexander Rodis", email="alexanderrhodis@gmail.com" },
@@ -24,7 +24,6 @@ readme = 'README.md'
 
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT Licence",
     "Operating System :: OS Independent",
     "Development Status :: 1 - Planning",
 ]
