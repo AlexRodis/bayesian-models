@@ -37,4 +37,4 @@ classifiers = [
 
 [tool.setuptools]
 
-packages = ["bayesian-models"]
+packages = ["bayesian_models"]
