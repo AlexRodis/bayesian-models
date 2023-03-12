@@ -37,7 +37,12 @@ class Distribution:
 
     def __post_init__(self)->None:
         if any([
-            not isinstance(self.name,str) or self.name == 'None',
+            any([
+                not isinstance(self.name,str),
+                self.name == None,
+                self.name == '',
+                ]
+            ),
             not isinstance(self.dist_args, tuple),
             not isinstance(self.dist_kwargs, dict),
         ]):
@@ -106,25 +111,6 @@ class FreeVariablesComponent:
                           **dist.dist_kwargs
                           )
             self.variables[name] = d 
-            
-            
-
-@dataclass(kw_only=True, slots=True)
-class LinkFunctionComponent:
-    '''
-        Add a link function to the model. The link function will be applied
-        to the models' inputs. The link function is provided a dict whose
-        key(s) are the desired internal names for the result of applying the
-        function to the inputs. The `record` variable determines if the 
-        result will be wrapped in a deterministic node. If True the result
-        will be recorded in the trace but will consume additional memory
-    '''
-    link_function:dict[str, Callable] = field(default_factory=dict)
-    record:bool = False
-    variables:dict = field(init=False, default_factory=dict)
-    
-    def __call__(self):
-        raise NotImplementedError()
     
 @dataclass(slots=True)
 class ResponseFunctions:
@@ -457,12 +443,11 @@ class LinearRegressionCoreComponent(CoreModelComponent):
     model_vars = {"slope", "intercept", "data", "equation"}
     
     def __init__(self, distributions:dict[str, Distribution]=dict(),
-                 variables:dict=dict(),
                  var_names:dict[str, str] = {},
                  model:Optional[pymc.Model] = None)->None:
         from warnings import warn
         super().__init__(distributions = distributions, 
-                         variables = variables, model = model)
+                         model = model)
         s1:set[str] = set(var_names.keys())
         s2:set[str] = set(
             LinearRegressionCoreComponent.var_names.keys()
@@ -560,25 +545,30 @@ class CoreModelBuilder(ModelBuilder):
             of likelihood components, to be added to the model. (REQUIRED)
     '''
     
-    model:Optional[pymc.Model] = None
     core_model:Optional[CoreModelComponent] = None
-    model_variables:dict = field(default_factory = dict)
+    likelihoods:Optional[list[LikelihoodComponent]] = None
+    model:Optional[pymc.Model] = field(init=False)
+    model_variables:dict = field(default_factory = dict, init=False)
     free_vars:Optional[FreeVariablesComponent] = None
     adaptor:Optional[ModelAdaptorComponent] = None
     response:Optional[ResponseFunctionComponent] = None
-    link:Optional[LinkFunctionComponent] = None
-    likelihoods:Optional[list[LikelihoodComponent]] = None
+    
     
     def __post_init__(self)->None:
+        '''
+            Validate that miniman model components are present
+        '''
         if any([
             self.core_model is None,
-            self.likelihoods is None
+            self.likelihoods is None,
+            self.likelihoods == list(),
         ]):
             raise ValueError(("Attempting model construcion without"
                               " minimal components. Core component and"
-                              " likelihood component expect but "
+                              " likelihood component expected but "
                               f"received {self.core_model} and "
                               f"{self.likelihoods} instead"))
+        self.model = None
             
     def _validate_likelihoods(self, user_spec:dict[str,str])->None:
         '''
@@ -605,9 +595,6 @@ class CoreModelBuilder(ModelBuilder):
             
     
     def build(self)->None:
-        if self.link is not None:
-            self.link()
-            self.model_variables =  self.model_variables|self.link.variables
         self.core_model()
         self.model_variables = self.model_variables|self.core_model.variables
         if self.free_vars is not None:
@@ -626,11 +613,23 @@ class CoreModelBuilder(ModelBuilder):
         # internal variable name i.e. 'f' to a ref to the object itself
         for likelihood in self.likelihoods:
             user_var_spec:dict[str, str] = likelihood.var_mapping
+            user_vars:set[str] = set(v for _,v in user_var_spec.items())
+            model_vars:set[str] = set(
+                k for k in self.model_variables.keys())
+            if not user_vars.issubset(model_vars):
+                unbound:set[str] = user_vars-model_vars
+                raise RuntimeError((
+                    f"Variables {unbound}, specified in the likelihoods "
+                    f"var_mapping are unbound. Variables {unbound} not "
+                    "found in the model"
+                ))
             likelihood_kwargs = {
-                shape:self.model_variables[modelvar]  for shape, modelvar in user_var_spec.items()
+                shape:self.model_variables[
+                    modelvar 
+                    ]  for shape, modelvar in user_var_spec.items()
                 }
             # Lots of back-and-forth between builder and LikelihoodComponent object
-            # See if it can be refactored out
+            # See if it can be refactored out. Redux has a similar patter
             outputs = self.model_variables.get('outputs')
             observed = outputs if outputs is not None else self.model_variables.get(
                                                                                     likelihood.observed)
@@ -648,33 +647,34 @@ class CoreModelBuilder(ModelBuilder):
         return self.model
     
 
-@dataclass(kw_only=True, slots=True)
+
 class ModelDirector:
     '''
         Model construction object. Delegates model construction to a
         specified model builder
     '''
-    # Maybe all keyword args is not a good idea
-    builder_type:Type[ModelBuilder] = CoreModelBuilder
-    builder:Optional[ModelBuilder] = None
-    free_vars_component:Optional[FreeVariablesComponent] = None
-    adaptor_component:Optional[ModelAdaptorComponent] = None
-    response_component:Optional[ResponseFunctionComponent] = None
-    link_component:Optional[LinkFunctionComponent] = None
-    core_component:Optional[CoreModelComponent] = None
-    likelihood_components:Optional[list[LikelihoodComponent]] = None
+    builder:Type[ModelBuilder] = CoreModelBuilder
     
-    def __post_init__(self)->None:
-        
-        self.builder = self.builder_type(
-            free_vars = self.free_vars_component,
-            adaptor = self.adaptor_component,
-            response = self.response_component,
-            link = self.link_component,
-            core_model = self.core_component,
-            likelihoods = self.likelihood_components
-        ) # type:ignore
+    def __init__(self,
+                 core_component:CoreModelComponent,
+                 likelihood_component:list[LikelihoodComponent],
+                 response_component:Optional[ResponseFunctionComponent] = None,
+                 free_vars_comp:Optional[FreeVariablesComponent] = None,
+                 adaptor_component:Optional[ModelAdaptorComponent] = None
+                 )->None:
+    
+        self.builder:ModelBuilder = self.builder(
+            free_vars = free_vars_comp,
+            adaptor = adaptor_component,
+            response = response_component,
+            core_model = core_component,
+            likelihoods = likelihood_component
+        )
         
     
     def __call__(self)->pymc.Model:
-        return self.builder() 
+        return self.builder()
+    
+    @property
+    def model(self)->Optional[pymc.Model]:
+        return self.builder.model

@@ -4,7 +4,7 @@ import pymc
 import pytensor
 import numpy as np
 from functools import partial 
-from typing import Generator, Callable
+from typing import Generator, Callable, Optional
 from bayesian_models.core import CoreModelComponent, ModelDirector
 # Test suite needs work
 from bayesian_models.core import FreeVariablesComponent
@@ -20,7 +20,8 @@ from bayesian_models.models import Layer
 from bayesian_models.utilities import powerset, dict_powerset
 
 def distribution(dist:pymc.Distribution,name:str,
-                 *args, **kwargs)->Distribution:
+                 *args, transform:Optional[Callable]=None, 
+                 **kwargs)->Distribution:
     '''
         Convenience method for fresh `Distribution` instance creation.
         Accepts a a distribution and a name, along with optional args
@@ -40,7 +41,8 @@ def distribution(dist:pymc.Distribution,name:str,
             # nu=2))
     '''
     return Distribution(dist = dist, name = name,
-                        dist_args = args, dist_kwargs = kwargs)
+                        dist_args = args, dist_kwargs = kwargs,
+                        dist_transform = transform)
 
 # class TestCoreModule(unittest.TestCase):
     
@@ -555,6 +557,209 @@ class TestFramework(unittest.TestCase):
         cls.Y = Y
         cls.Y_cat = Y_cat
 
+
+class TestDistribution(unittest.TestCase):
+    
+    def test_basic_run(self):
+        call_ref = lambda d: d+2
+        def tuple_arr_comp(one:tuple[np.ndarray], 
+                           other:tuple[np.ndarray])->bool:
+            conds = []
+            conds.append(
+                type(one)==type(other)
+            )
+            conds.append(
+                len(one)==len(other)
+            )
+            conds.append( all([all(e1==e2) for e1,e2 in zip(one,other)])
+            )
+            return all(conds) 
+            
+        obj1 = Distribution(
+            name = 'd1', dist = pymc.Categorical,
+            dist_args = (np.asarray([0.1,.5,.4]),)
+        )
+        
+        obj2 = Distribution(
+            name = 'd2', dist = pymc.Beta,
+            dist_kwargs = dict(alpha=1.0, beta=1.0)
+        )
+        obj3 = Distribution(
+            name = 'd3', dist = pymc.MvStudentT,
+            dist_kwargs = dict(mu =np.asarray([0.1]*3),
+                               sigma = np.diag(np.asarray(
+                                   [3.0]*3)),
+                               nu = 5)
+        )
+        obj4 = Distribution(
+            name = 'd4', dist = pymc.Normal,
+            dist_args = (0,), dist_kwargs = {'sigma':5}
+        )
+        
+        obj5 = Distribution(
+            name = 'd5', dist = pymc.Exponential,
+            dist_args = (1/29,), dist_transform = call_ref
+         )
+        
+        predicates = dict(
+            discreet = all([
+                obj1.name == 'd1',
+                obj1.dist == pymc.Categorical,
+                tuple_arr_comp(obj1.dist_args ,
+                               (np.asarray([0.1,.5,.4]),)),
+                obj1.dist_kwargs == dict(),
+                obj1.dist_transform is None
+                ]),
+            
+            cont_kw_only = all([
+                obj2.name == 'd2',
+                obj2.dist == pymc.Beta,
+                obj2.dist_args == tuple(),
+                obj2.dist_kwargs == dict(alpha=1.0, beta=1.0),
+                obj2.dist_transform is None
+                ]),
+            
+            mutivariate = all([
+                obj3.name == 'd3',
+                obj3.dist == pymc.MvStudentT,
+                obj3.dist_args == tuple(),
+                all([
+                    obj3.dist_kwargs['nu'] == 5,
+                    all(obj3.dist_kwargs['mu'] == np.asarray([0.1]*3)),
+                ]),
+                obj3.dist_transform is None
+                ]),
+            kw_arg_mix = all([
+                obj4.name == 'd4',
+                obj4.dist == pymc.Normal,
+                obj4.dist_args == (0,),
+                obj4.dist_kwargs == dict(sigma=5),
+                obj4.dist_transform is None
+                ]),
+            transformed = all([
+                obj5.name == 'd5',
+                obj5.dist == pymc.Exponential,
+                obj5.dist_args == (1/29,),
+                obj5.dist_kwargs == dict(),
+                obj5.dist_transform == call_ref
+                ]),
+        )
+        
+        self.assertTrue(
+            all([
+                v for _,v in predicates.items()
+            ])
+        )
+        
+    def test_factory(self):
+        call_ref = lambda d: d+2
+        def tuple_arr_comp(one:tuple[np.ndarray], 
+                           other:tuple[np.ndarray])->bool:
+            conds = []
+            conds.append(
+                type(one)==type(other)
+            )
+            conds.append(
+                len(one)==len(other)
+            )
+            conds.append( all([all(e1==e2) for e1,e2 in zip(one,other)])
+            )
+            return all(conds) 
+            
+        obj1 = distribution(
+            pymc.Categorical, 'd1',
+            np.asarray([0.1,.5,.4])
+        )
+        
+        obj2 = distribution(
+            pymc.Beta, 'd2',
+            alpha=1.0, beta=1.0
+        )
+        obj3 = distribution(
+            pymc.MvStudentT, 'd3',
+            mu =np.asarray([0.1]*3),
+                               sigma = np.diag(np.asarray(
+                                   [3.0]*3)),
+                               nu = 5
+        )
+        obj4 = distribution(
+            pymc.Normal,'d4', 
+            0, sigma=5
+        )
+        
+        obj5 = distribution(
+            pymc.Exponential,'d5',
+            1/29, transform = call_ref
+         )
+        
+        predicates = dict(
+            discreet = all([
+                obj1.name == 'd1',
+                obj1.dist == pymc.Categorical,
+                tuple_arr_comp(obj1.dist_args ,
+                               (np.asarray([0.1,.5,.4]),)),
+                obj1.dist_kwargs == dict(),
+                obj1.dist_transform is None
+                ]),
+            
+            cont_kw_only = all([
+                obj2.name == 'd2',
+                obj2.dist == pymc.Beta,
+                obj2.dist_args == tuple(),
+                obj2.dist_kwargs == dict(alpha=1.0, beta=1.0),
+                obj2.dist_transform is None
+                ]),
+            
+            mutivariate = all([
+                obj3.name == 'd3',
+                obj3.dist == pymc.MvStudentT,
+                obj3.dist_args == tuple(),
+                all([
+                    obj3.dist_kwargs['nu'] == 5,
+                    all(obj3.dist_kwargs['mu'] == np.asarray([0.1]*3)),
+                ]),
+                obj3.dist_transform is None
+                ]),
+            kw_arg_mix = all([
+                obj4.name == 'd4',
+                obj4.dist == pymc.Normal,
+                obj4.dist_args == (0,),
+                obj4.dist_kwargs == dict(sigma=5),
+                obj4.dist_transform is None
+                ]),
+            transformed = all([
+                obj5.name == 'd5',
+                obj5.dist == pymc.Exponential,
+                obj5.dist_args == (1/29,),
+                obj5.dist_kwargs == dict(),
+                obj5.dist_transform == call_ref
+                ]),
+        )
+        
+        self.assertTrue(
+            all([
+                v for _,v in predicates.items()
+            ])
+        )
+        
+    def test_illegal_name(self):
+        illegal_names = [None, '', (5,6), ['no',89], {'4':4},
+                         np.asarray([1.0]*5)]
+        for illegal in illegal_names:
+            self.assertRaises(
+                ValueError, Distribution,
+                    dist=pymc.Normal, name=illegal, dist_args=(0,1)
+                    
+            )
+            self.assertRaises(
+                ValueError, distribution,
+                    pymc.Normal, illegal, (0,1)
+                
+            )
+    
+    def test_illegal_values(self):
+        pass
+
 class TestCoreComponent(TestFramework):
     
     def test_vars_added(self):
@@ -1007,10 +1212,6 @@ class TestResponseComponent(TestResponseFunctions):
                 )
             )
 
-            
-class TestLink(TestFramework):
-    pass
-
 class TestFreeVars(TestFramework):
     
     def test_insertions(self):
@@ -1078,8 +1279,230 @@ class TestFreeVars(TestFramework):
                 )
 
 class TestBuilder(TestFramework):
-    pass
+    
+    def test_basic_components(self):
+        X = np.random.rand(50,3)
+        Y = 5*X+15
+        # Test missing outputs
+        core = LinearRegressionCoreComponent(
+            distributions = dict(
+                inputs = distribution(
+                    pymc.Data, 'inputs', X, mutable=True
+                    ),
+                outputs = distribution(
+                    pymc.Data, 'outputs', Y, mutable=False
+                ),
+                W = distribution(
+                    pymc.Normal, "W", 2,1, shape = 3
+                ),
+                b = distribution(
+                    pymc.Normal, 'b', 2,1, shape = 3
+                )
+                
+        ))
+        fvars = FreeVariablesComponent(
+            dict(
+                σ = distribution(pymc.Normal, 'σ', 0,1, shape=3),
+                ν = Distribution(
+                    dist = pymc.Exponential, name = 'ν',
+                    dist_args = (1/29.0,),
+                    dist_transform = lambda d: d+1
+                    ),
+            )
+        )
+        like = LikelihoodComponent(
+            distribution = pymc.StudentT,
+            var_mapping = dict(
+                mu = 'f',
+                sigma = 'σ',
+                nu ='ν', 
+            )
+        )
+        b = ModelDirector(
+            core, [like],
+            free_vars_comp = fvars
+            
+        )
+        m = b()
+        model = b.model
+        self.assertTrue(all([
+            { 'σ', 'ν', 'W','b' 
+                }.issubset(set(e.name for e in  model.free_RVs)),
+            {'f'}.issubset(set(e.name for e in model.deterministics)) 
+        ]))
+        
+    def test_invalid_likelihoods(self):
+        X = np.random.rand(50,3)
+        Y = 5*X+15
+        core = LinearRegressionCoreComponent(
+            distributions = dict(
+                inputs = distribution(
+                    pymc.Data, 'inputs', X, mutable=True
+                    ),
+                outputs = distribution(
+                    pymc.Data, 'outputs', Y, mutable=False
+                ),
+                W = distribution(
+                    pymc.Normal, "W", 2,1, shape = 3
+                ),
+                b = distribution(
+                    pymc.Normal, 'b', 2,1, shape = 3
+                )
+                
+        ))
+        fvars = FreeVariablesComponent(
+            dict(
+                σ = distribution(pymc.Normal, 'σ', 0,1, shape=3),
+            )
+        )
+        like = LikelihoodComponent(
+            distribution = pymc.StudentT,
+            var_mapping = dict(
+                mu = 'f',
+                sigma = 'σ',
+                nu ='ν', 
+            )
+        )
+        b = ModelDirector(
+            core, [like],
+            free_vars_comp = fvars
+            
+        )
+        self.assertRaises(
+            RuntimeError, b.__call__
+        )
 
-class TestCompositeModel(TestFramework):
-    pass
+    def test_missing_inputs(self):
+        X = np.random.rand(50,3)
+        Y = 5*X+15
+        core = LinearRegressionCoreComponent(
+            distributions = dict(
+                inputs = distribution(
+                    pymc.Data, 'inputs', X, mutable=True
+                    ),
+                W = distribution(
+                    pymc.Normal, "W", 2,1, shape = 3
+                ),
+                b = distribution(
+                    pymc.Normal, 'b', 2,1, shape = 3
+                )
+                
+        ))
+        fvars = FreeVariablesComponent(
+            dict(
+                σ = distribution(pymc.Normal, 'σ', 0,1, shape=3),
+            )
+        )
+        like = LikelihoodComponent(
+            distribution = pymc.StudentT,
+            var_mapping = dict(
+                mu = 'f',
+                sigma = 'σ',
+                nu ='ν', 
+            )
+        )
+        b = ModelDirector(
+            core, [like],
+            free_vars_comp = fvars
+            
+        )
+        self.assertRaises(
+            RuntimeError, b.__call__
+        )
+
+    def test_var_catalogue(self):
+        X = np.random.rand(50,3)
+        Y = 5*X+15
+        core = LinearRegressionCoreComponent(
+            distributions = dict(
+                inputs = distribution(
+                    pymc.Data, 'inputs', X, mutable=True
+                    ),
+                outputs = distribution(
+                  pymc.Data, 'outputs', Y, mutable = False  
+                ),
+                W = distribution(
+                    pymc.Normal, "W", 2,1, shape = 3
+                ),
+                b = distribution(
+                    pymc.Normal, 'b', 2,1, shape = 3
+                )
+                
+        ))
+        fvars = FreeVariablesComponent(
+            dict(
+                σ = distribution(pymc.Normal, 'σ', 0,1, shape=3),
+                ν = distribution(pymc.Exponential, 'ν', 
+                                 1/29.0, transform = lambda e:e+1
+                                 )
+            )
+        )
+        like = LikelihoodComponent(
+            distribution = pymc.StudentT,
+            var_mapping = dict(
+                mu = 'f',
+                sigma = 'σ',
+                nu ='ν', 
+            )
+        )
+        b = ModelDirector(
+            core, [like],
+            free_vars_comp = fvars
+        )()
+        self.assertTrue(all([
+            set( v.name for v in b.model.free_RVs)=={'σ', 'ν', 'W','b'},
+            set(v.name for v in b.model.deterministics)=={'f'},
+            ])
+        )
+
+class TestCompositeModels(TestFramework):
+    
+    def test_linear_regression(self):
+        X = np.random.rand(50,3)
+        Y = 5*X+15
+        core = LinearRegressionCoreComponent(
+            distributions = dict(
+                X = distribution(
+                    pymc.Data, 'X', X, mutable=True
+                    ),
+                Y = distribution(
+                  pymc.Data, 'Y', Y, mutable = False  
+                    ),
+                β0 = distribution(
+                    pymc.Normal, 'β0', 2,1, shape = 3
+                    ),
+                β1 = distribution(
+                    pymc.Normal, 'β1', 2,1, shape = 3
+                    )
+            ),
+            var_names = dict(
+                data='X', slope = 'β0', intercept = 'β1',
+                equation = 'μ'
+            )
+            )
+        fvars = FreeVariablesComponent(
+            dict(
+                ε = distribution(pymc.Normal, 'ε', 0,1, shape=3)
+            )
+        )
+        like = LikelihoodComponent(
+            distribution = pymc.Normal,
+            var_mapping = dict(
+                mu = 'μ',
+                sigma = 'ε',
+            ),
+            observed = 'Y'
+        )
+        b = ModelDirector(
+            core, [like],
+            free_vars_comp = fvars
+        )()
+        self.assertTrue(all([
+            {'β0', 'β1', 'ε'}<=set( v.name for v in b.model.free_RVs),
+            {'μ'}<=set(v.name for v in b.model.deterministics),
+            ])
+        )
+        
+    def test_best(self):
+        pass
     
