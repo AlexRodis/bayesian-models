@@ -26,6 +26,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT Licence",
     "Operating System :: OS Independent",
+    "Development Status :: 1 - Planning",
 ]
 
 [project.urls]
