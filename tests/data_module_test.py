@@ -623,8 +623,6 @@ class TestDataModule(unittest.TestCase):
 
         self.assertTrue(all([v for _,v in evals.items()]))
  
-        
-    
     def test_data_director(self):
         '''
             Check for exceptions only. Functionality tested elsewhere
@@ -668,5 +666,38 @@ class TestDataModule(unittest.TestCase):
         self.assertRaises(
             ValueError, Data, nan_handling="hello"
         )
+        
+    def test_np_slicing(self):
+        # More test cases needed
+        from random import choice
+        raw_arr = numpy.random.rand(100,9)
+        ridx:int = choice(list(range(raw_arr.shape[0])))
+        sidx:int = choice(list(range(raw_arr.shape[1])))
+        processor = Data(cast=None)
+        arr=NDArrayStructure(raw_arr) # type:ignore
+        predicates = dict(
+            single_idx = (
+                raw_arr[[ridx]] == arr[ridx].values[:,0]).all(),
+            single_idx_dims = arr.dims[[1]]==arr[ridx].dims,
+            single_idx_coords = dict_arr_compare(dict(dim_1 = arr.coords['dim_1']), arr[ridx].coords),
+            slice_idx = raw_arr[ridx, sidx] == arr[ridx, sidx],
+            ellipse = (
+                raw_arr[ridx, ...] == arr[ridx, ...].values[:,0]).all(),
+            ellipse_dims = (arr.dims[[1]]==arr[ridx,...].dims).all(),
+            ellipse_coords = dict_arr_compare(
+                dict(dim_1 = arr.coords['dim_1']),
+                arr[ridx, ...].coords 
+                ),
+        )
+        _x = arr[ridx]
+        self.assertTrue(all([
+            v for _,v in predicates.items()
+        ]))
+    
+    def test_pd_slicing(self):
+        pass
+    
+    def test_xr_slicing(self):
+        pass
         
         

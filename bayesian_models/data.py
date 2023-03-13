@@ -4,6 +4,7 @@ import  pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Any, Hashable, Iterable, Type
+from typing import Callable
 from .typing import ndarray, InputData, SHAPE, DIMS, COORDS
 from .typing import AXIS_PERMUTATION
 from dataclasses import dataclass, field
@@ -211,8 +212,43 @@ class NDArrayStructure(DataStructure, UtilityMixin):
         self._rank = len(self.obj.shape)
         unpacked = obj if isinstance(obj, np.ndarray) else obj.values
         self._dtype = unpacked.dtype if dtype is None else dtype
-        self._missing_nan_flag:Optional[bool] = None 
-        
+        self._missing_nan_flag:Optional[bool] = None
+    
+    def _slice_coords(self, obj):
+        from copy import copy
+        odims = self._dims
+        ocoords = self._coords
+        ncoords = copy(self._coords)
+        for i, (dim, e) in enumerate(zip(odims, obj)):
+            if e is Ellipsis:
+                break
+            elif isinstance(e, slice):
+                ncoords[dim] = ocoords[dim][e]
+            else:
+                del ncoords[dim]
+        return ncoords
+
+    
+    def __getitem__(self, obj):
+        # Exact selection sentinel. If true only a single value is
+        # returned. Else dimetional coordinate slicing is needed
+        nobj:tuple = obj if isinstance(
+            obj, tuple) else (obj, )
+        if Ellipsis not in nobj and len(nobj)<self.rank:
+            nobj = tuple(list(nobj)+[...])
+        exact_match:bool = not any([
+            isinstance(e, slice) or e is Ellipsis for e in nobj
+            ])
+        if not exact_match:
+            ncoords = self._slice_coords(nobj)
+            ndims = np.asarray([k for k in ncoords.keys()])
+            return NDArrayStructure(
+                self._obj[nobj],
+                dims = ndims, coords=ncoords
+            )
+        else:
+            return self._obj[nobj]
+    
     @property
     def values(self)->ndarray:
         return self.obj

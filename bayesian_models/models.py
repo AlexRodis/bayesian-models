@@ -12,7 +12,9 @@ import pytensor
 from interval import Interval
 import functools
 from bayesian_models.math import ELU, GELU, SiLU, SWISS, ReLU
-
+from bayesian_models.core import ModelDirector
+from bayesian_models.data import Data
+from dataclasses import dataclass, field
 
 __all__ = (
         'BayesianModel',
@@ -417,70 +419,28 @@ class DataValidationMixin:
     def scaler(self, val:SklearnDataFrameScaler)->None:
         self._scaler = val
 
-    @staticmethod
-    def check_missing_nan(df:pd.DataFrame,
-                          nan_handling:str)->bool:
-        '''
-            Checks input dataframe for the possible presence of missing
-            values
 
-            Args:
-            ------
+class BESTBase:
+    '''
+        Base class for class level variable injection to the BEST
+        model
+    '''
+    WarperFunction = Callable[[pd.DataFrame], pd.Series]
+    std_upper:float = 1e1
+    std_lower:float = 1e0
+    ν_λ:float = 1/29.0
+    ν_offset:float = 1
+    ddof:int = 1
+    std_diffusion_factor:int = 2
+    μ_mean:WarperFunction = lambda df, axis=0: df.mean(axis=axis)
+    μ_std:WarperFunction = lambda df,ddof=ddof,\
+        η=std_diffusion_factor,ϵ=1e-4, axis=0:df.std(
+            ddof=ddof, axis=axis).replace({0.0:ϵ})*η
+    jax_device:str = 'gpu'
+    jax_device_count: int =1
 
-                - df:pandas.DataFrame := The the dataframe to check
-
-                - nan_handling:str := The strategy used to handle the missing
-                values. Only used in warning
-
-            Returns:
-            --------
-
-                - missingNaN:bool := Missing values flag
-
-            Warns:
-            -------
-
-                - If missing values are detected
-        '''
-        from warnings import warn
-        flag=df.isna().any().any()
-        if flag:
-            warn(('Warning! The input DataFrame contains missing or '
-                'invalid values. Set the value of `nan_handling` to '
-                'control how these values are handled. Current flag: '
-                f'"{nan_handling}"'))
-        return flag
-    
-    @staticmethod
-    def impute_missing_nan(df:pd.DataFrame):
-        '''
-            Impute missing values. Currently not Implemented
-            and will raise an error
-        '''
-        raise NotImplementedError()
-    
-    @staticmethod  
-    def exclude_missing_nan(df:pd.DataFrame):
-        '''
-            Reject all rows with missing values from the dataframe(s)
-            Currently only works for a single input.
-
-            Args:
-            -----
-
-                - df:pandas.DataFrame := The input dataframe to handle
-
-            Returns:
-            --------
-
-                - ndf:pandas.DataFrame := New dataframe where all rows with
-                a missing value have been removed
-        '''
-        not_nan_indices = (~df.isna()).all(axis=1)
-        return df.loc[not_nan_indices]
-
-class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
-    BayesianModel):
+@dataclass(slots=True)
+class BEST(BESTBase):
     '''
         Bayesian Group difference estimation with pymc. The implementation
         is based on the official pymc documentation. The model assumes
@@ -673,65 +633,81 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             Setters for all class attributes. Named set_attribute
         
     '''
-    WarperFunction = Callable[[pd.DataFrame], pd.Series]
-    std_upper:float = 1e1
-    std_lower:float = 1e0
-    ν_λ:float = 1/29.0
-    ν_offset:float = 1
-    ddof:int = 1
-    std_diffusion_factor:int = 2
-    μ_mean:WarperFunction = lambda df, axis=0: df.mean(axis=axis)
-    μ_std:WarperFunction = lambda df,ddof=ddof,\
-        η=std_diffusion_factor,ϵ=1e-4, axis=0:df.std(
-            ddof=ddof, axis=axis).replace({0.0:ϵ})*η
-    jax_device:str = 'gpu'
-    jax_device_count: int =1
     
-    def _consistency_checks_(self):
-        '''
-            Ensures all options specified are mutualy compatible
-        '''
-        from warnings import warn
-        if not self.common_shape:
-            warn(("Allowing independant degrees of freedom for all"
-            " features may result in unidentifiable models, overfitting" 
-            " and multimodal posteriors"))
-        if self.multivariate_likelihood and not self.common_shape:
-            warn(("Degrees of freedom parameter for a multivariate"
-            " StudentT must be a scalar. `common_shape` will be "
-            "ignored"))
-            self.common_shape=not self.common_shape
+    group_var:Optional[Union[str, int]]
+    _permutations:Any = field(init=False, default_factory=lambda : None)
+    _n_perms:Optional[int] = field(init=False, 
+                                   default_factory=lambda : None)
+    _data_dimentions:Any = field(init=False, default_factory=lambda : None)
+    effect_magnitude:bool = False
+    std_difference:bool = False
+    common_shape:bool = True
+    multivariate_likelihood:bool = False
+    _levels:Any = field(init=False, default_factory=lambda : None)
+    _ndims:Any = field(init=False, default_factory=lambda : None)
+    num_levels:Optional[int] = field(init=False, 
+                                     default_factory=lambda : None)
+    _coords:Any = field(init=False, default_factory=lambda : None)
+    _group_distributions:Any = field(init=False, default_factory=dict)
+    _idata:Optional[az.InferenceData] = field(
+        init=False, default_factory=lambda : None)
+    _model:Optional[pymc.Model] = field(init=False, 
+                                        default_factory=lambda : None)
+    var_names:dict[str, list] = field(init=False, 
+                      default_factory = lambda : dict(
+                          means=[], stds=[], effect_magnitude=[])
+                      )
+    _initialized:Optional[bool] = field(default_factory=lambda : False)
+    _trained:Optional[bool] = field(default_factory=lambda : False)
+    nan_present_flag:Optional[bool] = field(
+        init=False, default_factory=lambda :None)
     
     
-    def __init__(self, effect_magnitude:bool=False,
-                std_difference:bool=False,
-                tidify_data:typing.Callable[...,Any]=tidy_multiindex,
-                scaler:Optional[SklearnDataFrameScaler] = None,
-                common_shape:bool=True, nan_handling:str='exclude',
-                save_path:typing.Optional[str]=None,
-                multivariate_likelihood:bool = False,
-                ):
-        super().__init__(tidify_data= tidify_data, scaler = scaler, 
-        nan_handling=nan_handling, save_path = save_path)
-        self.group_var = None
-        self._permutations = None
-        self._n_perms = None
-        self._data_dimentions = None
-        self.effect_magnitude = effect_magnitude
-        self.std_difference = std_difference or effect_magnitude
-        self.common_shape = common_shape
-        self.multivariate_likelihood = multivariate_likelihood
-        self._consistency_checks_()
-        self._levels=None
-        self._ndims=None
-        self.num_levels=None
-        self._coords=None
-        self._group_distributions=dict()
-        self._idata=None
-        self._model=None
-        self.var_names=dict(means=[], stds=[], effect_magnitude=[])
-        self._initialized = False
-        self._trained = False
+    # def _consistency_checks_(self):
+    #     '''
+    #         Ensures all options specified are mutualy compatible
+    #     '''
+    #     from warnings import warn
+    #     if not self.common_shape:
+    #         warn(("Allowing independant degrees of freedom for all"
+    #         " features may result in unidentifiable models, overfitting" 
+    #         " and multimodal posteriors"))
+    #     if self.multivariate_likelihood and not self.common_shape:
+    #         warn(("Degrees of freedom parameter for a multivariate"
+    #         " StudentT must be a scalar. `common_shape` will be "
+    #         "ignored"))
+    #         self.common_shape=not self.common_shape
+    
+    
+    # def __init__(self, effect_magnitude:bool=False,
+    #             std_difference:bool=False,
+    #             tidify_data:typing.Callable[...,Any]=tidy_multiindex,
+    #             scaler:Optional[SklearnDataFrameScaler] = None,
+    #             common_shape:bool=True, nan_handling:str='exclude',
+    #             save_path:typing.Optional[str]=None,
+    #             multivariate_likelihood:bool = False,
+    #             ):
+    #     super().__init__(tidify_data= tidify_data, scaler = scaler, 
+    #     nan_handling=nan_handling, save_path = save_path)
+    #     self.group_var = None
+    #     self._permutations = None
+    #     self._n_perms = None
+    #     self._data_dimentions = None
+    #     self.effect_magnitude = effect_magnitude
+    #     self.std_difference = std_difference or effect_magnitude
+    #     self.common_shape = common_shape
+    #     self.multivariate_likelihood = multivariate_likelihood
+    #     self._consistency_checks_()
+    #     self._levels=None
+    #     self._ndims=None
+    #     self.num_levels=None
+    #     self._coords=None
+    #     self._group_distributions=dict()
+    #     self._idata=None
+    #     self._model=None
+    #     self.var_names=dict(means=[], stds=[], effect_magnitude=[])
+    #     self._initialized = False
+    #     self._trained = False
     
     @property
     def coords(self)->Optional[dict[str,Any]]:
@@ -802,9 +778,8 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             
                 - None
         '''
-        self.nan_present_flag = BEST.check_missing_nan(
-            data, self.nan_handling)
-        self.levels = data.loc[:,self.group_var].dropna().unique()
+        
+        self.levels = data[:,self.group_var].dropna().unique()
         self.num_levels=len(self.levels)
         self.features = data.columns.difference([self.group_var])
         
