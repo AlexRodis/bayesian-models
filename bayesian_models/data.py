@@ -232,10 +232,58 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     def __getitem__(self, obj):
         # Exact selection sentinel. If true only a single value is
         # returned. Else dimetional coordinate slicing is needed
+        lookup = lambda dim ,e: int(np.where(
+                        self.coords[dim]== e
+                        )[0]) if isinstance(e, str) else e
         nobj:tuple = obj if isinstance(
             obj, tuple) else (obj, )
+
+        isarray_indexing:bool = isinstance(nobj[0], np.ndarray)
+        boolean_indexing:bool = isarray_indexing and nobj[0].dtype=='bool'
+        if boolean_indexing:
+            return self._obj[obj]
+        
         if Ellipsis not in nobj and len(nobj)<self.rank:
             nobj = tuple(list(nobj)+[...])
+        
+        try:
+            collected:list = []
+            for dim, e in zip(self.dims ,nobj):
+                if e is Ellipsis:
+                    collected.append(Ellipsis)
+                    break
+                elif isinstance(e, (str, int)):
+                    i = lookup(dim, e)
+                    collected.append(i)
+                elif isinstance(e, slice):
+                    if not (isinstance(e.step, int) or e.step is None):
+                        raise IndexError((
+                            "Step parameter of a slice indexer cannot be"
+                            "be label. Expecte None or an integer greater"
+                            f"than 0, received {e.step} of type "
+                            f"{type(e.step)} instead"
+                        ))
+                    collected.append(slice(
+                        lookup(dim, e.start),
+                        lookup(dim, e.stop),
+                        e.step # Cannot be a label. Raise
+                    ))
+                elif isinstance(e, list):
+                    subcollected:list[int] = []
+                    for elem in e:
+                        if isinstance(elem, (int, str)):
+                            subcollected.append(lookup(dim, elem)
+                                )
+                        else:
+                            raise IndexError((
+                                "Only lists of integers and labels are "
+                                f"valid indexers. Received {elem} of type "
+                                f"{type(elem)}"
+                            ))
+                    collected.append(subcollected)
+        except TypeError:
+            raise IndexError(f"Indexer {e} is invalid")
+        nobj = tuple(collected)
         exact_match:bool = not any([
             isinstance(e, slice) or e is Ellipsis for e in nobj
             ])

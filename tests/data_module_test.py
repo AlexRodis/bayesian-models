@@ -675,6 +675,9 @@ class TestDataModule(unittest.TestCase):
         sidx:int = choice(list(range(raw_arr.shape[1])))
         processor = Data(cast=None)
         arr=NDArrayStructure(raw_arr) # type:ignore
+        narr = NDArrayStructure(raw_arr)
+        narr._coords[f'dim_0'] = numpy.asarray([
+            f'sample_{i}' for i in range(raw_arr.shape[0])])
         predicates = dict(
             single_idx = (
                 raw_arr[[ridx]] == arr[ridx].values[:,0]).all(),
@@ -688,8 +691,26 @@ class TestDataModule(unittest.TestCase):
                 dict(dim_1 = arr.coords['dim_1']),
                 arr[ridx, ...].coords 
                 ),
+            label_ellipsis = (
+                           narr["sample_5",...].values==arr[5,...].values
+                           ).all(),
+            multilabel = (
+                            narr[["sample_5", "sample_6"],...].values==arr[[5,6],...].values
+                           ).all(),
+            unilabel = (
+                           narr["sample_7"].values==arr[7].values
+                           ).all(),
+            unislice = (
+                           narr["sample_0":"sample_4"].values==arr[0:4,...].values
+                           ).all(),
+            label_and_intslice =(
+                           narr["sample_0":"sample_4",...].values==arr[0:4,...].values
+                           ).all(),
+            neg_unislice = (
+                           narr["sample_0":"sample_4"].values!=arr[[6,7],...].values
+                           ),
+            boolean = (narr[raw_arr>.5]==raw_arr[raw_arr>.5]).all(),
         )
-        _x = arr[ridx]
         self.assertTrue(all([
             v for _,v in predicates.items()
         ]))
