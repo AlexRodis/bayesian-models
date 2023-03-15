@@ -1,10 +1,11 @@
 import unittest
-from bayesian_models.data import NDArrayStructure, DataFrameStructure, \
-    DataArrayStructure, CommonDataStructureInterface, \
-        CommonDataProcessor, ExcludeMissingNAN, ImputeMissingNAN, \
-        IgnoreMissingNAN, DataProcessingDirector, NANHandlingContext,\
-        Data
-        
+from bayesian_models.data import NDArrayStructure, DataFrameStructure
+from bayesian_models.data import DataArrayStructure, NANHandlingContext
+from bayesian_models.data import CommonDataStructureInterface, Data
+from bayesian_models.data import CommonDataProcessor, ExcludeMissingNAN
+from bayesian_models.data import ImputeMissingNAN, IgnoreMissingNAN
+from bayesian_models.data import DataProcessingDirector
+from typing import Any, Optional, Union, Literal
 import pandas
 import xarray
 import numpy
@@ -858,4 +859,31 @@ class TestDataModule(unittest.TestCase):
         d = df[0:2]
         a = arr[0:10]
         
+    def test_unique(self):
+        UNIQUES = set[Optional[Union[Literal[np.nan], str]]]
+        uniques_valid_only:set[str] = {f"dim{i}" for i in range(5)}
+        uniques_nan:UNIQUES = uniques_valid_only|{None, np.nan}
+        A = np.asarray([
+            f"dim{i}" for i in range(5)]*2+[None, np.nan])
+                raw_arr = np.random.rand(100,9,3)[:,None]
+        arr:np.typing.ndarray[Any] = CommonDataStructureInterface(
+            _data_structure = NDArrayStructure(
+                A
+            )
+        )
+        df = CommonDataStructureInterface(
+            _data_structure = DataFrameStructure(
+                pd.DataFrame(A)
+            )
+        )
+        xarr =CommonDataStructureInterface(
+                _data_structure = DataArrayStructure(
+                    xr.DataArray(A)
+            )
+        )
+        predicates:dict[str,set] = dict(
+        )
+        self.assertTrue(all([
+            v for _,v in predicates.items()
+        ]))      
         
