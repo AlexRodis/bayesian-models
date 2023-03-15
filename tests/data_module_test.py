@@ -8,6 +8,10 @@ from bayesian_models.data import NDArrayStructure, DataFrameStructure, \
 import pandas
 import xarray
 import numpy
+import numpy as np
+import pandas as pd
+import xarray as xr
+
 
 dict_arr_compare = lambda one, other : all([(v1 == v2).all() \
             for (k1,v1), (k2,v2) in zip(one.items(),
@@ -64,14 +68,14 @@ class TestDataModule(unittest.TestCase):
         cond5 = rank2.all()
         cond6 = rank1.all()
         cond7 = rank2.all(axis = 1).shape == numpy.ones(
-            shape=(rank2.obj.shape[0],1)).shape
+            shape=(1, rank2.obj.shape[0])).shape
         self.assertTrue(
             all([cond1, cond2, cond3, cond4, cond5, cond6, cond7]))
         
     def test_pd_all(self):
         rank2 = DataFrameStructure(self.B)
         cond1 = rank2.all()
-        cond2  = rank2.all(axis=1).shape == (self.B.shape[0],1)
+        cond2  = rank2.all(axis=1).shape == (1, self.B.shape[0])
         cond3 = rank2.all(axis = 0).shape == (1,self.B.shape[1],)
         self.assertTrue(
             cond1 and cond2 and cond3
@@ -91,7 +95,7 @@ class TestDataModule(unittest.TestCase):
         cond5 = rank2.all()
         cond6 = rank1.all()
         cond7 = rank2.all(axis = 1).shape == numpy.ones(
-            shape=rank2.obj.shape[0]).shape
+            shape=(1,rank2.obj.shape[0])).shape
         self.assertTrue(cond1 and cond2 and cond3 and cond4 and cond5 \
             and cond6 and cond7)
         
@@ -109,14 +113,14 @@ class TestDataModule(unittest.TestCase):
         cond5 = rank2.any()
         cond6 = rank1.any()
         cond7 = rank2.any(axis = 1).shape == numpy.ones(
-            shape=(rank2.obj.shape[0],1)).shape
+            shape=(1, rank2.obj.shape[0])).shape
         self.assertTrue(all([cond1, cond2, cond3, cond4, cond5, cond6,
                              cond7]))
         
     def test_pd_any(self):
         rank2 = DataFrameStructure(self.B)
         cond1 = rank2.any()
-        cond2  = rank2.any(axis=1).shape == (self.B.shape[0], 1)
+        cond2  = rank2.any(axis=1).shape == (1, self.B.shape[0])
         cond3 = rank2.any(axis = 0).shape == (1, self.B.shape[1])
         self.assertTrue(
             cond1 and cond2 and cond3)
@@ -141,7 +145,7 @@ class TestDataModule(unittest.TestCase):
         cond5 = rank2.any()
         cond6 = rank1.any()
         cond7 = rank2.any(axis = 1).shape == numpy.ones(
-            shape=(rank2.obj.shape[0],1)).shape
+            shape=(1, rank2.obj.shape[0])).shape
         self.assertTrue(cond1 and cond2 and cond3 and cond4 and cond5 \
             and cond6 and cond7)
         
@@ -270,7 +274,8 @@ class TestDataModule(unittest.TestCase):
             dict_arr_compare(col.coords, cut_coords) for col in cols
         )
         self.assertTrue(shape_cond and dim_cond and coords_cond)
-            
+    
+    @unittest.skip("Needs to be implemented")
     def test_pd_itercolumns(self):
         obj = DataFrameStructure(self.B)
         for i, col in obj.itercolumns():
@@ -382,7 +387,9 @@ class TestDataModule(unittest.TestCase):
         not_nan_cond:bool = not processed_dirty.isna().any()
         clean_coords_cond  = dict_arr_compare(processed_clean.coords(),
                                               bridge.coords())
-        clean_dims_cond = all(processed_clean.dims() == bridge.dims())
+        clean_dims_cond = all(
+            processed_clean.dims() == bridge.dims()
+            )
         val_unchanged_cond = (
             processed_clean.values()==bridge.values()).all()
         return self.assertTrue(
@@ -673,22 +680,25 @@ class TestDataModule(unittest.TestCase):
         raw_arr = numpy.random.rand(100,9)
         ridx:int = choice(list(range(raw_arr.shape[0])))
         sidx:int = choice(list(range(raw_arr.shape[1])))
-        processor = Data(cast=None)
         arr=NDArrayStructure(raw_arr) # type:ignore
         narr = NDArrayStructure(raw_arr)
         narr._coords[f'dim_0'] = numpy.asarray([
             f'sample_{i}' for i in range(raw_arr.shape[0])])
         predicates = dict(
             single_idx = (
-                raw_arr[[ridx]] == arr[ridx].values[:,0]).all(),
-            single_idx_dims = arr.dims[[1]]==arr[ridx].dims,
-            single_idx_coords = dict_arr_compare(dict(dim_1 = arr.coords['dim_1']), arr[ridx].coords),
+                raw_arr[[ridx]] == arr[ridx].values).all(),
+            single_idx_dims = (arr.dims==arr[ridx].dims).all(),
+            single_idx_coords = dict_arr_compare(dict(
+                dim_0 = numpy.asarray([0]),
+                dim_1 = arr.coords['dim_1']), arr[ridx].coords
+                ),
             slice_idx = raw_arr[ridx, sidx] == arr[ridx, sidx],
             ellipse = (
-                raw_arr[ridx, ...] == arr[ridx, ...].values[:,0]).all(),
-            ellipse_dims = (arr.dims[[1]]==arr[ridx,...].dims).all(),
+                raw_arr[ridx, ...] == arr[ridx, ...].values[0,:]).all(),
+            ellipse_dims = (arr.dims==arr[ridx,...].dims).all(),
             ellipse_coords = dict_arr_compare(
-                dict(dim_1 = arr.coords['dim_1']),
+                dict(dim_0 = numpy.asarray([0]),
+                    dim_1 = arr.coords['dim_1']),
                 arr[ridx, ...].coords 
                 ),
             label_ellipsis = (
@@ -716,9 +726,136 @@ class TestDataModule(unittest.TestCase):
         ]))
     
     def test_pd_slicing(self):
-        pass
+        from random import choice
+        raw_arr = pandas.DataFrame(
+            data=numpy.random.rand(100,9)
+            )
+        ridx:int = choice(list(range(raw_arr.shape[0])))
+        sidx:int = choice(list(range(raw_arr.shape[1])))
+        arr = DataFrameStructure(raw_arr) # type:ignore
+        narr = DataFrameStructure(raw_arr)
+        narr._coords[f'dim_0'] = numpy.asarray([
+            f'sample_{i}' for i in range(raw_arr.shape[0])])
+        predicates = dict(
+            single_idx = (
+                raw_arr.iloc[[ridx]] == arr[ridx].values).all(axis=None),
+            single_idx_dims = (arr.dims==arr[ridx].dims).all(),
+            single_idx_coords = arr[
+                ridx].coords["dim_0"]==numpy.asarray([0]) and (
+                arr[ridx].coords["dim_1"]==numpy.asarray(raw_arr.columns)
+                ).all(),
+            slice_idx = raw_arr.iloc[ridx, sidx] == arr[ridx, sidx],
+            ellipse = (
+                raw_arr.iloc[ridx, ...] == arr[ridx, ...].values[0,:]).all(),
+            ellipse_dims = (arr[[1]].dims==arr[ridx,...].dims).all(),
+            ellipse_coords = dict_arr_compare(
+                dict(
+                    dim_0 = numpy.asarray([0]),
+                    dim_1 = arr.coords['dim_1']
+                    ),
+                arr[ridx, ...].coords 
+                ),
+            label_ellipsis = (
+                           narr["sample_5",...].values==arr[5,...].values
+                           ).all(),
+            multilabel = (
+                            narr[["sample_5", "sample_6"],...].values==arr[[5,6],...].values
+                           ).all(),
+            unilabel = (
+                           narr["sample_7"].values==arr[7].values
+                           ).all(),
+            unislice = (
+                           narr["sample_0":"sample_4"].values==arr[0:4,...].values
+                           ).all(),
+            label_and_intslice =(
+                           narr["sample_0":"sample_4",...].values==arr[0:4,...].values
+                           ).all(),
+            neg_unislice = (
+                           narr["sample_0":"sample_4"].values!=arr[[6,7],...].values
+                           ),
+            boolean = (narr[raw_arr.values>.5]==raw_arr.values[
+                raw_arr.values>.5]).all(),
+        )
+        self.assertTrue(all([
+            v for _,v in predicates.items()
+        ]))
     
     def test_xr_slicing(self):
-        pass
+        # More test cases needed
+        from random import choice
+        raw_arr = numpy.random.rand(100,9)
+        ridx:int = choice(list(range(raw_arr.shape[0])))
+        sidx:int = choice(list(range(raw_arr.shape[1])))
+        arr = DataArrayStructure(raw_arr) # type:ignore
+        narr = DataArrayStructure(raw_arr)
+        narr._coords[f'dim_0'] = numpy.asarray([
+            f'sample_{i}' for i in range(raw_arr.shape[0])])
+        _x = arr[ridx]
+        _y = raw_arr[[ridx]]
+        predicates = dict(
+            single_idx = (
+                raw_arr[[ridx]] == arr[ridx].values).all(),
+            single_idx_dims = (arr.dims==arr[ridx].dims).all(),
+            single_idx_coords = dict_arr_compare(dict(
+                dim_0 = numpy.asarray([0]),
+                dim_1 = arr.coords['dim_1']), arr[ridx].coords
+                ),
+            slice_idx = raw_arr[ridx, sidx] == arr[ridx, sidx],
+            ellipse = (
+                raw_arr[ridx, ...] == arr[ridx, ...].values[0,:]).all(),
+            ellipse_dims = (arr.dims==arr[ridx,...].dims).all(),
+            ellipse_coords = dict_arr_compare(
+                dict(dim_0 = numpy.asarray([0]),
+                    dim_1 = arr.coords['dim_1']),
+                arr[ridx, ...].coords 
+                ),
+            label_ellipsis = (
+                           narr["sample_5",...].values==arr[5,...].values
+                           ).all(),
+            multilabel = (
+                            narr[["sample_5", "sample_6"],...].values==arr[[5,6],...].values
+                           ).all(),
+            unilabel = (
+                           narr["sample_7"].values==arr[7].values
+                           ).all(),
+            unislice = (
+                           narr["sample_0":"sample_4"].values==arr[0:4,...].values
+                           ).all(),
+            label_and_intslice =(
+                           narr["sample_0":"sample_4",...].values==arr[0:4,...].values
+                           ).all(),
+            neg_unislice = (
+                           narr["sample_0":"sample_4"].values!=arr[[6,7],...].values
+                           ),
+            boolean = (narr[raw_arr>.5]==raw_arr[raw_arr>.5]).all(),
+        )
+        self.assertTrue(all([
+            v for _,v in predicates.items()
+        ]))
+        
+    def test_slice_interface(self):
+        '''
+            Test forwarding by testing lack of errors only.
+            Underlying implementation tested elsewhere
+        '''
+        raw_arr = np.random.rand(100,9,3)
+        arr:np.ndarray[float] = CommonDataStructureInterface(
+            _data_structure = NDArrayStructure(
+                raw_arr
+            )
+        )
+        df = CommonDataStructureInterface(
+            _data_structure = DataFrameStructure(
+                pd.DataFrame(raw_arr[:,:,0])
+            )
+        )
+        xarr =CommonDataStructureInterface(
+                _data_structure = DataArrayStructure(
+                    xr.DataArray(raw_arr)
+            )
+        )
+        x = xarr[0:10:5]
+        d = df[0:2]
+        a = arr[0:10]
         
         

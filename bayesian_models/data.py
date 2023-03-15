@@ -9,8 +9,12 @@ from .typing import ndarray, InputData, SHAPE, DIMS, COORDS
 from .typing import AXIS_PERMUTATION
 from dataclasses import dataclass, field
 
-# TODO: Impute missing data. Maybe add slicing to the common data 
+# TODO: 
+# * Impute missing data. Maybe add slicing to the common data 
 # interface
+# * Much of this code is inefficient. Refactor
+# * Replace long if/else statements with structural pattern matching
+# * xarray constructor needs refactoring
 
 
 
@@ -71,10 +75,25 @@ class DataStructure(ABC):
             - itercolumns() := Iterate over the second axis of the 
             structure. Similar to `pandas.DataFrame.itercolumns`
             
-            - cast(dtype, **kwargs) := Attemp to cast tensor elements to
+            - cast(dtype, **kwargs) := Attempt to cast tensor elements to
             to `dtype`. All kwargs are forwarded to `numpy`. Returns a
             new copy of the tensor (as a DataStructure object) with the
             update data type
+            
+            - __getitem__(self, obj) := Slice the object in any number of
+            ways. Integer and label based, slices should be acceptable along
+            with arbitrary combinations thereof. Acceptable slice inputs
+            should be: int, str, slice, Ellipsis, list[int,str], 
+            tuple[int,str] and all combinations of these 
+            Slice should accept label based specs or integers based ones, 
+            or mixes of the two. The step argument only accept integers and
+            raise otherwise. All of the following should be valid:
+                obj[5,6]
+                obj["sample_0", 7]
+                obj["sample_7":10:1, ...]
+                obj[[6,9], "var1":10:2,...]
+            If the object would be reduced below a 2d structure, it should
+            padded into 2D as a row-vector
             
             
     '''
@@ -169,53 +188,14 @@ class DataStructure(ABC):
     def cast(self, typ_spec)->DataStructure:
         raise NotImplementedError()
     
-
-class UtilityMixin:
-    
-    def _cut_dims_(self, axis:Optional[int])->tuple[DIMS, COORDS]:
-        if axis is None:
-            return self.dims, self.coords
+    def _slice_coords(self, obj:Iterable)->COORDS:
+        '''
+            Given a slice/index type object
+            collect the sliced objects' labels as
+            coords and returns them
+        '''
         from copy import copy
-        ndims = copy(list(self.dims))
-        ndims.pop(axis)
-        ncoords = {
-            k:v  for i,(k,v) in enumerate(
-                self._coords.items()
-                ) if i!=axis}
-        return tuple(ndims), ncoords
-    
-    def _dimshuffle_(self,
-                    axes:AXIS_PERMUTATION=None):
-        perm = axes if axes is not None else reversed(range(
-            len((self.dims))))
-        permuted_dims = [self.dims[i] for i in perm]
-        permuted_coords = {
-            pdim:self.coords[pdim] for pdim in permuted_dims
-                        }
-        return permuted_dims, permuted_coords
-
-class NDArrayStructure(DataStructure, UtilityMixin):
-    
-    def __init__(self, obj:Union[ndarray, DataStructure],
-                 dims:Optional[DIMS] = None,
-                 coords:Optional[COORDS] = None,
-                 dtype:Optional[Any] = None)->None:
-        
-        self._obj = obj if len(obj.shape)>=2 else obj[:, None]
-        self._shape:tuple[int] = self.obj.shape
-        self._dims = np.asarray([
-            f"dim_{i}" for i in range(len(obj.shape))]) if dims is \
-                None else dims
-        self._coords = {i:np.asarray(range(self.obj.shape[k])
-                                     ) for k,i in enumerate(
-            self._dims)} if coords is None else coords
-        self._rank = len(self.obj.shape)
-        unpacked = obj if isinstance(obj, np.ndarray) else obj.values
-        self._dtype = unpacked.dtype if dtype is None else dtype
-        self._missing_nan_flag:Optional[bool] = None
-    
-    def _slice_coords(self, obj):
-        from copy import copy
+        from itertools import count
         odims = self._dims
         ocoords = self._coords
         ncoords = copy(self._coords)
@@ -226,26 +206,59 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 ncoords[dim] = ocoords[dim][e]
             else:
                 del ncoords[dim]
-        return ncoords
+        if len(ncoords)>=2:
+            return ncoords
+        else:
+            for i in count():
+                if not f"dim_{i}" in set(ncoords.keys()):
+                        ncoords = {
+                            f"dim_{i}": np.asarray([0]),
+                            }|ncoords
+                        break
+            return ncoords
 
     
-    def __getitem__(self, obj):
-        # Exact selection sentinel. If true only a single value is
-        # returned. Else dimetional coordinate slicing is needed
+    def __getitem__(self, obj:Union[str, int, Iterable]
+                    )->Union[NDArrayStructure, np.ndarray]:
+        '''
+            Index slicing for CommonDataStructure objects. Index or 
+            label based slicing is supported in arbitary combinations.
+            DataStructure objects can be sliced with (nearly) any
+            combination of int, str, slice, list, None, Ellipsis.
+            Note label slicing is supported, however the `step` argument
+            must be blank or an integer, not a label. Example usage:
+            .. code-block::
+                # Pseudo-code
+                obj = DataStructure()
+                obj[5]
+                obj[:5]
+                # Mix and match labelling
+                obj["sample_0", [0,6], 0:6:3,...]
+                # Legal
+                obj["sample_0":"sample_10":1]
+                # Illegal
+                obj["sample_0":"sample_10":"group"]
+                
+            Returns:
+                - numpy.NDArray := If boolean indexing or an exact element
+                is selected i.e. `obj[1,0,1]` or `obj[obj.values>5]`
+                
+                - DataStructure := Of the same type as the original. Note
+                is all cases where the resulting structure would have been
+                1-D or 0-D, a 2-D array is returned i.e. instead of
+                (9,) (1, 9) is returned
+        '''
         lookup = lambda dim ,e: int(np.where(
                         self.coords[dim]== e
                         )[0]) if isinstance(e, str) else e
         nobj:tuple = obj if isinstance(
             obj, tuple) else (obj, )
-
         isarray_indexing:bool = isinstance(nobj[0], np.ndarray)
         boolean_indexing:bool = isarray_indexing and nobj[0].dtype=='bool'
         if boolean_indexing:
             return self._obj[obj]
-        
         if Ellipsis not in nobj and len(nobj)<self.rank:
             nobj = tuple(list(nobj)+[...])
-        
         try:
             collected:list = []
             for dim, e in zip(self.dims ,nobj):
@@ -296,6 +309,60 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             )
         else:
             return self._obj[nobj]
+    
+    
+
+class UtilityMixin:
+    
+    def _cut_dims_(self, axis:Optional[int])->tuple[DIMS, COORDS]:
+        from copy import copy
+        if axis is None:
+            return self.dims, self.coords
+        elif len(self.dims)<=2:
+            ndims = copy(self.dims)
+            ncoords = {
+                ndims[0] : np.asarray([0]),
+                ndims[1] : np.asarray(self.coords[self.dims[0]])
+            }
+            return ndims, ncoords
+        else:
+            ndims = copy(list(self.dims))
+            ndims.pop(axis)
+            ncoords = {
+                k:v  for i,(k,v) in enumerate(
+                    self._coords.items()
+                    ) if i!=axis}
+            return tuple(ndims), ncoords
+    
+    def _dimshuffle_(self,
+                    axes:AXIS_PERMUTATION=None):
+        perm = axes if axes is not None else reversed(range(
+            len((self.dims))))
+        permuted_dims = [self.dims[i] for i in perm]
+        permuted_coords = {
+            pdim:self.coords[pdim] for pdim in permuted_dims
+                        }
+        return permuted_dims, permuted_coords
+
+class NDArrayStructure(DataStructure, UtilityMixin):
+    
+    def __init__(self, obj:Union[ndarray, DataStructure],
+                 dims:Optional[DIMS] = None,
+                 coords:Optional[COORDS] = None,
+                 dtype:Optional[Any] = None)->None:
+        
+        self._obj = obj if len(obj.shape)>=2 else obj[None, :]
+        self._shape:tuple[int] = self.obj.shape
+        self._dims = np.asarray([
+            f"dim_{i}" for i in range(len(obj.shape))]) if dims is \
+                None else dims
+        self._coords = {i:np.asarray(range(self.obj.shape[k])
+                                     ) for k,i in enumerate(
+            self._dims)} if coords is None else coords
+        self._rank = len(self.obj.shape)
+        unpacked = obj if isinstance(obj, np.ndarray) else obj.values
+        self._dtype = unpacked.dtype if dtype is None else dtype
+        self._missing_nan_flag:Optional[bool] = None
     
     @property
     def values(self)->ndarray:
@@ -391,11 +458,104 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             self._obj = obj
         self._shape:tuple[int] = self.obj.shape
         self._dims = np.asarray(["dim_0", "dim_1"])
-        self._coords = dict(dim_0 = self.obj.index, 
-                            dim_1 =self.obj.columns)
+        self._coords = dict(dim_0 = np.asarray(self.obj.index), 
+                            dim_1 =np.asarray(self.obj.columns)
+                            )
         self._rank:int = 2
         self._dtype = obj.values.dtype if dtype is None else dtype
         self._missing_nan_flag:Optional[bool] = None
+        
+    def __getitem__(self, obj:Union[str, int, Iterable]
+                    )->Union[DataFrameStructure, np.ndarray]:
+        '''
+            Index slicing for CommonDataStructure objects. Index or 
+            label based slicing is supported in arbitary combinations.
+            DataStructure objects can be sliced with (nearly) any
+            combination of int, str, slice, list, None, Ellipsis.
+            Note label slicing is supported, however the `step` argument
+            must be blank or an integer, not a label. Example usage:
+            .. code-block::
+                # Pseudo-code
+                obj = DataStructure()
+                obj[5]
+                obj[:5]
+                # Mix and match labelling
+                obj["sample_0", [0,6], 0:6:3,...]
+                # Legal
+                obj["sample_0":"sample_10":1]
+                # Illegal
+                obj["sample_0":"sample_10":"group"]
+                
+            Returns:
+                - numpy.NDArray := If boolean indexing or an exact element
+                is selected i.e. `obj[1,0,1]` or `obj[obj.values>5]`
+                
+                - DataStructure := Of the same type as the original. Note
+                is all cases where the resulting structure would have been
+                1-D or 0-D, a 2-D array is returned i.e. instead of
+                (9,) (1, 9) is returned
+        '''
+        lookup = lambda dim ,e: int(np.where(
+                        self.coords[dim]== e
+                        )[0]) if isinstance(e, str) else e
+        nobj:tuple = obj if isinstance(
+            obj, tuple) else (obj, )
+        isarray_indexing:bool = isinstance(nobj[0], np.ndarray)
+        boolean_indexing:bool = isarray_indexing and nobj[0].dtype=='bool'
+        if boolean_indexing:
+            return self.obj.values[obj]
+        if Ellipsis not in nobj and len(nobj)<self.rank:
+            nobj = tuple(list(nobj)+[...])
+        try:
+            collected:list = []
+            for dim, e in zip(self.dims ,nobj):
+                if e is Ellipsis:
+                    collected.append(Ellipsis)
+                    break
+                elif isinstance(e, (str, int)):
+                    i = lookup(dim, e)
+                    collected.append(i)
+                elif isinstance(e, slice):
+                    if not (isinstance(e.step, int) or e.step is None):
+                        raise IndexError((
+                            "Step parameter of a slice indexer cannot be"
+                            "be label. Expecte None or an integer greater"
+                            f"than 0, received {e.step} of type "
+                            f"{type(e.step)} instead"
+                        ))
+                    collected.append(slice(
+                        lookup(dim, e.start),
+                        lookup(dim, e.stop),
+                        e.step # Cannot be a label. Raise
+                    ))
+                elif isinstance(e, list):
+                    subcollected:list[int] = []
+                    for elem in e:
+                        if isinstance(elem, (int, str)):
+                            subcollected.append(lookup(dim, elem)
+                                )
+                        else:
+                            raise IndexError((
+                                "Only lists of integers and labels are "
+                                f"valid indexers. Received {elem} of type "
+                                f"{type(elem)}"
+                            ))
+                    collected.append(subcollected)
+        except TypeError:
+            raise IndexError(f"Indexer {e} is invalid")
+        nobj = tuple(collected)
+        exact_match:bool = not any([
+            isinstance(e, slice) or e is Ellipsis for e in nobj
+            ])
+        if not exact_match:
+            ncoords = self._slice_coords(nobj)
+            ndims = np.asarray([k for k in ncoords.keys()])
+            return DataFrameStructure(
+                self._obj.iloc[nobj],
+                dims = ndims, coords=ncoords
+            )
+        else:
+            return self._obj.iloc[nobj]
     
     def isna(self):
         return DataFrameStructure( self.obj.isna(), coords=self.coords, #type:ignore
@@ -412,9 +572,9 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             )
         elif axis == 1:
             return DataFrameStructure(
-                pd.DataFrame(self.obj.any(axis=1).values[:,None], #type:ignore
-                             index = self.coords['dim_0'],
-                             columns = ["0"]
+                pd.DataFrame(self.obj.any(axis=1).values[None, :], #type:ignore
+                             index = ["0"],
+                             columns = self.coords['dim_0']
                              )
                 )
         else:
@@ -435,9 +595,9 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             )
         elif axis == 1:
             return DataFrameStructure(
-                pd.DataFrame(self.obj.all(axis=1).values[:,None], #type:ignore
-                             index = self.coords['dim_0'],
-                             columns = ["0"]
+                pd.DataFrame(self.obj.all(axis=1).values[None, :], #type:ignore
+                             columns = self.coords['dim_0'],
+                             index = ["0"]
                              )
                 )
         else:
@@ -484,6 +644,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
     
     def __init__(self, obj:xr.DataArray, dims:Optional[DIMS] = None
                 , coords: Optional[COORDS] = None, dtype=None)->None:
+              
         _t = type(obj)
         if _t not in DataArrayStructure.accepted_inputs:
             raise ValueError(("Received invalid input type. Expected "
@@ -497,28 +658,71 @@ class DataArrayStructure(DataStructure, UtilityMixin):
             ))
             self._dtype = dtype if dtype is not None else \
                 obj.values.dtype
+            icoords:COORDS = dict()
+            if not isinstance(obj.index, np.ndarray):
+                icoords["dim_0"] = np.asarray(obj.index)
+            else:
+                icoords['dim_0'] = obj.index
+            if not isinstance(obj.columns, np.ndarray):
+                icoords['dim_1'] = np.asarray(obj.columns)
+            else:
+                icoords['dim_1'] = obj.columns
         elif _t == pd.Series:
             self._obj = xr.DataArray(obj.values[None,:], coords =dict(
                 dim_0 = ["0"], dim_1 = obj.index 
             ))
+            icoords:COORDS = dict(
+                dim_0 = np.asarray(["0"]),
+                dim_1 = np.asarray(obj.index)
+            )
             self._dtype = dtype if dtype is not None else \
                 obj.values.dtype
             
         elif _t == np.ndarray:
-            self._obj = xr.DataArray(obj, coords = {
-                f"dim_{i}": np.asarray(range(axis)) for i, axis in \
+            if len(obj.shape)>=2:
+                icoords:COORDS = {
+                    f"dim_{i}": np.asarray(range(axis)) for i, axis in \
                     enumerate(obj.shape)
-            })
+                }
+                self._obj = xr.DataArray(obj, coords = icoords)
+            else:
+                icoords = dict(
+                    dim_0=np.asarray([0]), dim_1 = np.asarray(
+                        range(obj.shape[0])
+                    )
+                )
+                self._obj = xr.DataArray(obj[None, :], coords = icoords)
             self._dtype = dtype if dtype is not None else obj.dtype
         else:
+            icoords:COORDS = {
+                k:np.asarray(v) for k,v in obj.coords.items()
+                }
             self._obj:xr.DataArray = obj
             self._dtype = obj.dtype
+        idims:DIMS = np.asarray([e for e in icoords.keys()])
         self._shape:SHAPE = self._obj.shape
-        self._dims = dims if dims is not None else np.asarray(
-            self.obj.dims)
-        self._coords = coords if coords is not None else {
-            k:v.values for k,v in dict(self.obj.coords).items()
-            }
+        if dims is None:
+            self._dims = idims
+        else:
+            if len(dims)!=len(self._obj.shape):
+                raise ValueError((
+                    "When provided, the length of dims must match the number "
+                    "of dimentions on the object. Object has axii "
+                    f"{self.obj.shape} but saw {dims} instead"
+                ))
+            else:
+                self._dims = dims
+        if coords is not None:
+            if len(coords)!=len(self._obj.shape):
+                raise ValueError((
+                    "When provided, the length of coords must match the number "
+                    "of dimentions on the object. Object has axii "
+                    f"{self.obj.shape} but saw {len(coords)} instead"
+                ))
+            else:
+                self._coords=coords
+        else:
+            self._coords = icoords
         self._rank:int = len(self._coords)
         self._missing_nan_flag:Optional[bool] = None      
         
@@ -539,7 +743,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
             return core_obj
         else:
             return DataArrayStructure(
-        core_obj if len(core_obj.shape)>=2 else core_obj[:,None],
+        core_obj if len(core_obj.shape)>=2 else core_obj[None,:],
                                   dims=ndims, coords=ncoords
                                   )
     
@@ -580,6 +784,98 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                          dims = self.dims, coords = self.coords),
             dims = self.dims, coords = self.coords, dtype = dtype
         )
+    def __getitem__(self, obj:Union[str, int, Iterable]
+                    )->Union[DataArrayStructure, np.ndarray]:
+        '''
+            Index slicing for CommonDataStructure objects. Index or 
+            label based slicing is supported in arbitary combinations.
+            DataStructure objects can be sliced with (nearly) any
+            combination of int, str, slice, list, None, Ellipsis.
+            Note label slicing is supported, however the `step` argument
+            must be blank or an integer, not a label. Example usage:
+            .. code-block::
+                # Pseudo-code
+                obj = DataStructure()
+                obj[5]
+                obj[:5]
+                # Mix and match labelling
+                obj["sample_0", [0,6], 0:6:3,...]
+                # Legal
+                obj["sample_0":"sample_10":1]
+                # Illegal
+                obj["sample_0":"sample_10":"group"]
+                
+            Returns:
+                - numpy.NDArray := If boolean indexing or an exact element
+                is selected i.e. `obj[1,0,1]` or `obj[obj.values>5]`
+                
+                - DataStructure := Of the same type as the original. Note
+                is all cases where the resulting structure would have been
+                1-D or 0-D, a 2-D array is returned i.e. instead of
+                (9,) (1, 9) is returned
+        '''
+        lookup = lambda dim ,e: int(np.where(
+                        self.coords[dim]== e
+                        )[0]) if isinstance(e, str) else e
+        nobj:tuple = obj if isinstance(
+            obj, tuple) else (obj, )
+        isarray_indexing:bool = isinstance(nobj[0], np.ndarray)
+        boolean_indexing:bool = isarray_indexing and nobj[0].dtype=='bool'
+        if boolean_indexing:
+            return self._obj.values[obj]
+        if Ellipsis not in nobj and len(nobj)<self.rank:
+            nobj = tuple(list(nobj)+[...])
+        try:
+            collected:list = []
+            for dim, e in zip(self.dims ,nobj):
+                if e is Ellipsis:
+                    collected.append(Ellipsis)
+                    break
+                elif isinstance(e, (str, int)):
+                    i = lookup(dim, e)
+                    collected.append(i)
+                elif isinstance(e, slice):
+                    if not (isinstance(e.step, int) or e.step is None):
+                        raise IndexError((
+                            "Step parameter of a slice indexer cannot be"
+                            "be label. Expecte None or an integer greater"
+                            f"than 0, received {e.step} of type "
+                            f"{type(e.step)} instead"
+                        ))
+                    collected.append(slice(
+                        lookup(dim, e.start),
+                        lookup(dim, e.stop),
+                        e.step # Cannot be a label. Raise
+                    ))
+                elif isinstance(e, list):
+                    subcollected:list[int] = []
+                    for elem in e:
+                        if isinstance(elem, (int, str)):
+                            subcollected.append(lookup(dim, elem)
+                                )
+                        else:
+                            raise IndexError((
+                                "Only lists of integers and labels are "
+                                f"valid indexers. Received {elem} of type "
+                                f"{type(elem)}"
+                            ))
+                    collected.append(subcollected)
+        except TypeError:
+            raise IndexError(f"Indexer {e} is invalid")
+        nobj = tuple(collected)
+        exact_match:bool = not any([
+            isinstance(e, slice) or e is Ellipsis for e in nobj
+            ])
+        if not exact_match:
+            ncoords = self._slice_coords(nobj)
+            ndims = np.asarray([k for k in ncoords.keys()])
+            return DataArrayStructure(
+                self._obj.values[nobj],
+                dims = ndims, coords=ncoords
+            )
+        else:
+            return self._obj.values[nobj]
+    
 
 
 class DataStructureInterface(ABC):
@@ -813,6 +1109,11 @@ class CommonDataStructureInterface(DataStructureInterface):
         return CommonDataStructureInterface(
             _data_structure = self.data_structure.cast(dtype, **kwargs)
         )
+        
+    def __getitem__(self, obj:Any)->CommonDataStructureInterface:
+        return CommonDataStructureInterface(
+            _data_structure = self.data_structure[obj]
+        )
     
 
 class NANHandler(ABC):
@@ -882,17 +1183,13 @@ class ExcludeMissingNAN(NANHandler):
         for i,_ in enumerate(data.dims()[1:], 1):
             indices = indices.any(axis=1) # type:ignore
         
-        # Try reshape
-        not_nan = np.logical_not(indices.values()[:,0])
+        not_nan = np.logical_not(indices.T().values()[:,0])
         
         clean_data= data._data_structure._obj[not_nan]
         
         self.new_coords = copy(data.coords())
-        self.new_coords[data.dims()[0]] = np.asarray([
-            coord  for i, coord in enumerate(
-                data.coords()[data.dims()[0]]
-                ) if i in np.where(not_nan)[0]
-        ])
+        dim0 = data.dims()[0]
+        self.new_coords[dim0] = data.coords()[dim0][not_nan]
         self.new_dims = data.dims()
         this = CommonDataStructureInterface(
             _data_structure = self.constructor(clean_data,
