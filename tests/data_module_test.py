@@ -860,12 +860,24 @@ class TestDataModule(unittest.TestCase):
         a = arr[0:10]
         
     def test_unique(self):
+        from itertools import product
+        def is_iterator(obj):
+            if (
+                    hasattr(obj, '__iter__') and
+                    hasattr(obj, 'next') and      # or __next__ in Python 3
+                    callable(obj.__iter__) and
+                    obj.__iter__() is obj
+                ):
+                return True
+            else:
+                return False
+
         UNIQUES = set[Optional[Union[Literal[np.nan], str]]]
         uniques_valid_only:set[str] = {f"dim{i}" for i in range(5)}
         uniques_nan:UNIQUES = uniques_valid_only|{None, np.nan}
-        A = np.asarray([
-            f"dim{i}" for i in range(5)]*2+[None, np.nan])
-                raw_arr = np.random.rand(100,9,3)[:,None]
+        A = np.random.randint(0, high=5, size=(100,9,3))
+        A[0,0,0] =np.nan
+        A[1,1,1] = None
         arr:np.typing.ndarray[Any] = CommonDataStructureInterface(
             _data_structure = NDArrayStructure(
                 A
@@ -873,7 +885,7 @@ class TestDataModule(unittest.TestCase):
         )
         df = CommonDataStructureInterface(
             _data_structure = DataFrameStructure(
-                pd.DataFrame(A)
+                pd.DataFrame(A[:,:,0])
             )
         )
         xarr =CommonDataStructureInterface(
@@ -881,8 +893,47 @@ class TestDataModule(unittest.TestCase):
                     xr.DataArray(A)
             )
         )
-        predicates:dict[str,set] = dict(
+        # Generate all possible pairs of axis and valid_only inputs
+        # and package them as dictionaries
+        kwargs = list(
+            map(
+                lambda e:dict(axis=e[0], valid_only=e[1]) , 
+                product(range(3), [True, False] )
+                )
+            )
+        predicates:dict[str, Any] = dict(
+            np_type = is_iterator(arr.unique()),
+            pd_type = is_iterator(df.unique()),
+            xarr_type = is_iterator(xarr.unique())
+            
+        )|{
+            f'np_ax{kwarg["axis"]}_valid{kwarg["valid_only"]}': arr.unique(**kwarg) for kwarg in kwargs
+        }|{
+            f'xr_ax{kwarg["axis"]}_valid{kwarg["valid_only"]}': xarr.unique(**kwarg) for kwarg in kwargs
+        }|{
+            f'pd_ax{kwarg["axis"]}_valid{kwarg["valid_only"]}': df.unique(**kwarg) for kwarg in kwargs
+        }
+        return_vals = dict(
+            np_ax0_valid = arr.unique(
+                axis=0, valid_only=True
+                )==[(str(i), ) for i in range(2,A.shape[0])],
+            np_ax1_invalid = arr.unique(
+                axis=1
+                )==[(str(i), ) for i in range(2,A.shape[1])],
+            pd_ax1_valid = df.unique(
+                axis=1, valid_only=True
+                )==[(str(i), ) for i in range(2,A.shape[1])],
+            pd_ax0_invalid = df.unique(
+                axis=0
+                )==[(str(i), ) for i in range(2,A.shape[0])],
+            xarr_ax1_invalid = arr.unique(
+                axis=1, valid_only=False
+                )==[(str(i), ) for i in range(2,A.shape[0])],
+            xarr_ax0_valid = arr.unique(
+                axis=0, valid_only=True
+                )==[(str(i), ) for i in range(2,A.shape[0])],
         )
+        predicates=predicates|return_vals
         self.assertTrue(all([
             v for _,v in predicates.items()
         ]))      
