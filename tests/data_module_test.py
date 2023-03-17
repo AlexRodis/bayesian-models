@@ -1,10 +1,11 @@
 import unittest
-from bayesian_models.data import NDArrayStructure, DataFrameStructure, \
-    DataArrayStructure, CommonDataStructureInterface, \
-        CommonDataProcessor, ExcludeMissingNAN, ImputeMissingNAN, \
-        IgnoreMissingNAN, DataProcessingDirector, NANHandlingContext,\
-        Data
-        
+from bayesian_models.data import NDArrayStructure, DataFrameStructure
+from bayesian_models.data import DataArrayStructure, NANHandlingContext
+from bayesian_models.data import CommonDataStructureInterface, Data
+from bayesian_models.data import CommonDataProcessor, ExcludeMissingNAN
+from bayesian_models.data import ImputeMissingNAN, IgnoreMissingNAN
+from bayesian_models.data import DataProcessingDirector
+from typing import Any, Optional, Union, Literal
 import pandas
 import xarray
 import numpy
@@ -857,5 +858,133 @@ class TestDataModule(unittest.TestCase):
         x = xarr[0:10:5]
         d = df[0:2]
         a = arr[0:10]
+    
+    def test_unique(self):                
+        A = np.random.randint(0, high=5, size=(30,9,3)).astype(object)
+        B = A.copy()
+        A[0,0,0] =np.nan
+        A[1,1,1] = np.nan
         
+        arr:np.typing.ndarray[Any] = CommonDataStructureInterface(
+            _data_structure = NDArrayStructure(
+                A
+            )
+        )
+        arr_clean:np.typing.ndarray[Any] = CommonDataStructureInterface(
+            _data_structure = NDArrayStructure(
+                B
+            )
+        )
+        df = CommonDataStructureInterface(
+            _data_structure = DataFrameStructure(
+                pd.DataFrame(A[:,:,0])
+            )
+        )
+        df_clean = CommonDataStructureInterface(
+            _data_structure = DataFrameStructure(
+                pd.DataFrame(B[:,:,0])
+            )
+        )
+        xarr =CommonDataStructureInterface(
+                _data_structure = DataArrayStructure(
+                    xr.DataArray(A)
+            )
+        )
+        xarr_clean =CommonDataStructureInterface(
+                _data_structure = DataArrayStructure(
+                    xr.DataArray(B)
+            )
+        )
+        predicates = dict(
+            np_axNone_left = next(arr_clean.unique())[0] is None,
+            np_axNone_right =  (next(arr_clean.unique())[1] == np.unique(B)).all(),
+            np_ax0_left = list(
+                e[0] for e in arr_clean.unique(axis=0)
+                )==list(range(arr_clean.shape()[0])),
+            np_ax0_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[i,...]) for i in range(B.shape[0])),
+                    (e[1] for e in arr_clean.unique(axis=0)),
+                    )
+                ))),
+            np_ax1_left = list(
+                e[0] for e in arr_clean.unique(axis=1)
+                )==list(range(arr_clean.shape()[1])),
+            np_ax1_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[:,i,:]) for i in range(B.shape[1])),
+                    (e[1] for e in arr_clean.unique(axis=1)),
+                    )
+                ))), 
+            np_ax2_left = list(
+                e[0] for e in arr_clean.unique(axis=2)
+                )==list(range(arr_clean.shape()[2])),
+            np_ax2_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[:,:,i]) for i in range(B.shape[2])),
+                    (e[1] for e in arr_clean.unique(axis=2)),
+                    )
+                ))), 
+            pd_axNone_left = next(df_clean.unique())[0] is None,
+            pd_axNone_right =  (next(df_clean.unique())[1] == np.unique(B)).all(),
+            pd_ax0_left = list(
+                e[0] for e in df_clean.unique(axis=0)
+                )==list(range(df_clean.shape()[0])),
+            pd_ax0_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[i,:,0]) for i in range(B.shape[0])),
+                    (e[1] for e in df_clean.unique(axis=0)),
+                    )
+                ))),
+            pd_ax1_left = list(
+                e[0] for e in df_clean.unique(axis=1)
+                )==list(range(df_clean.shape()[1])),
+            pd_ax1_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[:,i,0]) for i in range(B.shape[1])),
+                    (e[1] for e in df_clean.unique(axis=1)),
+                    )
+                ))),
+            xarr_axNone_left = next(xarr_clean.unique())[0] is None,
+            xarr_axNone_right =  (next(xarr_clean.unique())[1] == np.unique(B)).all(),
+            xarr_ax0_left = list(
+                e[0] for e in xarr_clean.unique(axis=0)
+                )==list(range(xarr_clean.shape()[0])),
+            xarr_ax0_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[i,...]) for i in range(B.shape[0])),
+                    (e[1] for e in xarr_clean.unique(axis=0)),
+                    )
+                ))),
+            xarr_ax1_left = list(
+                e[0] for e in xarr_clean.unique(axis=1)
+                )==list(range(xarr_clean.shape()[1])),
+            xarr_ax1_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[:,i,:]) for i in range(B.shape[1])),
+                    (e[1] for e in xarr_clean.unique(axis=1)),
+                    )
+                ))), 
+            xarr_ax2_left = list(
+                e[0] for e in xarr_clean.unique(axis=2)
+                )==list(range(xarr_clean.shape()[2])),
+            xarr_ax2_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[:,:,i]) for i in range(B.shape[2])),
+                    (e[1] for e in xarr_clean.unique(axis=2)),
+                    )
+                ))), 
+        )
+        self.assertTrue(all([
+            v for _,v in predicates.items()
+        ]))
+      
         
