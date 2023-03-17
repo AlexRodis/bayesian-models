@@ -859,32 +859,7 @@ class TestDataModule(unittest.TestCase):
         d = df[0:2]
         a = arr[0:10]
     
-    @unittest.expectedFailure
-    def test_unique(self):
-        def is_iterator(obj):
-            if (
-                    hasattr(obj, '__iter__') and
-                    hasattr(obj, 'next') and
-                    callable(obj.__iter__) and
-                    obj.__iter__() is obj
-                ):
-                return True
-            else:
-                return False
-        compare = lambda l1,l2: all(
-            tuple_arr_comp(e1,e2) for e1,e2 in zip(l1,l2)
-            )
-        
-        def tuple_arr_comp(one, other)->bool:
-            '''
-                Compare two tuple whose second element is an arbitrary
-                numpy array by using `.all()`.
-                WARNING!
-                Due to numpy limitations, nan values will never be considered
-                equal
-            '''
-            return (one[1]==other[1]).all() and one[0]==other[0]
-        
+    def test_unique(self):                
         A = np.random.randint(0, high=5, size=(30,9,3)).astype(object)
         B = A.copy()
         A[0,0,0] =np.nan
@@ -1007,9 +982,7 @@ class TestDataModule(unittest.TestCase):
                     (e[1] for e in xarr_clean.unique(axis=2)),
                     )
                 ))), 
-        
         )
-
         self.assertTrue(all([
             v for _,v in predicates.items()
         ]))

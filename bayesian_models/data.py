@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 # * Much of this code is inefficient. Refactor
 # * Replace long if/else statements with structural pattern matching
 # * xarray constructor needs refactoring
+# * Lots of repetition in both __getitem__ and unique implementations
 
 
 
@@ -94,6 +95,15 @@ class DataStructure(ABC):
                 obj[[6,9], "var1":10:2,...]
             If the object would be reduced below a 2d structure, it should
             padded into 2D as a row-vector
+            
+            - unique(axis=None) := Return a the unique values of the data
+            structure as a generator of length 2 tuples. When axis is 
+            specified as an integer, the generator iterates over the specified
+            axis, yielding tuples of the label and the unique values of the
+            subtensor. When axis is None (default) return a single element
+            Generator which yields exactly one tuple of (None, UNIQUES),
+            where UNIQUES is a vector of all the unique values in the structure
+            
     '''
     
     @property
@@ -437,12 +447,12 @@ class NDArrayStructure(DataStructure, UtilityMixin):
         
     def unique(self, axis:Optional[int]=None):
         '''
-            Return unique values of the NDArrayStructure. When axis is
-            not None, will iterate over the specified axis and turns a
-            tuple of the coordinate and the unique values in the resulting
-            subtensor. When axis is None, returns a tuple of None, all the
-            unique values of the entire structure. The return type is
-            Generator of tuples        
+            Return unique values of the NDArrayStructure as Generator
+            of length 2 tuples. When axis is None, the generator yields
+            a single tuple of (None, vals) where vals are all the unique
+            values in the array. When axis is specified, the Generator
+            iterates over the specified axis, yielding tuples of label,
+            unique_values
         '''
         if axis is None:
             yield (None, np.unique(self._obj))
@@ -721,9 +731,16 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                 self._obj = xr.DataArray(obj[None, :], coords = icoords)
             self._dtype = dtype if dtype is not None else obj.dtype
         else:
-            icoords:COORDS = {
-                k:np.asarray(v) for k,v in obj.coords.items()
+            idims = dims if dims is not None else obj.dims
+            icoords = coords if coords is not None else dict(obj.coords)
+            if icoords == dict():
+                icoords = {
+                    k: np.asarray([
+                        e for e in range(obj.shape[i])
+                        ]) for i,k in enumerate(idims)
                 }
+                obj=obj.assign_coords(icoords)
+            
             self._obj:xr.DataArray = obj
             self._dtype = obj.dtype
         idims:DIMS = np.asarray([e for e in icoords.keys()])
@@ -904,6 +921,14 @@ class DataArrayStructure(DataStructure, UtilityMixin):
             return self._obj.values[nobj]
         
     def unique(self, axis:Optional[int]=None):
+        ''' 
+            Return unique values of the NDArrayStructure as Generator
+            of length 2 tuples. When axis is None, the generator yields
+            a single tuple of (None, vals) where vals are all the unique
+            values in the array. When axis is specified, the Generator
+            iterates over the specified axis, yielding tuples of label,
+            unique_values
+        '''
         if axis is not None and axis not in list(range(len(self.shape))):
             raise ValueError((
                 "axis argument must be a positive integer no larger "
@@ -921,7 +946,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                  np.transpose(
                     self._obj.values, axii)
                 ):
-                yield (crd, subtensor)
+                yield (crd, np.unique(subtensor))
     
 
 
@@ -968,6 +993,20 @@ class DataStructureInterface(ABC):
             
             - itercolumns() := Iterate over the second axis of the 
             structure. Similar to `pandas.DataFrame.itercolumns`
+            
+            - __gettitem__(indexer) := Return the values specified by
+            the `indexer`. Mix and matching label and integer based
+            indexing is supported. If a slice is provided, the start and
+            stop arguments can be labels, but the step argument must be
+            an integer
+            
+            - unique(axis=None) := Return all the unique values in the
+            tensor as a Generator that yields length 2 tuples. If 
+            axis is None the Generator yields a single tuple of the form
+            (None, values), where values is a vector of unique values.
+            If axis is provided, the generator iterates over the specified
+            dimention, yielding tuples of the form (label, values) where
+            values is a vector of unique values for the flattened subtensor.
     '''
     
     @property
