@@ -864,7 +864,7 @@ class TestDataModule(unittest.TestCase):
         def is_iterator(obj):
             if (
                     hasattr(obj, '__iter__') and
-                    hasattr(obj, 'next') and      # or __next__ in Python 3
+                    hasattr(obj, 'next') and
                     callable(obj.__iter__) and
                     obj.__iter__() is obj
                 ):
@@ -874,13 +874,31 @@ class TestDataModule(unittest.TestCase):
 
         UNIQUES = set[Optional[Union[Literal[np.nan], str]]]
         uniques_valid_only:set[str] = {f"dim{i}" for i in range(5)}
-        uniques_nan:UNIQUES = uniques_valid_only|{None, np.nan}
-        A = np.random.randint(0, high=5, size=(100,9,3))
+        ARRAY_TUPLE = tuple[str,np.typing.NDArray[Any]]
+        
+        def tuple_arr_comp(one:ARRAY_TUPLE, other:ARRAY_TUPLE)->bool:
+            '''
+                Compare two tuple whose second element is an arbitrary
+                numpy array by using `.all()`.
+                WARNING!
+                Due to numpy limitations, nan values will never be considered
+                equal
+            '''
+            return (one[1]==other[1]).all() and one[0]==other[0]
+        
+        A = np.random.randint(0, high=5, size=(30,9,3)).astype(object)
+        B = A.copy()
         A[0,0,0] =np.nan
-        A[1,1,1] = None
+        A[1,1,1] = np.nan
+        
         arr:np.typing.ndarray[Any] = CommonDataStructureInterface(
             _data_structure = NDArrayStructure(
                 A
+            )
+        )
+        arr_clean:np.typing.ndarray[Any] = CommonDataStructureInterface(
+            _data_structure = NDArrayStructure(
+                B
             )
         )
         df = CommonDataStructureInterface(
@@ -888,7 +906,17 @@ class TestDataModule(unittest.TestCase):
                 pd.DataFrame(A[:,:,0])
             )
         )
+        df_clean = CommonDataStructureInterface(
+            _data_structure = DataFrameStructure(
+                pd.DataFrame(A[:,:,0])
+            )
+        )
         xarr =CommonDataStructureInterface(
+                _data_structure = DataArrayStructure(
+                    xr.DataArray(A)
+            )
+        )
+        xarr_clean =CommonDataStructureInterface(
                 _data_structure = DataArrayStructure(
                     xr.DataArray(A)
             )
@@ -913,28 +941,51 @@ class TestDataModule(unittest.TestCase):
         }|{
             f'pd_ax{kwarg["axis"]}_valid{kwarg["valid_only"]}': df.unique(**kwarg) for kwarg in kwargs
         }
-        return_vals = dict(
-            np_ax0_valid = arr.unique(
-                axis=0, valid_only=True
-                )==[(str(i), ) for i in range(2,A.shape[0])],
-            np_ax1_invalid = arr.unique(
-                axis=1
-                )==[(str(i), ) for i in range(2,A.shape[1])],
-            pd_ax1_valid = df.unique(
-                axis=1, valid_only=True
-                )==[(str(i), ) for i in range(2,A.shape[1])],
-            pd_ax0_invalid = df.unique(
-                axis=0
-                )==[(str(i), ) for i in range(2,A.shape[0])],
-            xarr_ax1_invalid = arr.unique(
-                axis=1, valid_only=False
-                )==[(str(i), ) for i in range(2,A.shape[0])],
-            xarr_ax0_valid = arr.unique(
-                axis=0, valid_only=True
-                )==[(str(i), ) for i in range(2,A.shape[0])],
+        # WARNING! We can use unique with arrays with `nan` object but
+        # cannot compare them easily. Test ref vals with numerics only
+        compare = lambda l1,l2: all(
+            tuple_arr_comp(e1,e2) for e1,e2 in zip(l1,l2)
+            )
+        
+        ref_vals = dict(
+            np_ax0 = compare(
+                list(arr_clean.unique(axis=0)),
+                list((str(i),np.unique(B[i,...])) for i in range(B.shape[0]))
+            ),
+            np_ax1 = compare(
+                list(arr_clean.unique(axis=1)),
+                list((str(i),np.unique(B[:,i,...])) for i in range(B.shape[1]))
+            ),
+            np_ax3 = compare(
+                list(arr_clean.unique(axis=2)),
+                list((str(i),np.unique(B[:,:,i])) for i in range(B.shape[-1]))
+            ),
+            pd_ax0 = compare(
+                list(df_clean.unique(axis=0)),
+                list((str(i), np.unique(B[i,...]) ) for i in range(B.shape[0]))
+                
+            ),
+            pd_ax1 = compare(
+                list(df_clean.unique(axis=1)),
+                list((str(i), np.unique(B[:,i]) ) for i in range(B.shape[1]))
+                
+            ),
+            xarr_ax0 = compare(
+                list(xarr_clean.unique(axis=0)),
+                list((str(i),np.unique(B[i,...])) for i in range(B.shape[0]))
+            ),
+            xarr_ax1 = compare(
+                list(xarr_clean.unique(axis=1)),
+                list((str(i),np.unique(B[:,i,...])) for i in range(B.shape[1]))
+            ),
+            xarr_ax3 = compare(
+                list(xarr_clean.unique(axis=2)),
+                list((str(i),np.unique(B[:,:,i])) for i in range(B.shape[-1]))
+            ),
         )
-        predicates=predicates|return_vals
+        predicates=predicates
         self.assertTrue(all([
             v for _,v in predicates.items()
-        ]))      
+        ]))
+      
         
