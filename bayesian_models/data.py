@@ -94,8 +94,6 @@ class DataStructure(ABC):
                 obj[[6,9], "var1":10:2,...]
             If the object would be reduced below a 2d structure, it should
             padded into 2D as a row-vector
-            
-            
     '''
     
     @property
@@ -436,6 +434,24 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             self.obj.astype(dtype, **kwargs),
             dims = self.dims, coords = self.coords, dtype=dtype
         )
+        
+    def unique(self, axis:Optional[int]=None):
+        '''
+            Return unique values of the NDArrayStructure. When axis is
+            not None, will iterate over the specified axis and turns a
+            tuple of the coordinate and the unique values in the resulting
+            subtensor. When axis is None, returns a tuple of None, all the
+            unique values of the entire structure. The return type is
+            Generator of tuples        
+        '''
+        if axis is None:
+            yield (None, np.unique(self._obj))
+        else:
+            axii = [axis]+[e for e in range(len(self.dims)) if e!=axis]
+            crds = self.coords.get(list(self.coords.keys())[axis])
+            for subtensor, crd in zip(np.transpose(self._obj, axii),
+                                 crds):
+                yield (crd , np.unique(subtensor))
 
 class DataFrameStructure(DataStructure, UtilityMixin):
     
@@ -636,6 +652,17 @@ class DataFrameStructure(DataStructure, UtilityMixin):
                                   dims=self.dims, coords=self.coords,
                                   dtype=dtype)
         
+    def unique(self, axis:Optional[int] = None):
+        if axis is not None and axis not in (0,1):
+            raise ValueError(("axis argument must be one of None, 0 or "
+                              f"1. Received {axis} instead"))
+        if axis is None:
+            yield (None, np.unique(self._obj.values))
+        else:
+            ob = self._obj.values if axis==0 else self._obj.values.T
+            kz = list(self.coords.keys())[axis]
+            for crd, substruct in zip(self.coords[kz], ob):
+                yield (crd, np.unique(substruct))
 
 class DataArrayStructure(DataStructure, UtilityMixin):
     
@@ -875,6 +902,26 @@ class DataArrayStructure(DataStructure, UtilityMixin):
             )
         else:
             return self._obj.values[nobj]
+        
+    def unique(self, axis:Optional[int]=None):
+        if axis is not None and axis not in list(range(len(self.shape))):
+            raise ValueError((
+                "axis argument must be a positive integer no larger "
+                "than the number of axii on the object, or None. Expected "
+                f"axis either None or in {list(range(len(self.shape)))}."
+                f" Saw {axis} instead"
+            ))
+        elif axis is None:
+            yield (None, np.unique(self._obj.values))
+        else:
+            crds_key = list(self.coords.keys())[axis]
+            axii = [axis] + [e for e in range(len(self.shape)) if e!=axis]
+            for crd, subtensor in zip(
+                 self.coords[crds_key],
+                 np.transpose(
+                    self._obj.values, axii)
+                ):
+                yield (crd, subtensor)
     
 
 
@@ -1114,6 +1161,9 @@ class CommonDataStructureInterface(DataStructureInterface):
         return CommonDataStructureInterface(
             _data_structure = self.data_structure[obj]
         )
+        
+    def unique(self, axis:Optional[int] = None, **kwargs):
+        return self._data_structure.unique(axis=axis)
     
 
 class NANHandler(ABC):

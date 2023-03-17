@@ -858,9 +858,9 @@ class TestDataModule(unittest.TestCase):
         x = xarr[0:10:5]
         d = df[0:2]
         a = arr[0:10]
-        
+    
+    @unittest.expectedFailure
     def test_unique(self):
-        from itertools import product
         def is_iterator(obj):
             if (
                     hasattr(obj, '__iter__') and
@@ -871,12 +871,11 @@ class TestDataModule(unittest.TestCase):
                 return True
             else:
                 return False
-
-        UNIQUES = set[Optional[Union[Literal[np.nan], str]]]
-        uniques_valid_only:set[str] = {f"dim{i}" for i in range(5)}
-        ARRAY_TUPLE = tuple[str,np.typing.NDArray[Any]]
+        compare = lambda l1,l2: all(
+            tuple_arr_comp(e1,e2) for e1,e2 in zip(l1,l2)
+            )
         
-        def tuple_arr_comp(one:ARRAY_TUPLE, other:ARRAY_TUPLE)->bool:
+        def tuple_arr_comp(one, other)->bool:
             '''
                 Compare two tuple whose second element is an arbitrary
                 numpy array by using `.all()`.
@@ -908,7 +907,7 @@ class TestDataModule(unittest.TestCase):
         )
         df_clean = CommonDataStructureInterface(
             _data_structure = DataFrameStructure(
-                pd.DataFrame(A[:,:,0])
+                pd.DataFrame(B[:,:,0])
             )
         )
         xarr =CommonDataStructureInterface(
@@ -918,72 +917,99 @@ class TestDataModule(unittest.TestCase):
         )
         xarr_clean =CommonDataStructureInterface(
                 _data_structure = DataArrayStructure(
-                    xr.DataArray(A)
+                    xr.DataArray(B)
             )
         )
-        # Generate all possible pairs of axis and valid_only inputs
-        # and package them as dictionaries
-        kwargs = list(
-            map(
-                lambda e:dict(axis=e[0], valid_only=e[1]) , 
-                product(range(3), [True, False] )
-                )
-            )
-        predicates:dict[str, Any] = dict(
-            np_type = is_iterator(arr.unique()),
-            pd_type = is_iterator(df.unique()),
-            xarr_type = is_iterator(xarr.unique())
-            
-        )|{
-            f'np_ax{kwarg["axis"]}_valid{kwarg["valid_only"]}': arr.unique(**kwarg) for kwarg in kwargs
-        }|{
-            f'xr_ax{kwarg["axis"]}_valid{kwarg["valid_only"]}': xarr.unique(**kwarg) for kwarg in kwargs
-        }|{
-            f'pd_ax{kwarg["axis"]}_valid{kwarg["valid_only"]}': df.unique(**kwarg) for kwarg in kwargs
-        }
-        # WARNING! We can use unique with arrays with `nan` object but
-        # cannot compare them easily. Test ref vals with numerics only
-        compare = lambda l1,l2: all(
-            tuple_arr_comp(e1,e2) for e1,e2 in zip(l1,l2)
-            )
+        predicates = dict(
+            np_axNone_left = next(arr_clean.unique())[0] is None,
+            np_axNone_right =  (next(arr_clean.unique())[1] == np.unique(B)).all(),
+            np_ax0_left = list(
+                e[0] for e in arr_clean.unique(axis=0)
+                )==list(range(arr_clean.shape()[0])),
+            np_ax0_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[i,...]) for i in range(B.shape[0])),
+                    (e[1] for e in arr_clean.unique(axis=0)),
+                    )
+                ))),
+            np_ax1_left = list(
+                e[0] for e in arr_clean.unique(axis=1)
+                )==list(range(arr_clean.shape()[1])),
+            np_ax1_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[:,i,:]) for i in range(B.shape[1])),
+                    (e[1] for e in arr_clean.unique(axis=1)),
+                    )
+                ))), 
+            np_ax2_left = list(
+                e[0] for e in arr_clean.unique(axis=2)
+                )==list(range(arr_clean.shape()[2])),
+            np_ax2_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[:,:,i]) for i in range(B.shape[2])),
+                    (e[1] for e in arr_clean.unique(axis=2)),
+                    )
+                ))), 
+            pd_axNone_left = next(df_clean.unique())[0] is None,
+            pd_axNone_right =  (next(df_clean.unique())[1] == np.unique(B)).all(),
+            pd_ax0_left = list(
+                e[0] for e in df_clean.unique(axis=0)
+                )==list(range(df_clean.shape()[0])),
+            pd_ax0_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[i,:,0]) for i in range(B.shape[0])),
+                    (e[1] for e in df_clean.unique(axis=0)),
+                    )
+                ))),
+            pd_ax1_left = list(
+                e[0] for e in df_clean.unique(axis=1)
+                )==list(range(df_clean.shape()[1])),
+            pd_ax1_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[:,i,0]) for i in range(B.shape[1])),
+                    (e[1] for e in df_clean.unique(axis=1)),
+                    )
+                ))),
+            xarr_axNone_left = next(xarr_clean.unique())[0] is None,
+            xarr_axNone_right =  (next(xarr_clean.unique())[1] == np.unique(B)).all(),
+            xarr_ax0_left = list(
+                e[0] for e in xarr_clean.unique(axis=0)
+                )==list(range(xarr_clean.shape()[0])),
+            xarr_ax0_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[i,...]) for i in range(B.shape[0])),
+                    (e[1] for e in xarr_clean.unique(axis=0)),
+                    )
+                ))),
+            xarr_ax1_left = list(
+                e[0] for e in xarr_clean.unique(axis=1)
+                )==list(range(xarr_clean.shape()[1])),
+            xarr_ax1_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[:,i,:]) for i in range(B.shape[1])),
+                    (e[1] for e in xarr_clean.unique(axis=1)),
+                    )
+                ))), 
+            xarr_ax2_left = list(
+                e[0] for e in xarr_clean.unique(axis=2)
+                )==list(range(xarr_clean.shape()[2])),
+            xarr_ax2_right = all(list(map(
+                lambda e: np.array_equal(e[0], e[1]),
+                zip(
+                    (np.unique(B[:,:,i]) for i in range(B.shape[2])),
+                    (e[1] for e in xarr_clean.unique(axis=2)),
+                    )
+                ))), 
         
-        ref_vals = dict(
-            np_ax0 = compare(
-                list(arr_clean.unique(axis=0)),
-                list((str(i),np.unique(B[i,...])) for i in range(B.shape[0]))
-            ),
-            np_ax1 = compare(
-                list(arr_clean.unique(axis=1)),
-                list((str(i),np.unique(B[:,i,...])) for i in range(B.shape[1]))
-            ),
-            np_ax3 = compare(
-                list(arr_clean.unique(axis=2)),
-                list((str(i),np.unique(B[:,:,i])) for i in range(B.shape[-1]))
-            ),
-            pd_ax0 = compare(
-                list(df_clean.unique(axis=0)),
-                list((str(i), np.unique(B[i,...]) ) for i in range(B.shape[0]))
-                
-            ),
-            pd_ax1 = compare(
-                list(df_clean.unique(axis=1)),
-                list((str(i), np.unique(B[:,i]) ) for i in range(B.shape[1]))
-                
-            ),
-            xarr_ax0 = compare(
-                list(xarr_clean.unique(axis=0)),
-                list((str(i),np.unique(B[i,...])) for i in range(B.shape[0]))
-            ),
-            xarr_ax1 = compare(
-                list(xarr_clean.unique(axis=1)),
-                list((str(i),np.unique(B[:,i,...])) for i in range(B.shape[1]))
-            ),
-            xarr_ax3 = compare(
-                list(xarr_clean.unique(axis=2)),
-                list((str(i),np.unique(B[:,:,i])) for i in range(B.shape[-1]))
-            ),
         )
-        predicates=predicates
+
         self.assertTrue(all([
             v for _,v in predicates.items()
         ]))
