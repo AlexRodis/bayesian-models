@@ -732,7 +732,9 @@ class DataArrayStructure(DataStructure, UtilityMixin):
             self._dtype = dtype if dtype is not None else obj.dtype
         else:
             idims = dims if dims is not None else obj.dims
-            icoords = coords if coords is not None else dict(obj.coords)
+            icoords = coords if coords is not None else {
+                k:v.values for k,v in obj.coords.items()
+                }
             if icoords == dict():
                 icoords = {
                     k: np.asarray([

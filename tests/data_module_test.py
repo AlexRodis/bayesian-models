@@ -608,6 +608,13 @@ class TestDataModule(unittest.TestCase):
         )
         new_pd_processed = p_core(new_pd_obj)
         new_xr_processed = p_core(new_xr_obj)
+        _x = new_xr_processed.coords()
+        _y = dict(
+                    dummydim_0=numpy.asarray([range(90)]),
+                    dummydim1=numpy.asarray([f"dummy_{i}" for i in range(9)]),
+                    dummydim2=numpy.asarray([f"ddummy_{i}" for i in range(3)]),
+                    
+                )
         evals = dict(
             custom_pd_dims = (new_pd_processed.dims()==numpy.asarray([
                 "dim_0","dim_1"])).all(),
@@ -619,6 +626,7 @@ class TestDataModule(unittest.TestCase):
             custom_xr_dims = (
                 numpy.asarray(["dummydim_0", "dummydim1", "dummydim2"]
                               ) == new_xr_processed.dims()).all(),
+
             custom_xr_coords = dict_arr_compare(
                 new_xr_processed.coords(), dict(
                     dummydim_0=numpy.asarray([range(90)]),
