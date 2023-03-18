@@ -634,7 +634,8 @@ class BEST(BESTBase):
         
     '''
     
-    group_var:Optional[Union[str, int]]
+    group_var:Optional[Union[str, int]] = field(
+        init=True, default_factory=lambda : None)
     _permutations:Any = field(init=False, default_factory=lambda : None)
     _n_perms:Optional[int] = field(init=False, 
                                    default_factory=lambda : None)
@@ -651,6 +652,9 @@ class BEST(BESTBase):
     _group_distributions:Any = field(init=False, default_factory=dict)
     _idata:Optional[az.InferenceData] = field(
         init=False, default_factory=lambda : None)
+    _data_processor:Data = field(
+        init=False, default_factory = lambda : Data(cast=None)
+        )
     _model:Optional[pymc.Model] = field(init=False, 
                                         default_factory=lambda : None)
     var_names:dict[str, list] = field(init=False, 
@@ -779,41 +783,23 @@ class BEST(BESTBase):
                 - None
         '''
         
-        self.levels = data[:,self.group_var].dropna().unique()
+        self.levels = [
+            e for e in next(data[:,self.group_var].unique())[1]
+            ]
         self.num_levels=len(self.levels)
-        self.features = data.columns.difference([self.group_var])
-        
-        # May result in an unindentifiable model. Requires updating along
-        # with additional options for handdling multivariate inputs. i.e.
-        # Single multivariate, independant Univariate with distrinct dof
-        # or independant multivariate with independant dof
-        
+        self.features = [
+            k for k in data.coords()[list(data.coords().keys())[1]] if k != self.group_var
+            ]
         self._ndims=len(self.features)
         
-        # Need to revisit branching logic here as if 
-        # `self.nan_present_flag==True` the below line
-        # is essentially computed and discarded
-        rescaled = data if self.scaler is None else self.scaler(data)[0]
-        if self.nan_present_flag and self.nan_handling=='exclude':
-            filtered_data=BEST.exclude_missing_nan(rescaled)
-            
-        elif self._nan_present_flag and self.nan_handling=='impute':
-            filtered_data=BEST.impute_missing_nan(rescaled)
-    
-        else:
-            filtered_data = data
-
-        groups = {level : filtered_data.loc[
-            filtered_data.loc[:,self.group_var]==level].index for \
-                level in self.levels}
+        groups = {
+            level: data[:, self.group_var]==level for level in self.levels
+        }
 
         self._groups = groups
-            
-        if self.tidify_data is not None:
-            self._coords =dict(dimentions=data.loc[:,self.features
-                ].columns)
-        else:
-            self._coords=dict(dimentions=self.features)
+        self._coords = dict(
+            dimentions = data.coords()[data.coords().keys()[0]] 
+        )
             
         self._fetch_differential_permutations_()
     
@@ -823,7 +809,6 @@ class BEST(BESTBase):
             of the target factor.
         '''
         from itertools import combinations
-        from math import comb
         self._permutations=list(combinations(self.levels ,2))
         self._n_perms=len(self._permutations)
     
@@ -922,8 +907,7 @@ class BEST(BESTBase):
         return warped_input
         
     
-    def __call__(self, data:pd.DataFrame,
-        group_var:Union[str, tuple[str]]):
+    def __call__(self, data, group_var:Union[str, tuple[str]]):
         '''
             Initialized the full probability model
 
@@ -946,11 +930,12 @@ class BEST(BESTBase):
                 - obj:BEST := The object
         '''
         self.group_var = group_var
-        data =self.tidify_data(data) if self.tidify_data is not None \
-            else data
+        data = self._data_processor(data)
+        # data =self.tidify_data(data) if self.tidify_data is not None \
+        #     else data
         self._preprocessing_(data)
-        if self.scaler is not None:
-            data = self.scaler(data.loc[:,self.features])
+        # if self.scaler is not None:
+        #     data = self.scaler(data.loc[:,self.features])
         with pymc.Model(coords=self._coords) as BEST_model:
             
             σ_lower=BEST.std_lower

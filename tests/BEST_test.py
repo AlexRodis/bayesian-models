@@ -189,6 +189,14 @@ class TestBESTModel(unittest.TestCase):
     def test_fit(self):
         BEST()(self.df, "group").fit(50, tune=50, progressbar=False)
 
+    def test_dev(self):
+        from bayesian_models.data import Data
+        # BEST()(self.df, 'group')
+        processor = Data(cast=None)
+        d = processor(self.df)
+        this = d[:, "group"]
+        print("Hi")
+
     def test_ground_truth(self):
         ε = 1e-1
         ref_val_mu = 1.0
