@@ -376,6 +376,73 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     def values(self)->ndarray:
         return self.obj
     
+    def __eq__(self, obj):
+        raw = self._obj == obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return NDArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __ne__(self, obj):
+        raw = self._obj != obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return NDArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __lt__(self, obj):
+        raw = self._obj < obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return NDArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __gt__(self, obj):
+        raw = self._obj > obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return NDArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __ge__(self, obj):
+        raw = self._obj >= obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return NDArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __le__(self, obj):
+        raw = self._obj <= obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return NDArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+
+    
     def isna(self):
         return NDArrayStructure(np.isnan(self.obj),
                                 coords = self.coords,
@@ -583,6 +650,73 @@ class DataFrameStructure(DataStructure, UtilityMixin):
         else:
             return self._obj.iloc[nobj]
     
+    def __eq__(self, obj):
+        raw = self._obj == obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataFrameStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __ne__(self, obj):
+        raw = self._obj != obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataFrameStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __lt__(self, obj):
+        raw = self._obj < obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataFrameStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __gt__(self, obj):
+        raw = self._obj > obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataFrameStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __ge__(self, obj):
+        raw = self._obj >= obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataFrameStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __le__(self, obj):
+        raw = self._obj <= obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataFrameStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+            
+            
     def isna(self):
         return DataFrameStructure( self.obj.isna(), coords=self.coords, #type:ignore
                                 dims=self.dims)  
@@ -770,7 +904,73 @@ class DataArrayStructure(DataStructure, UtilityMixin):
         else:
             self._coords = icoords
         self._rank:int = len(self._coords)
-        self._missing_nan_flag:Optional[bool] = None      
+        self._missing_nan_flag:Optional[bool] = None
+        
+    def __eq__(self, obj):
+        raw = self._obj == obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __ne__(self, obj):
+        raw = self._obj != obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __lt__(self, obj):
+        raw = self._obj < obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __gt__(self, obj):
+        raw = self._obj > obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __ge__(self, obj):
+        raw = self._obj >= obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
+    
+    def __le__(self, obj):
+        raw = self._obj <= obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return DataArrayStructure(
+                raw,
+                dims= self.dims, 
+                coords = self.coords
+                )
         
     def all(self, axis: Optional[int] = None, **kwargs)->Union[bool,
                                                 DataArrayStructure]:

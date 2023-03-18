@@ -994,5 +994,124 @@ class TestDataModule(unittest.TestCase):
         self.assertTrue(all([
             v for _,v in predicates.items()
         ]))
+        
+    def test_np_ops(self):
+        A = np.random.rand(50,9,3)
+        B = A.copy().astype(str)
+        obj = NDArrayStructure(A)
+        obj_str = NDArrayStructure(B)
+        eq_ref = A==A[0,0]
+        lt_ref = A < 0
+        le_ref = A <= 0
+        gt_ref = A >= 0
+        ge_ref = A > 0
+        ne_ref = A != A[0,0]
+        eq_str_ref = B == B[0,0]
+        neq_str_ref = B != B[0,0]
+        
+        predicates_nums = dict(
+            eq = ((obj == A[0,0]).values == eq_ref).all(),
+            lt = ((obj < 0).values == lt_ref).all(),
+            le = ((obj <= 0).values == le_ref).all(), 
+            gt = ((obj >= 0).values == gt_ref).all(),
+            ge = ((obj > 0).values == ge_ref).all(),
+            ne = ((obj != A[0,0]).values == ne_ref).all()
+        )
+        predicates_str = dict(
+            eq_str = ( (obj_str == B[0,0]).values ==  eq_str_ref).all(),
+            neq_str = ((obj_str != B[0,0]).values == neq_str_ref).all(),
+        )
+        predicates=predicates_nums|predicates_str
+        
+        self.assertTrue(
+            all([
+                v for _,v in predicates.items()
+            ])
+        )
+    
+    def test_pd_ops(self):
+        A = pd.DataFrame(np.random.rand(50,9),
+                         columns = [f"var_{i}" for i in range(9)],
+                         index = [f"sample_{i}" for i in range(50)])
+        B = A.copy(deep=True).astype(str)
+        obj = DataFrameStructure(A)
+        obj_str = DataFrameStructure(B)
+        eq_ref = A==A.iloc[0,0]
+        lt_ref = A < 0
+        le_ref = A <= 0
+        gt_ref = A >= 0
+        ge_ref = A > 0
+        ne_ref = A != A.iloc[0,0]
+        eq_str_ref = B==B.iloc[0,0]
+        neq_str_ref = B != B.iloc[0,0]
+        
+        predicates_nums = dict(
+            eq = ((obj == A.iloc[0,0]).values == eq_ref).all(axis=None),
+            lt = ((obj < 0).values == lt_ref).all(axis=None),
+            le = ((obj <= 0).values == le_ref).all(axis=None), 
+            gt = ((obj >= 0).values == gt_ref).all(axis=None),
+            ge = ((obj > 0).values == ge_ref).all(axis=None),
+            ne = ((obj != A.iloc[0,0]).values == ne_ref).all(axis=None)
+        )
+        predicates_str = dict(
+            eq_str = (
+                (obj_str == B.iloc[0,0]) == eq_str_ref
+                ).all(axis=None),
+            neq_str = (
+                (obj_str != B.iloc[0,0]) == neq_str_ref
+                ).all(axis=None),
+        )
+        predicates=predicates_nums|predicates_str
+        
+        self.assertTrue(
+            all([
+                v for _,v in predicates.items()
+            ])
+        )
+        
+    def test_xr_ops(self):
+        A = xr.DataArray(np.random.rand(50,9,3),
+                         coords = dict(
+                             sample = np.asarray([
+                                 f"sample_{e}" for e in range(50)
+                                 ]),
+                             data_dim1 = np.asarray([
+                                 f"var_1{e}" for e in range(9)
+                             ]),
+                             dat_dim2 = np.asarray([
+                                 f"var_2{e}" for e in range(3)
+                             ]),
+                         )
+                        )
+        B = A.copy(deep=True).astype(str)
+        obj = DataArrayStructure(A)
+        obj_str = DataArrayStructure(B)
+        eq_ref = A==A[0,0]
+        lt_ref = A < 0
+        le_ref = A <= 0
+        gt_ref = A >= 0
+        ge_ref = A > 0
+        ne_ref = A != A[0,0]
+        eq_str_ref = B == B[0,0]
+        neq_str_ref = B != B[0,0]
+        
+        predicates_nums = dict(
+            eq = ((obj == A[0,0]).values == eq_ref).all(),
+            lt = ((obj < 0).values == lt_ref).all(),
+            le = ((obj <= 0).values == le_ref).all(), 
+            gt = ((obj >= 0).values == gt_ref).all(),
+            ge = ((obj > 0).values == ge_ref).all(),
+            ne = ((obj != A[0,0]).values == ne_ref).all(),
+        )
+        predicates_str = dict(
+            eq_str = ( (obj_str == B[0,0]).values ==  eq_str_ref).all(),
+            neq_str = ((obj_str != B[0,0]).values == neq_str_ref).all(),
+        )
+        predicates=predicates_nums|predicates_str
+        self.assertTrue(
+            all([
+                v for _,v in predicates.items()
+            ])
+        )
       
         
