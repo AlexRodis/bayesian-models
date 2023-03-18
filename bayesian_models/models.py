@@ -432,10 +432,7 @@ class BESTBase:
     ν_offset:float = 1
     ddof:int = 1
     std_diffusion_factor:int = 2
-    μ_mean:WarperFunction = lambda df, axis=0: df.mean(axis=axis)
-    μ_std:WarperFunction = lambda df,ddof=ddof,\
-        η=std_diffusion_factor,ϵ=1e-4, axis=0:df.std(
-            ddof=ddof, axis=axis).replace({0.0:ϵ})*η
+    zero_offset:float = 1e-4
     jax_device:str = 'gpu'
     jax_device_count: int =1
 
@@ -634,6 +631,10 @@ class BEST(BESTBase):
         
     '''
     
+    nan_handling:str = field(
+        init=True, default_factory = lambda : 'exclude')
+    cast:Optional[np.dtype] = field(
+        init=True, default_factory = lambda : None)
     group_var:Optional[Union[str, int]] = field(
         init=True, default_factory=lambda : None)
     _permutations:Any = field(init=False, default_factory=lambda : None)
@@ -652,8 +653,8 @@ class BEST(BESTBase):
     _group_distributions:Any = field(init=False, default_factory=dict)
     _idata:Optional[az.InferenceData] = field(
         init=False, default_factory=lambda : None)
-    _data_processor:Data = field(
-        init=False, default_factory = lambda : Data(cast=None)
+    _data_processor:Optional[Data] = field(
+        default_factory = lambda : None
         )
     _model:Optional[pymc.Model] = field(init=False, 
                                         default_factory=lambda : None)
@@ -663,55 +664,10 @@ class BEST(BESTBase):
                       )
     _initialized:Optional[bool] = field(default_factory=lambda : False)
     _trained:Optional[bool] = field(default_factory=lambda : False)
+    _save_path:Optional[str] = field(init=True, 
+                                    default_factory=lambda :None)
     nan_present_flag:Optional[bool] = field(
         init=False, default_factory=lambda :None)
-    
-    
-    # def _consistency_checks_(self):
-    #     '''
-    #         Ensures all options specified are mutualy compatible
-    #     '''
-    #     from warnings import warn
-    #     if not self.common_shape:
-    #         warn(("Allowing independant degrees of freedom for all"
-    #         " features may result in unidentifiable models, overfitting" 
-    #         " and multimodal posteriors"))
-    #     if self.multivariate_likelihood and not self.common_shape:
-    #         warn(("Degrees of freedom parameter for a multivariate"
-    #         " StudentT must be a scalar. `common_shape` will be "
-    #         "ignored"))
-    #         self.common_shape=not self.common_shape
-    
-    
-    # def __init__(self, effect_magnitude:bool=False,
-    #             std_difference:bool=False,
-    #             tidify_data:typing.Callable[...,Any]=tidy_multiindex,
-    #             scaler:Optional[SklearnDataFrameScaler] = None,
-    #             common_shape:bool=True, nan_handling:str='exclude',
-    #             save_path:typing.Optional[str]=None,
-    #             multivariate_likelihood:bool = False,
-    #             ):
-    #     super().__init__(tidify_data= tidify_data, scaler = scaler, 
-    #     nan_handling=nan_handling, save_path = save_path)
-    #     self.group_var = None
-    #     self._permutations = None
-    #     self._n_perms = None
-    #     self._data_dimentions = None
-    #     self.effect_magnitude = effect_magnitude
-    #     self.std_difference = std_difference or effect_magnitude
-    #     self.common_shape = common_shape
-    #     self.multivariate_likelihood = multivariate_likelihood
-    #     self._consistency_checks_()
-    #     self._levels=None
-    #     self._ndims=None
-    #     self.num_levels=None
-    #     self._coords=None
-    #     self._group_distributions=dict()
-    #     self._idata=None
-    #     self._model=None
-    #     self.var_names=dict(means=[], stds=[], effect_magnitude=[])
-    #     self._initialized = False
-    #     self._trained = False
     
     @property
     def coords(self)->Optional[dict[str,Any]]:
@@ -760,7 +716,13 @@ class BEST(BESTBase):
     @initialized.setter
     def initialized(self, val:bool)->None:
         self._initialized = val
-            
+        
+    def __post_init__(self)->None:
+        self._data_processor = Data(
+            nan_handling = self.nan_handling,
+            cast = self.cast,
+        )
+    
     
     def _preprocessing_(self, data):
         '''
@@ -783,6 +745,22 @@ class BEST(BESTBase):
                 - None
         '''
         
+        def seek_group_indices(struct, lookup_val:str,
+                               axis:int=0):
+            '''
+                Return the indices of cells where elem == lookup_var
+                as a numpy vector
+            '''
+            # This type of lookup is weird. Need to consider a better
+            # API to perform value lookups in structures
+            this = np.where(
+                (struct[:, self.group_var] == lookup_val).values()
+                )[1]
+            crds = struct.coords()[
+                list(struct.coords().keys())[axis]
+                ][this]
+            return crds
+        
         self.levels = [
             e for e in next(data[:,self.group_var].unique())[1]
             ]
@@ -792,13 +770,11 @@ class BEST(BESTBase):
             ]
         self._ndims=len(self.features)
         
-        groups = {
-            level: data[:, self.group_var]==level for level in self.levels
+        self._groups = {
+            level :  seek_group_indices(data, level).tolist() for level in self.levels
         }
-
-        self._groups = groups
         self._coords = dict(
-            dimentions = data.coords()[data.coords().keys()[0]] 
+            dimentions = data.coords()[list(data.coords().keys())[0]] 
         )
             
         self._fetch_differential_permutations_()
@@ -861,6 +837,23 @@ class BEST(BESTBase):
     def set_degrees_of_freedom(cls,val:int)->None:
         cls.ddof=val
     
+    @classmethod
+    def mean(cls, data, axis:int=0):
+        return np.mean(data.values(), axis=axis)
+    
+    @classmethod
+    def std(cls, data, ddof:Optional[int] = None, 
+            scale:Optional[int] = None, 
+            zero_offset:Optional[float]=None,
+            axis:int=0,
+            ):
+        _ddof = ddof if ddof is not None else cls.ddof
+        _scale = scale if scale is not None else cls.std_diffusion_factor
+        _zero_offset = zero_offset if zero_offset is not None else cls.zero_offset
+        stds = np.std(data.values() ,ddof = _ddof, axis=axis)
+        replaced = stds[stds<_zero_offset]=_zero_offset
+        return _scale*replaced
+    
     @staticmethod
     def warp_input(data, row_indexer, column_indexer, transform,
                   unwrap:bool=True):
@@ -898,10 +891,10 @@ class BEST(BESTBase):
                 of empirical means, or standard deviations
         '''
         
-        selected = data.loc[row_indexer, column_indexer]
+        selected = data[row_indexer, column_indexer]
         transformed = transform(selected)
         if unwrap:
-            warped_input=transformed.values
+            warped_input=transformed.values()
         else:
             warped_input=transformed
         return warped_input
@@ -931,11 +924,8 @@ class BEST(BESTBase):
         '''
         self.group_var = group_var
         data = self._data_processor(data)
-        # data =self.tidify_data(data) if self.tidify_data is not None \
-        #     else data
         self._preprocessing_(data)
-        # if self.scaler is not None:
-        #     data = self.scaler(data.loc[:,self.features])
+
         with pymc.Model(coords=self._coords) as BEST_model:
             
             σ_lower=BEST.std_lower
@@ -947,19 +937,20 @@ class BEST(BESTBase):
             for level in self.levels:
                 obs = pymc.Data(f"y_{level}",
                     BEST.warp_input(data, self._groups[level],
-                        self.features, lambda df:df), mutable=False)
+                        self.features, lambda df:df)[:,0], mutable=False)
                 μ = pymc.Normal(f'μ_{level}',
                               mu = BEST.warp_input(
                                   data, self._groups[level], 
                                   self.features,
-                                  BEST.μ_mean
+                                  BEST.mean,
+                                  unwrap=False
                                   ),
                                 
                               sigma = BEST.warp_input(
                                   data, self._groups[level], 
                                   self.features,
-                                  BEST.μ_std
-                                  ),
+                                  BEST.std,
+                                  unwrap=False),
                               shape=self._ndims
                              )
                 σ = pymc.Uniform(f'{level}_std', lower=σ_lower,

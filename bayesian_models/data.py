@@ -469,7 +469,6 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 coords = self.coords
                 )
 
-    
     def isna(self):
         return NDArrayStructure(np.isnan(self.obj),
                                 coords = self.coords,

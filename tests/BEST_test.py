@@ -64,11 +64,16 @@ class TestBESTModel(unittest.TestCase):
 
 
     def test_illegal_nan_option(self):
+        
         self.assertRaises(ValueError, BEST, 
                           nan_handling="this_is_wrong", 
                           )
 
     def test_nan_valid(self):
+        '''
+            Test errors only. The behavior is tested in the
+            data module
+        '''
         obj = BEST(nan_handling='impute')
         obj2 = BEST(nan_handling='exclude')
 
@@ -194,7 +199,8 @@ class TestBESTModel(unittest.TestCase):
         # BEST()(self.df, 'group')
         processor = Data(cast=None)
         d = processor(self.df)
-        this = d[:, "group"]
+        this = np.where((d[:, "group"] == 'placebo').values())[1]
+        crds = d.coords()[list(d.coords().keys())[0]][this]
         print("Hi")
 
     def test_ground_truth(self):
