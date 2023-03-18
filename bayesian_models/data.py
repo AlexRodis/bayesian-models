@@ -104,6 +104,9 @@ class DataStructure(ABC):
             Generator which yields exactly one tuple of (None, UNIQUES),
             where UNIQUES is a vector of all the unique values in the structure
             
+            - ops := Elementwise comparison operations such as '>', '>=', 
+            '==', '<=', '<' and 'neq' are included in the interface but
+            generally delegated to the underlying library 
     '''
     
     @property
@@ -194,6 +197,30 @@ class DataStructure(ABC):
     
     @abstractmethod
     def cast(self, typ_spec)->DataStructure:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __eq__(self)->Union[bool, DataStructure]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __ne__(self)->Union[bool, DataStructure]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __lt__(self)->Union[bool, DataStructure]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __le__(self)->Union[bool, DataStructure]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __ge__(self)->Union[bool, DataStructure]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __gt__(self)->Union[bool, DataStructure]:
         raise NotImplementedError()
     
     def _slice_coords(self, obj:Iterable)->COORDS:
@@ -1209,6 +1236,11 @@ class DataStructureInterface(ABC):
             If axis is provided, the generator iterates over the specified
             dimention, yielding tuples of the form (label, values) where
             values is a vector of unique values for the flattened subtensor.
+    
+            - ops := Elementwise operations '>', '<', '>=', '<=', '==', 
+            '!=' are delegated to the underlying library but a wrapped
+            object is returned for 'pointwise' operations, i.e. obj==5,
+            otherwise a boolean is returned
     '''
     
     @property
@@ -1267,6 +1299,35 @@ class DataStructureInterface(ABC):
     @abstractmethod
     def astype(self, dtype, kwargs)->DataStructureInterface:
         raise NotImplementedError()
+    
+    @abstractmethod
+    def __getitem__(self, obj)->DataStructureInterface:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __eq__(self, obj)->Union[bool, DataStructureInterface]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __ne__(self, obj)->Union[bool, DataStructureInterface]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __lt__(self, obj)->Union[bool, DataStructureInterface]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __le__(self, obj)->Union[bool, DataStructureInterface]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __ge__(self, obj)->Union[bool, DataStructureInterface]:
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __gt__(self, obj)->Union[bool, DataStructureInterface]:
+        raise NotImplementedError()
+
 
 @dataclass(kw_only=True)
 class CommonDataStructureInterface(DataStructureInterface):
@@ -1312,6 +1373,36 @@ class CommonDataStructureInterface(DataStructureInterface):
             
             - itercolumns() := Iterate over the second axis of the 
             structure. Similar to `pandas.DataFrame.itercolumns`
+            
+            - unique(axis:Optional[int] = None) := Return unique values
+            of the structure. Returns a Generator object that yields 
+            length 2 tuple of the general form (Optional[label:str], 
+            array). The first element of the tuple is either None or an
+            array of unique elements. When axis is None, (default) the
+            Generator yields only a single element, whose first element is
+            None, and whose other element is an array of all unique values
+            in the array. When axis is provided an integer, the resulting
+            Generator, loops over the specified axis, yielding tuples
+            of the label in the current iteration (coordinate of the 
+            specified axis) and numpy arrays of all unique values in the
+            subtensor (as a vector)
+            
+            - __getitem__(obj) := DataStructure indexing. All conventional
+            indexing options are supported, including slicing with labels
+            and mixed label/index based indexing and selecting. The `step`
+            argument must be an integer (or None) all others can be any mix
+            of label and index based indexers. For example:
+            .. code-block::
+            
+                obj[0,0,0]
+                obj[:5:2, "var1",0]
+                obj['sample_0':'sample_10':2, 5,...]
+                obj['sample_5',...]
+                # Illegal - step must be an integer
+                obj[0:15:"sample",...]
+                
+            - ops := Basic operators are supported and generally delegated
+            to the underlying library '==', '>=', '!=', '>', '<', '<='
     '''
     
     
@@ -1405,6 +1496,61 @@ class CommonDataStructureInterface(DataStructureInterface):
         
     def unique(self, axis:Optional[int] = None, **kwargs):
         return self._data_structure.unique(axis=axis)
+    
+    def __eq__(self, obj)->DataStructureInterface:
+        raw = self._data_structure == obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return CommonDataStructureInterface(
+                _data_structure = raw
+            ) 
+    
+    def __ne__(self, obj)->DataStructureInterface:
+        raw = self._data_structure != obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return CommonDataStructureInterface(
+                _data_structure = raw
+            ) 
+            
+    def __lt__(self, obj)->DataStructureInterface:
+        raw = self._data_structure < obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return CommonDataStructureInterface(
+                _data_structure = raw
+            ) 
+            
+    def __le__(self, obj)->DataStructureInterface:
+        raw = self._data_structure <= obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return CommonDataStructureInterface(
+                _data_structure = raw
+            ) 
+            
+    def __gt__(self, obj)->DataStructureInterface:
+        raw = self._data_structure > obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return CommonDataStructureInterface(
+                _data_structure = raw
+            ) 
+            
+    def __ge__(self, obj)->DataStructureInterface:
+        raw = self._data_structure >= obj
+        if isinstance(raw, bool):
+            return raw
+        else:
+            return CommonDataStructureInterface(
+                _data_structure = raw
+            ) 
+            
     
 
 class NANHandler(ABC):

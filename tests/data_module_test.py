@@ -1000,6 +1000,12 @@ class TestDataModule(unittest.TestCase):
         B = A.copy().astype(str)
         obj = NDArrayStructure(A)
         obj_str = NDArrayStructure(B)
+        interface = CommonDataStructureInterface(
+            _data_structure = obj
+        )
+        str_interface = CommonDataStructureInterface(
+            _data_structure = obj_str
+        )
         eq_ref = A==A[0,0]
         lt_ref = A < 0
         le_ref = A <= 0
@@ -1021,7 +1027,19 @@ class TestDataModule(unittest.TestCase):
             eq_str = ( (obj_str == B[0,0]).values ==  eq_str_ref).all(),
             neq_str = ((obj_str != B[0,0]).values == neq_str_ref).all(),
         )
-        predicates=predicates_nums|predicates_str
+        predicates_interface = dict(
+            eq_int = ((interface == A[0,0]).values() == eq_ref).all(),
+            lt_int = ((interface < 0).values() == lt_ref).all(),
+            le_int = ((interface <= 0).values() == le_ref).all(), 
+            gt_int = ((interface >= 0).values() == gt_ref).all(),
+            ge_int = ((interface > 0).values() == ge_ref).all(),
+            ne_int = ((interface != A[0,0]).values() == ne_ref).all(),
+            eq_str_int = ( (str_interface == B[0,0]).values() ==  eq_str_ref).all(),
+            neq_str_int = ((str_interface != B[0,0]).values() == neq_str_ref).all(),
+            
+        )
+        
+        predicates=predicates_nums|predicates_str|predicates_interface
         
         self.assertTrue(
             all([
@@ -1035,7 +1053,13 @@ class TestDataModule(unittest.TestCase):
                          index = [f"sample_{i}" for i in range(50)])
         B = A.copy(deep=True).astype(str)
         obj = DataFrameStructure(A)
+        interface = CommonDataStructureInterface(
+            _data_structure = obj
+        )
         obj_str = DataFrameStructure(B)
+        str_interface = CommonDataStructureInterface(
+            _data_structure = obj_str
+        )
         eq_ref = A==A.iloc[0,0]
         lt_ref = A < 0
         le_ref = A <= 0
@@ -1061,8 +1085,17 @@ class TestDataModule(unittest.TestCase):
                 (obj_str != B.iloc[0,0]) == neq_str_ref
                 ).all(axis=None),
         )
-        predicates=predicates_nums|predicates_str
-        
+        predicates_interface = dict(
+            eq_int = ((interface == A.iloc[0,0]).values() == eq_ref).all(axis=None),
+            lt_int = ((interface < 0).values() == lt_ref).all(axis=None),
+            le_int = ((interface <= 0).values() == le_ref).all(axis=None), 
+            gt_int = ((interface >= 0).values() == gt_ref).all(axis=None),
+            ge_int = ((interface > 0).values() == ge_ref).all(axis=None),
+            ne_int = ((interface != A.iloc[0,0]).values() == ne_ref).all(axis=None),
+            eq_str_int = ( (str_interface == B.iloc[0,0]).values() ==  eq_str_ref).all(axis=None),
+            neq_str_int = ((str_interface != B.iloc[0,0]).values() == neq_str_ref).all(axis=None),    
+        )
+        predicates=predicates_nums|predicates_str|predicates_interface
         self.assertTrue(
             all([
                 v for _,v in predicates.items()
@@ -1085,7 +1118,13 @@ class TestDataModule(unittest.TestCase):
                         )
         B = A.copy(deep=True).astype(str)
         obj = DataArrayStructure(A)
+        interface = CommonDataStructureInterface(
+            _data_structure = obj
+        )
         obj_str = DataArrayStructure(B)
+        str_interface = CommonDataStructureInterface(
+            _data_structure = obj_str
+        )
         eq_ref = A==A[0,0]
         lt_ref = A < 0
         le_ref = A <= 0
@@ -1107,7 +1146,18 @@ class TestDataModule(unittest.TestCase):
             eq_str = ( (obj_str == B[0,0]).values ==  eq_str_ref).all(),
             neq_str = ((obj_str != B[0,0]).values == neq_str_ref).all(),
         )
-        predicates=predicates_nums|predicates_str
+        predicates_interface = dict(
+            eq_int = ((interface == A[0,0]).values() == eq_ref).all(),
+            lt_int = ((interface < 0).values() == lt_ref).all(),
+            le_int = ((interface <= 0).values() == le_ref).all(), 
+            gt_int = ((interface >= 0).values() == gt_ref).all(),
+            ge_int = ((interface > 0).values() == ge_ref).all(),
+            ne_int = ((interface != A[0,0]).values() == ne_ref).all(),
+            eq_str_int = ( (str_interface == B[0,0]).values() ==  eq_str_ref).all(),
+            neq_str_int = ((str_interface != B[0,0]).values() == neq_str_ref).all(),
+            
+        )
+        predicates=predicates_nums|predicates_str|predicates_interface
         self.assertTrue(
             all([
                 v for _,v in predicates.items()
