@@ -12,9 +12,12 @@ import pytensor
 from interval import Interval
 import functools
 from bayesian_models.math import ELU, GELU, SiLU, SWISS, ReLU
-from bayesian_models.core import ModelDirector
+from bayesian_models.core import ModelDirector, CoreModelComponent
+from bayesian_models.core import LikelihoodComponent, distribution
+from bayesian_models.core import FreeVariablesComponent, Distribution
 from bayesian_models.data import Data
 from dataclasses import dataclass, field
+from warnings import warn
 
 __all__ = (
         'BayesianModel',
@@ -157,7 +160,8 @@ class BayesianEstimator(BayesianModel):
     def posterior_trace(self):
         pass
 
-class IOMixin:
+@dataclass(slots=True)
+class ModelIOHandler:
     '''
         Cooperative inheritance class that handles model saving and
         loading. Injects the `save` and `load` methods to subclasses
@@ -184,12 +188,13 @@ class IOMixin:
             attribute, allowing users to specify a save path during object
             initialization
     '''
-
-
-    def __init__(self, save_path: Optional[str] = None, *args,
-        **kwargs)->None:
-        self._save_path = save_path
-        super().__init__(*args, **kwargs)
+    _model:Optional[pymc.Model] = field(init=False, default=None)
+    _class:Optional[BayesianModel] = field(init=False,  default=None)
+    _save_path:Optional[str] = field(
+        init=True, default = None)
+    accepted_methods:set[str] = field(
+        init=True, default_factory = lambda : {"netcdf", "pickle"}
+    )
     
     @property
     def save_path(self)->Optional[str]:
@@ -239,22 +244,33 @@ class IOMixin:
             self.save_path
         if spath is None:
             raise RuntimeError(("`save_path` not specified"))
-        if method=="pickle":
-            import pickle
-            with open(spath, 'wb') as file:
-                pickle.dump(self, file)
-        elif method=="netcdf":
-            self.idata.to_netcdf(spath)
-        else:
+        if not self._class.trained:
+            raise RuntimeError((
+                    "Cannot save model. Model has not been trained"
+                ))
+        if method not in self.accepted_methods:
             raise RuntimeError((f"method={method} is an invalid option."
                     " Specify either 'pickle' to pickle the entire class"
                     ", or 'netcdf', to save only the posterior "
                     "(recommended)"
                     ))
+        if method=="pickle":
+            import pickle
+            with open(spath, 'wb') as file:
+                pickle.dump(self._class, file)
+        elif method=="netcdf":
+            self._class.idata.to_netcdf(spath)
+        else:
+            raise RuntimeError((
+                "Unable to save model. Unspecified runtime error"
+            ))
+            
 
-    def load(self, load_path:str):
+    def load(self, load_path:str,
+             method:Optional[str]='netcdf'):
         '''
-            Load a pretrained model.
+            Load a pretrained model. This feature is experimental and 
+            will likely fail
 
             Args:
             -----
@@ -268,39 +284,44 @@ class IOMixin:
 
             NOTE: Updates the models' `idata` and `trained` attributes
         '''
+        warn((
+            "Warning! This feature is experimental and poorly tested. "
+            "No validations are done for consistency between the loaded "
+            "inference data the model."
+        ))
         # Add consistency checks to ensure the posterior
         # trace loaded is compatible with the initialized
         # model
-        self.idata = az.from_netcdf(load_path)
-        self.trained = True
-        return self
+        if method == 'netcdf':
+            idata = az.from_netcdf(load_path)
+        
+        self._class.idata=idata
+        self._class._initialized = True
+        self._class._trained = True
+        return self._class
 
-class ConvergenceChecksMixin:
+@dataclass(slots=True)
+class ConvergencesHandler:
     '''
-        WIP: Mixin for implementing posterior convergence checks. Currently
-        only alerts if divergences are detected and reports their number
-
-        Object Methods:
-        ----------------
-            Adds the following methods to the inheriting object:
-
-
-            - _check_divergences_ := If there are non-zero divergences
-            raises a warning and reports the divergences
-
+        Convergence checking object. Called with the idata as the result
+        of MCMC, detects divergences and warnins. WIP: Should detect the
+        divergences more extensively in the future
+        
         Object Properties:
-        --------------------
-            Adds the following  properties to the inheriting object:
-
-            - divergences:Optional[xarray.DataArray] := A `xarray.DataArray`
-            containing diverging samples
+        -------------------
+        
+            - divergences:xarray.DataArray := Diverging posterior samples
+        
+        Object Methods:
+        ---------------
+        
+            - __call__(idata) := Investigate the posterio trace for 
+            divergences. Warns if any diverging samples are found
     '''
 
+    _divergences:Optional[xr.DataArray] = field(
+        init = False, default=None)
 
-    def __init__(self, *args, **kwargs):
-
-        self._divergences:Optional[xr.DataArray] = None
-        super().__init__(*args, **kwargs)
 
     @property
     def divergences(self)->Optional[xr.DataArray]:
@@ -309,116 +330,16 @@ class ConvergenceChecksMixin:
     def divergences(self, val:xr.DataArray)->None:
         self._divergences = val
 
-    def _check_divergences_(self):
+    def __call__(self, idata:xr.DataArray):
+        '''
+            Execute divergences checks
+        '''
         from warnings import warn
-        assert self.idata is not None
-        # Make this HTML
-        self.divergences=self.idata.sample_stats['diverging']
+        self.divergences = idata.sample_stats['diverging']
         if self.divergences.sum() > 0:
             warn((f'There were {self.divergences.sum().values} '
                 'divergences after tuning'))
-
-class DataValidationMixin:
-    '''
-        Cooperative inheritance mixin adding data validation capapilities
-        to inheriting models.
-
-        Class Attributes:
-        ------------------
-            Adds the following class attributes to inheriting class:
-
-            - nan_handling_values:tuple[str] := Defines valid values for the
-            `nan_handling` argument
-            
-            
-            - valid_deterministic_nodes:set := Valid deterministic nodes
-            that could constitude elements of the `predict(var_names)`
-            argument. 
-
-        Static Methods:
-        ----------------
-
-            Adds the following static methods to inheriting classes:
-
-            - exclude_missing_nan(df:pandas.DataFrame)->pandas.DataFrame:
-            := Drops all rows with missing values.
-
-            - impute_missing_nan(df:pandas.DataFrame)->None: := Imputes
-            missings data values. NotImplemented and will raise an error
-
-            - check_missing_nan(df:pandas.DataFrame, nan_handling:str
-                )->bool := Returns a flag signaling missing values are
-                present in the input dataset. Warns if True.
-
-        Object Properties:
-        ----------------
-
-            Adds the following properties to inheriting objects:
-
-            - nan_handling:str='exclude' := Selects the strategy in dealing
-            with missing values. Valid options are 'exclude' and 'impute'. The
-            latter is not implemented and will raise an error.
-
-            - tidify_data:Optional[Callable[pandas.DataFrame,
-                pandas.DataFrame]]=tidify_multindex := Optional Callable that
-                takes as input DataFrame with multilevel indices and squashes
-                them to a single level. By default will append all labels
-                joined by dots i.e. `level_0_name.level_1_name.level_2_name`.
-                WARNING! At present does not check that dataframe actually has
-                a multilevel index and join all letters in single level inputs
-                will sepperated by dots, i.e. 'ABCD' becomes 'A.B.C.D'.
-
-            - scaler:Optional[SklearnDataFrameScaler]=None := Scaler object 
-            handling possible rescaling of input data. Initialize the wrapper
-            class `SklearnDataFrameScaler` with the scaler argument as one of
-            `sklearn.preprocessing` scaler classes.
-    '''
-
-
-    nan_handling_values = set(("exclude", "impute"))
-    valid_deterministic_nodes = set(('Δμ',"Δσ", "Effect_Size"))  
-
-    def __init__(self,tidify_data:typing.Callable[...,Any]=tidy_multiindex,
-                scaler:Optional[SklearnDataFrameScaler] = None,
-                nan_handling:str='exclude',*args, **kwargs)->None:
-            self._tidify_data = tidify_data
-            self._scaler = scaler
-            self._nan_present_flag:Optional[bool]=None
-            if nan_handling in DataValidationMixin.nan_handling_values:
-                self._nan_handling=nan_handling
-            else:
-                raise ValueError((f"{nan_handling} is not valid option for "
-                    "`nan_handling`. Valid options are `exclude` and "
-                    "`impute` "))
-            super().__init__(*args, **kwargs)
-        
-
-    @property
-    def nan_handling(self)->str:
-        return self._nan_handling
-    @nan_handling.setter
-    def nan_handling(self, val:str)->None:
-        self._nan_handling=val
-    
-    @property
-    def tidify_data(self)->Callable[..., Any]:
-        return self._tidify_data
-    @tidify_data.setter
-    def tidify_data(self, val:Callable[..., Any])->None:
-        self._tidify_data = val
-    @property
-    def nan_present_flag(self)->Optional[bool]:
-        return self._nan_present_flag
-    @nan_present_flag.setter
-    def nan_present_flag(self, val:bool)->None:
-        self._nan_present_flag = val
-    @property
-    def scaler(self)->Optional[SklearnDataFrameScaler]:
-        return self._scaler
-    @scaler.setter
-    def scaler(self, val:SklearnDataFrameScaler)->None:
-        self._scaler = val
-
+        return self.divergences
 
 class BESTBase:
     '''
@@ -437,7 +358,7 @@ class BESTBase:
     jax_device_count: int =1
 
 @dataclass(slots=True)
-class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
+class BEST(BESTBase):
     '''
         Bayesian Group difference estimation with pymc. The implementation
         is based on the official pymc documentation. The model assumes
@@ -489,9 +410,6 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
             ignored unless the `pymc.sampling.jax.sample_numpyro_nuts`
             is passed during object call. Currently ignored
             
-            
-            
-        
         Object Attrs:
         -------------
 
@@ -662,10 +580,16 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
                       default_factory = lambda : dict(
                           means=[], stds=[], effect_magnitude=[])
                       )
+    _io_handler:Optional[ModelIOHandler] = field(
+        init=False, default=None
+    )
+    _divergence_handler:Optional[ConvergencesHandler] = field(
+        init=False, default=None
+    )
     _initialized:Optional[bool] = field(default_factory=lambda : False)
     _trained:Optional[bool] = field(default_factory=lambda : False)
-    _save_path:Optional[str] = field(init=True, 
-                                    default_factory=lambda :None)
+    save_path:Optional[str] = field(
+        init=True, default = None)
     nan_present_flag:Optional[bool] = field(
         init=False, default_factory=lambda :None)
     
@@ -691,16 +615,7 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
     @model.setter
     def model(self, val:pymc.Model)->None:
         self._model = val
-    
-    @property
-    def save_path(self)->Optional[str]:
-        return self._save_path
-
-    @save_path.setter
-    def save_path(self, val:str)->None:
-        self._save_path = val 
-
-
+        
     @property
     def trained(self)->bool:
         return self._trained
@@ -717,12 +632,39 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
     def initialized(self, val:bool)->None:
         self._initialized = val
         
+        
     def __post_init__(self)->None:
         self._data_processor = Data(
             nan_handling = self.nan_handling,
             cast = self.cast,
         )
-        self.save_path = self._save_path
+        self._io_handler = ModelIOHandler(
+            _save_path = self.save_path
+        )
+        self._divergence_handler = ConvergencesHandler()
+        if not self.common_shape:
+            warn((
+                "Warning! Permitting independant degress of freedom for "
+                "input features can result in overfit. It recommended that "
+                "this be avoided, or else model comparison methods be used"
+            ))
+        if self.multivariate_likelihood:
+            warn((
+                "Warning! Deploying multivariate likelihood with a "
+                "diagonal covariance matrix. This is equivalent to "
+                "multiple independant univariate distributions, but more "
+                "computationally expensive. It recommended "
+                "that `multivariate_likelihood` be set to `False` instead"
+            ))
+        if self.multivariate_likelihood and not self.common_shape:
+            warn((
+                "Settings `multivariate_likelihood=True` and "
+                "`common_shape=True` are incompatible. Degrees of freedom "
+                "parameter for the Multivariate Student T must be a scalar. "
+                "The `common_shape` parameter will be ignored"
+            ))
+            self.common_shape = True
+            
     
     
     def _preprocessing_(self, data):
@@ -851,9 +793,9 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
         _ddof = ddof if ddof is not None else cls.ddof
         _scale = scale if scale is not None else cls.std_diffusion_factor
         _zero_offset = zero_offset if zero_offset is not None else cls.zero_offset
-        stds = np.std(data.values() ,ddof = _ddof, axis=axis)
-        replaced = stds[stds<_zero_offset]=_zero_offset
-        return _scale*replaced
+        # x1000 difference with ints. Explicitly typecast to floats
+        stds = np.std(data.values().astype(float) ,ddof = _ddof, axis=axis)
+        return _scale*stds
     
     @staticmethod
     def warp_input(data, row_indexer, column_indexer, transform,
@@ -923,8 +865,10 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
                 
                 - obj:BEST := The object
         '''
+        from warnings import warn
         self.group_var = group_var
         pdata = self._data_processor(data)
+        self.nan_present_flag = pdata.missing_nan_flag()
         self._preprocessing_(pdata)
 
         with pymc.Model(coords=self._coords) as BEST_model:
@@ -938,7 +882,7 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
             for level in self.levels:
                 obs = pymc.Data(f"y_{level}",
                     BEST.warp_input(pdata, self._groups[level],
-                        self.features, lambda df:df)[:,0], mutable=False)
+                        self.features, lambda df:df), mutable=False)
                 μ = pymc.Normal(f'μ_{level}',
                               mu = BEST.warp_input(
                                   pdata, self._groups[level], 
@@ -956,7 +900,6 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
                              )
                 σ = pymc.Uniform(f'{level}_std', lower=σ_lower,
                 upper=σ_upper, shape=self._ndims)
-                
                 if not self.common_shape:
                     ν  = pm.Exponential(f"ν_minus_one_{level}",
                     BEST.ν_λ,
@@ -1018,6 +961,8 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
                     self.var_names['effect_magnitude'].append(
                         v_name_magnitude)
         self._model=BEST_model
+        self._io_handler._model = self._model
+        self._io_handler._class = self
         self.initialized = True
         return self
     
@@ -1060,7 +1005,7 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
                 "initialized"))
         with self._model:
             self.idata=sampler(*args, **kwargs)
-        self._check_divergences_()
+        self._divergence_handler(self.idata)
         self.trained = True
         return self.idata
     
@@ -1233,6 +1178,14 @@ class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
             raise RuntimeError("Cannot plot trace. Model is untrained")
         
         return az.plot_trace(self.idata, *args, **kwargs)
+    
+    def save(self, save_path:Optional[str]=None, 
+             method:str='netcdf'):
+        spath = save_path if save_path is not None else self.save_path
+        self._io_handler.save(spath, method=method)
+    
+    def load(self, save_path:Optional[str]=None):
+        self._io_handler.load(save_path)
 
 class Layer:
 

@@ -1632,12 +1632,14 @@ class ExcludeMissingNAN(NANHandler):
         dim0 = data.dims()[0]
         self.new_coords[dim0] = data.coords()[dim0][not_nan]
         self.new_dims = data.dims()
-        this = CommonDataStructureInterface(
-            _data_structure = self.constructor(
+        obj = self.constructor(
                 clean_data,
                 coords=self.new_coords,
                 dims = self.new_dims
             )
+        obj.missing_nan_flag = True
+        this = CommonDataStructureInterface(
+            _data_structure = obj
         )
         return this
 
@@ -1803,7 +1805,7 @@ class CommonDataProcessor(DataProcessor):
             return data
         
     def _detect_missing_nan(self, data:DataStructureInterface)->bool:
-        return data.isna() #type:ignore
+        return data.isna().any() #type:ignore
     
     def __call__(self, data: InputData)->DataStructureInterface:
         '''
@@ -1820,9 +1822,17 @@ class CommonDataProcessor(DataProcessor):
             
                 - processed:CommonDataStructureInterface := The processed data
         '''
+        from warnings import warn
         _data = self._convert_structure(data)
-        _data.data_structure._missing_nan_flag = \
-            self._detect_missing_nan(_data)
+        _data.data_structure._missing_nan_flag = self._detect_missing_nan(_data)
+        if _data.data_structure._missing_nan_flag:
+            warn((
+                "Input data contains missing or invalid values. These "
+                "will be handled by the currently selected strategy "
+                f"{self.nan_handler_context._nan_strategy}. Specify the"
+                "`nan_handling` argument in `Data` if this is not the "
+                "desired behavior"
+            ))
         _data = self._handle_nan(_data)
         _data = self._cast_data(_data)
         return _data
