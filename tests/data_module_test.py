@@ -14,6 +14,8 @@ import pandas as pd
 import xarray as xr
 
 
+PREDICATES = dict[str, bool]
+
 dict_arr_compare = lambda one, other : all([(v1 == v2).all() \
             for (k1,v1), (k2,v2) in zip(one.items(),
                                         other.items()
@@ -382,22 +384,23 @@ class TestDataModule(unittest.TestCase):
                 self.A
             )
         )
-        coords_cond:bool = all(numpy.asarray([
-            i for i in range(obj.shape[0]) if i not in (0,88)
-            ]) == processed_dirty.coords()[processed_dirty.dims()[0]])
-        not_nan_cond:bool = not processed_dirty.isna().any()
-        clean_coords_cond  = dict_arr_compare(processed_clean.coords(),
-                                              bridge.coords())
-        clean_dims_cond = all(
-            processed_clean.dims() == bridge.dims()
-            )
-        val_unchanged_cond = (
-            processed_clean.values()==bridge.values()).all()
-        return self.assertTrue(
-            all((coords_cond, not_nan_cond,  clean_dims_cond,
-                val_unchanged_cond and clean_coords_cond)
-                )
-            )
+        predicates:dict[str, bool]=dict(
+            coords_cond = all(numpy.asarray([
+                i for i in range(obj.shape[0]) if i not in (0,88)
+                ]) == processed_dirty.coords()[processed_dirty.dims()[0]]),
+            not_nan_cond = not processed_dirty.isna().any(),
+            clean_coords_cond  = dict_arr_compare(processed_clean.coords(),
+                                                bridge.coords()),
+            clean_dims_cond = all(
+                processed_clean.dims() == bridge.dims()
+                ),
+            val_unchanged_cond = (
+                processed_clean.values()==bridge.values()).all(), 
+        )
+        return self.assertTrue(all([
+                v for _,v in predicates.items()
+            ])
+        )
     
     def test_processor_nan_handling_exclude_pd(self):
         obj = self.B.copy(deep=True)
@@ -414,19 +417,21 @@ class TestDataModule(unittest.TestCase):
                 self.B
             )
         )
-        coords_cond:bool = all(numpy.asarray([
-            i for i in range(obj.shape[0]) if i not in (0,88)
-            ]) == processed_dirty.coords()[processed_dirty.dims()[0]])
-        not_nan_cond:bool = not processed_dirty.isna().any()
-        clean_coords_cond  = dict_arr_compare(processed_clean.coords(),
-                                              bridge.coords())
-        clean_dims_cond = all(processed_clean.dims() == bridge.dims())
-        val_unchanged_cond = (
-            processed_clean.values()==bridge.values()).all()
-        return self.assertTrue(
-            all((coords_cond, not_nan_cond,  clean_dims_cond,
-                val_unchanged_cond and clean_coords_cond)
-                )
+        predicates:PREDICATES = dict(
+            coords_cond = all(numpy.asarray([
+                i for i in range(obj.shape[0]) if i not in (0,88)
+                ]) == processed_dirty.coords()[processed_dirty.dims()[0]]),
+            not_nan_cond = not processed_dirty.isna().any(),
+            clean_coords_cond  = dict_arr_compare(processed_clean.coords(),
+                                                bridge.coords()),
+            clean_dims_cond = all(processed_clean.dims() == bridge.dims()),
+            val_unchanged_cond = (
+                processed_clean.values()==bridge.values()).all(),
+        )
+       
+        return self.assertTrue(all([
+            v for _, v in predicates.items()
+            ])
             )
         
     def test_processor_nan_handling_exclude_xr(self):
@@ -444,19 +449,24 @@ class TestDataModule(unittest.TestCase):
                 self.C
             )
         )
-        coords_cond:bool = all(numpy.asarray([
-            i for i in range(obj.shape[0]) if i not in (0,88)
-            ]) == processed_dirty.coords()[processed_dirty.dims()[0]])
-        not_nan_cond:bool = not processed_dirty.isna().any()
-        clean_coords_cond  = dict_arr_compare(processed_clean.coords(),
-                                              bridge.coords())
-        clean_dims_cond = all(processed_clean.dims() == bridge.dims())
-        val_unchanged_cond = (
-            processed_clean.values()==bridge.values()).all()
-        return self.assertTrue(
-            all((coords_cond, not_nan_cond,  clean_dims_cond,
-                val_unchanged_cond, clean_coords_cond)
-                )
+        predicates:PREDICATES = dict(
+            coords_cond = all(numpy.asarray([
+                i for i in range(obj.shape[0]) if i not in (0,88)
+                ]) == processed_dirty.coords()[processed_dirty.dims()[0]]
+                              ),
+            not_nan_cond = not processed_dirty.isna().any(),
+            clean_coords_cond  = dict_arr_compare(
+                processed_clean.coords(), bridge.coords()),
+            clean_dims_cond = all(
+                processed_clean.dims() == bridge.dims()
+                ),
+            val_unchanged_cond = (
+                processed_clean.values()==bridge.values()
+                ).all()   
+        )
+        return self.assertTrue(all([
+            v for _, v in predicates.items()
+        ])
             )
     
     def test_nan_handling_ignore(self):
@@ -1163,5 +1173,31 @@ class TestDataModule(unittest.TestCase):
                 v for _,v in predicates.items()
             ])
         )
-      
         
+    def test_dims_coords_update(self):
+        '''
+            Test for internaly detected bug, where coords and dims
+            specified were being ignored
+        '''
+        A = pd.DataFrame(
+            data  = np.random.rand(15, 9),
+            columns = [f"ss{i}" for i in range(9)],
+            index = [f"vv{i}" for i in range(15)],
+        )
+        coords = dict(
+            dim0 = np.asarray([f"s{i}" for i in range(15)]),
+            dim1 = np.asarray([f"v{i}" for i in range(9)])
+        )
+        dims = ("dim0", "dim1")
+        obj = DataFrameStructure(
+            A, coords= coords, dims= dims
+        )
+        interface = CommonDataStructureInterface(
+            _data_structure = obj
+        )
+        self.assertTrue((
+            dict_arr_compare(coords, obj.coords) and
+            dict_arr_compare(coords, interface.coords()) and
+            obj.dims == dims and
+            interface.dims() == dims
+        ))

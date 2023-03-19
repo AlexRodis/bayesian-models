@@ -333,7 +333,7 @@ class DataStructure(ABC):
             raise IndexError(f"Indexer {e} is invalid")
         nobj = tuple(collected)
         exact_match:bool = not any([
-            isinstance(e, slice) or e is Ellipsis for e in nobj
+            isinstance(e, (slice, list, tuple)) or e is Ellipsis for e in nobj
             ])
         if not exact_match:
             ncoords = self._slice_coords(nobj)
@@ -576,10 +576,11 @@ class DataFrameStructure(DataStructure, UtilityMixin):
                 self._obj = pd.DataFrame(data = obj.values)
             self._obj = obj
         self._shape:tuple[int] = self.obj.shape
-        self._dims = np.asarray(["dim_0", "dim_1"])
+        self._dims = np.asarray([
+            "dim_0", "dim_1"]) if dims is None else dims
         self._coords = dict(dim_0 = np.asarray(self.obj.index), 
                             dim_1 =np.asarray(self.obj.columns)
-                            )
+                            ) if coords is None else coords
         self._rank:int = 2
         self._dtype = obj.values.dtype if dtype is None else dtype
         self._missing_nan_flag:Optional[bool] = None
@@ -664,8 +665,12 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             raise IndexError(f"Indexer {e} is invalid")
         nobj = tuple(collected)
         exact_match:bool = not any([
-            isinstance(e, slice) or e is Ellipsis for e in nobj
+            isinstance(e, (slice, list, tuple)) or e is Ellipsis for e in nobj
             ])
+        # To have an exact match, we must receive an object of length exactly
+        # equal to the number of axis, no elements of which are Ellipsis, or slices
+        # and if it has structures i.e. lists/tuples, they should have a length of 1
+        
         if not exact_match:
             ncoords = self._slice_coords(nobj)
             ndims = np.asarray([k for k in ncoords.keys()])
@@ -1136,7 +1141,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
             raise IndexError(f"Indexer {e} is invalid")
         nobj = tuple(collected)
         exact_match:bool = not any([
-            isinstance(e, slice) or e is Ellipsis for e in nobj
+            isinstance(e, (slice, list, tuple)) or e is Ellipsis for e in nobj
             ])
         if not exact_match:
             ncoords = self._slice_coords(nobj)
@@ -1628,11 +1633,12 @@ class ExcludeMissingNAN(NANHandler):
         self.new_coords[dim0] = data.coords()[dim0][not_nan]
         self.new_dims = data.dims()
         this = CommonDataStructureInterface(
-            _data_structure = self.constructor(clean_data,
-                                    coords=self.new_coords,
-                                    dims = self.new_dims
-                                    )
+            _data_structure = self.constructor(
+                clean_data,
+                coords=self.new_coords,
+                dims = self.new_dims
             )
+        )
         return this
 
 @dataclass

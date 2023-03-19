@@ -77,10 +77,24 @@ class TestBESTModel(unittest.TestCase):
         obj = BEST(nan_handling='impute')
         obj2 = BEST(nan_handling='exclude')
 
-    def test_missing_nan_warns(self):
+    def test_nan_idx3_error(self):
+        '''
+            Test for weird heisenbug where setting a nan value at
+            index 3 raises an InderError. Was due to wrong value lookups
+        '''
         missing_nan = self.df.copy(deep=True)
-        missing_nan.loc[missing_nan.shape[-1]+1]=[None, "drug"]
-        missing_nan.loc[missing_nan.shape[-1]+1]=[None, "placebo"]
+        missing_nan.loc[missing_nan.shape[-1]+1]=[np.nan, "placebo"]
+        obj = BEST()(missing_nan, "group")
+        with self.assertWarns(UserWarning):
+            obj.fit(tune=50, draws=10, chains=2,
+                progressbar=False)
+
+    def test_missing_nan_warns(self):
+        from bayesian_models.data import Data
+        missing_nan = self.df.copy(deep=True)
+        # processor = Data(cast=None)
+        missing_nan.loc[missing_nan.shape[0]+1]=[np.nan, "drug"]
+        missing_nan.loc[missing_nan.shape[0]+1]=[np.nan, "placebo"]
         obj = BEST()(missing_nan, "group")
         with self.assertWarns(UserWarning):
             obj.fit(tune=50, draws=10, chains=2,

@@ -437,7 +437,7 @@ class BESTBase:
     jax_device_count: int =1
 
 @dataclass(slots=True)
-class BEST(BESTBase):
+class BEST(BESTBase, IOMixin, ConvergenceChecksMixin):
     '''
         Bayesian Group difference estimation with pymc. The implementation
         is based on the official pymc documentation. The model assumes
@@ -722,6 +722,7 @@ class BEST(BESTBase):
             nan_handling = self.nan_handling,
             cast = self.cast,
         )
+        self.save_path = self._save_path
     
     
     def _preprocessing_(self, data):
@@ -756,11 +757,8 @@ class BEST(BESTBase):
             this = np.where(
                 (struct[:, self.group_var] == lookup_val).values()
                 )[1]
-            crds = struct.coords()[
-                list(struct.coords().keys())[axis]
-                ][this]
-            return crds
-        
+            return this
+
         self.levels = [
             e for e in next(data[:,self.group_var].unique())[1]
             ]
@@ -773,8 +771,11 @@ class BEST(BESTBase):
         self._groups = {
             level :  seek_group_indices(data, level).tolist() for level in self.levels
         }
+        crds = [
+            e for e in data.coords()[list(data.coords().keys())[-1]] if e != self.group_var
+            ]
         self._coords = dict(
-            dimentions = data.coords()[list(data.coords().keys())[0]] 
+            dimentions =  crds
         )
             
         self._fetch_differential_permutations_()
@@ -923,8 +924,8 @@ class BEST(BESTBase):
                 - obj:BEST := The object
         '''
         self.group_var = group_var
-        data = self._data_processor(data)
-        self._preprocessing_(data)
+        pdata = self._data_processor(data)
+        self._preprocessing_(pdata)
 
         with pymc.Model(coords=self._coords) as BEST_model:
             
@@ -936,18 +937,18 @@ class BEST(BESTBase):
                                     BEST.ν_λ) + BEST.ν_offset
             for level in self.levels:
                 obs = pymc.Data(f"y_{level}",
-                    BEST.warp_input(data, self._groups[level],
+                    BEST.warp_input(pdata, self._groups[level],
                         self.features, lambda df:df)[:,0], mutable=False)
                 μ = pymc.Normal(f'μ_{level}',
                               mu = BEST.warp_input(
-                                  data, self._groups[level], 
+                                  pdata, self._groups[level], 
                                   self.features,
                                   BEST.mean,
                                   unwrap=False
                                   ),
                                 
                               sigma = BEST.warp_input(
-                                  data, self._groups[level], 
+                                  pdata, self._groups[level], 
                                   self.features,
                                   BEST.std,
                                   unwrap=False),
