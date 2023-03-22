@@ -38,6 +38,7 @@ class TestBESTModel(unittest.TestCase):
 
     def test_no_errors_run(self):
         obj = BEST()(self.df, "group")
+        flag:bool = self.df.isna().any(axis=None)
         obj.fit(draws=100, chains=2, tune=100,
                 progressbar=False)
         obj.predict()
@@ -156,15 +157,17 @@ class TestBESTModel(unittest.TestCase):
         )
         
     def test_levels(self):
-        obj_single_pair = BEST()(self.df, "group")
         multipair_df = self.df.copy(deep=True)
         multipair_df.loc[multipair_df.shape[0]+1] = [100, 
                                                       'dummy_level0']
-        multipair_df.loc[multipair_df.shape[0]+1] = [100, 
+        multipair_df.loc[multipair_df.shape[0]+1] = [150, 
                                                       'dummy_level0']
         multipair_df.loc[multipair_df.shape[0]+1] = [100, 
                                                       'dummy_level1']
+        multipair_df.loc[multipair_df.shape[0]+1] = [130, 
+                                                      'dummy_level1']
         obj_multiple_pairs = BEST()(multipair_df, "group")
+        obj_single_pair = BEST()(self.df, "group")
         single_pair_cond = set(obj_single_pair._groups.keys()) == \
                 set(['placebo',"drug"])
         multiple_pairs_cond = set(obj_multiple_pairs._groups.keys()) ==\
@@ -173,15 +176,16 @@ class TestBESTModel(unittest.TestCase):
 
 
     def test_group_combinations(self):
-
         from itertools import combinations
         obj_single_pair = BEST()(self.df, "group")
         multipair_df = self.df.copy(deep=True)
         multipair_df.loc[multipair_df.shape[0]+1] = [100, 
                                                       'dummy_level0']
-        multipair_df.loc[multipair_df.shape[0]+1] = [100, 
+        multipair_df.loc[multipair_df.shape[0]+1] = [150, 
                                                       'dummy_level0']
         multipair_df.loc[multipair_df.shape[0]+1] = [100, 
+                                                      'dummy_level1']
+        multipair_df.loc[multipair_df.shape[0]+1] = [130, 
                                                       'dummy_level1']
         multipair_obj = BEST()(multipair_df, "group")
         simple_condition =  set(combinations(["drug",'placebo',],2)) ==\
@@ -300,6 +304,21 @@ class TestBESTModel(unittest.TestCase):
             ropes = [(0,1)],
             hdis = [.94]
         )
+        
+    def test_zero_variance(self):
+        single_member_group_df = self.df.copy(deep=True)
+        same_vals_group_df = self.df.copy(deep=True)
+        same_vals_group_df.loc[
+            same_vals_group_df.shape[0]+1] = [100, 'dummy_level0']
+        same_vals_group_df.loc[
+            same_vals_group_df.shape[0]+1] = [100, 'dummy_level0']
+        single_member_group_df.loc[
+            single_member_group_df.shape[0]+1
+            ] = [100, 'dummy_level1']
+        with self.assertRaises(ValueError):
+            single_val_obj = BEST()(single_member_group_df, 'group')
+        with self.assertRaises(ValueError):
+            same_vals_group_obj = BEST()(same_vals_group_df, 'group')
         
     def test_consistency_checks_common_ddof(self):
         self.assertWarns(UserWarning, BEST, common_shape=False)

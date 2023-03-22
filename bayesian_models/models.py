@@ -15,6 +15,8 @@ from bayesian_models.math import ELU, GELU, SiLU, SWISS, ReLU
 from bayesian_models.core import ModelDirector, CoreModelComponent
 from bayesian_models.core import LikelihoodComponent, distribution
 from bayesian_models.core import FreeVariablesComponent, Distribution
+from bayesian_models.core import BESTCoreComponent, ResponseFunctions
+from bayesian_models.core import ResponseFunctionComponent
 from bayesian_models.data import Data
 from dataclasses import dataclass, field
 from warnings import warn
@@ -568,7 +570,7 @@ class BEST(BESTBase):
     num_levels:Optional[int] = field(init=False, 
                                      default_factory=lambda : None)
     _coords:Any = field(init=False, default_factory=lambda : None)
-    _group_distributions:Any = field(init=False, default_factory=dict)
+    _group_distributions:dict[str, Distribution] = field(init=False, default_factory=dict)
     _idata:Optional[az.InferenceData] = field(
         init=False, default_factory=lambda : None)
     _data_processor:Optional[Data] = field(
@@ -706,7 +708,9 @@ class BEST(BESTBase):
             ]
         self.num_levels=len(self.levels)
         self.features = [
-            k for k in data.coords()[list(data.coords().keys())[1]] if k != self.group_var
+            k for k in data.coords()[
+                list(data.coords().keys())[1]
+                                     ] if k != self.group_var
             ]
         self._ndims=len(self.features)
         
@@ -714,7 +718,9 @@ class BEST(BESTBase):
             level :  seek_group_indices(data, level).tolist() for level in self.levels
         }
         crds = [
-            e for e in data.coords()[list(data.coords().keys())[-1]] if e != self.group_var
+            e for e in data.coords()[
+                list(data.coords().keys())[-1]
+                ] if e != self.group_var
             ]
         self._coords = dict(
             dimentions =  crds
@@ -841,11 +847,36 @@ class BEST(BESTBase):
         else:
             warped_input=transformed
         return warped_input
-        
+    
+    def _check_illegal_std(self, stds:list[np.typing.NDArray])->None:
+        '''
+            Check against edge case where the empirical pooled std is
+            invalid (0). This happens if:
+                (1) There is a group in the data, such that at least one
+                variable column has all the same values, i.e.
+                x=[100,100,100,100]
+                (2) A group consists of exactly one observation
+        '''
+        gather:list[bool] = [
+            (std>.0).all() for std in stds
+        ]
+        invalid_idxs = filter(lambda e: e, gather)
+        invalid_levels:list[str] = [
+            self.levels[i] for i in invalid_idxs
+            ]
+        non_zero_sentinel = all(gather)
+        if not non_zero_sentinel:
+            raise ValueError((
+                "Detected groups with 0 variance at levels "
+                f"{invalid_levels}. This can happen is the group has"
+                "only one observation or all observations have the same"
+                " value (for at least one column)"
+            ))
+    
     
     def __call__(self, data, group_var:Union[str, tuple[str]]):
         '''
-            Initialized the full probability model
+            Initialize the full probability model
 
             Args:
             -----
@@ -865,102 +896,141 @@ class BEST(BESTBase):
                 
                 - obj:BEST := The object
         '''
-        from warnings import warn
         self.group_var = group_var
         pdata = self._data_processor(data)
         self.nan_present_flag = pdata.missing_nan_flag()
         self._preprocessing_(pdata)
-
-        with pymc.Model(coords=self._coords) as BEST_model:
-            
-            σ_lower=BEST.std_lower
-            σ_upper=BEST.std_upper
-            
-            if self.common_shape:
-                ν  = pm.Exponential("ν_minus_one", 
-                                    BEST.ν_λ) + BEST.ν_offset
-            for level in self.levels:
-                obs = pymc.Data(f"y_{level}",
-                    BEST.warp_input(pdata, self._groups[level],
-                        self.features, lambda df:df), mutable=False)
-                μ = pymc.Normal(f'μ_{level}',
-                              mu = BEST.warp_input(
-                                  pdata, self._groups[level], 
-                                  self.features,
-                                  BEST.mean,
-                                  unwrap=False
-                                  ),
-                                
-                              sigma = BEST.warp_input(
-                                  pdata, self._groups[level], 
-                                  self.features,
-                                  BEST.std,
-                                  unwrap=False),
-                              shape=self._ndims
-                             )
-                σ = pymc.Uniform(f'{level}_std', lower=σ_lower,
-                upper=σ_upper, shape=self._ndims)
-                if not self.common_shape:
-                    ν  = pm.Exponential(f"ν_minus_one_{level}",
-                    BEST.ν_λ,
-                                        shape=self._ndims) + \
-                                            BEST.ν_offset
-                if not self.multivariate_likelihood:
-                    y_obs = pymc.StudentT(f'y_obs_{level}', nu=ν,
-                    mu =μ, lam=σ**-2, observed= obs)
-                else:
-                    cov = pytensor.tensor.diag(σ**-2)
-                    y_obs = pymc.MvStudentT(f'y_obs_{level}', nu=ν,
-                    mu =μ, scale=cov, observed= obs)
-                
-                self._group_distributions[level]=dict( mean=μ, std=σ,
-                shape=ν)
-        
-        with BEST_model:
-            
-            for permutation in self._permutations:
-                pair_id = "({one_level}, {other_level})".format(
-                one_level = permutation[0],
-                other_level = permutation[1]
+        core_dists = dict() if not self.common_shape else dict(
+            ν = distribution(
+                pm.Exponential, "ν_minus_one", BEST.ν_λ, 
+                transform = lambda e: e+BEST.ν_offset
                 )
-                v_name_mu = "{mean_symbol}{pair}".format(mean_symbol='Δμ', 
-                                                  pair = pair_id)
-                # We may not need self._group_distributions for anything
-                diff = pymc.Deterministic(v_name_mu,
-                                          self._group_distributions[
-                                            permutation[0]]['mean']-\
-                                            self._group_distributions[
-                                                permutation[1]]['mean'],
-                                          dims='dimentions')
+        )
+        likelihoods:list[LikelihoodComponent] = []
+        functions:dict = dict()
+        records:dict = dict()
+        application_targets = dict()
+        response_component = None
+        pooled_stds:list = []
+        
+        for level in self.levels:
+            
+            pooled_std = BEST.warp_input(
+                            pdata, self._groups[level], 
+                            self.features,
+                            BEST.std,
+                            unwrap=False)
+            pooled_stds.append(pooled_std)
+            core_dists = core_dists| {
                 
-                self.var_names['means'].append(v_name_mu)
-                # Possible feature enhancement: Add custom Deterministic
-                # nodes for used-defined derived quantities
-                
-                if self.std_difference:
-                    v_name_std="{std_symbol}{pair}".format(
-                    std_symbol = 'Δσ', pair = pair_id)
-                    std1=self._group_distributions[permutation[0]][
-                        'std']
-                    std2=self._group_distributions[permutation[1]][
-                        'std']
-                    std_diff = pymc.Deterministic(v_name_std,
-                                          std1-std2,
-                                          dims='dimentions')
-                    self.var_names['stds'].append(v_name_std)
-                    
-                if self.effect_magnitude:
-                    v_name_magnitude = 'Effect_Size('+permutation[0]+\
-                        ','+permutation[1]+')'
-                    v_name_magnitude = "{ef_size_sym}{pair}".format(
-                        ef_size_sym='Effect_Size', pair=pair_id)
-                    
-                    effect_magnitude = pymc.Deterministic(
-                        v_name_magnitude, diff/np.sqrt(
-                            (std1**2+std2**2)/2), dims='dimentions')
-                    self.var_names['effect_magnitude'].append(
-                        v_name_magnitude)
-        self._model=BEST_model
+            f"obs_{level}" : distribution(
+                pm.Data, f"y_{level}",
+                BEST.warp_input(pdata, self._groups[level],
+                    self.features, lambda df:df)
+                , mutable=False
+                ),
+             f"μ_{level}": distribution(
+                    pm.Normal, f"μ_{level}", 
+                        mu = BEST.warp_input(
+                            pdata, self._groups[level], 
+                            self.features,
+                            BEST.mean,
+                            unwrap=False
+                            ),   
+                        sigma = pooled_std,
+                        shape = self._ndims
+                    ),
+            f"σ_{level}" : distribution(
+                pm.Uniform, f'σ_{level}', 
+                lower = BEST.std_lower,
+                upper = BEST.std_upper, 
+                shape=self._ndims)
+            }
+            if not self.common_shape:
+                core_dists = core_dists| {
+                    f'ν_{level}' : distribution(
+                        pm.Exponential, f"ν_minus_one_{level}",
+                        BEST.ν_λ, shape=self._ndims,
+                        transform = lambda d: d + BEST.ν_offset
+                                            
+                )}
+            if not self.multivariate_likelihood:
+                    like = LikelihoodComponent(
+                        distribution = pm.StudentT,
+                        observed = f"obs_{level}",
+                        name = f"y_obs_{level}",
+                        var_mapping = dict(
+                            nu = 'ν' if self.common_shape else f'ν_{level}', 
+                            mu = f'μ_{level}', 
+                            lam = f'σ_star_{level}' 
+                            )
+                    )
+                    fname:str = f'σ_star_{level}'
+                    functions = functions|{
+                        fname : lambda sigma: sigma**-2
+                    }
+                    application_targets = application_targets|{
+                        fname : f'σ_{level}'
+                    }
+                    records = records|{
+                        fname : False
+                    }
+                    likelihoods.append(like)
+            else:
+                fname = f"cov_{level}"
+                functions = functions|{
+                    fname : lambda sigma: pytensor.tensor.diag(
+                        sigma**-2)
+                }
+                application_targets = application_targets|{
+                    fname : f'σ_{level}'
+                }
+                records = records|{
+                    fname : False
+                }
+                likelihood = LikelihoodComponent(
+                    name = f"y_obs_{level}",
+                    observed = f"obs_{level}",
+                    distribution = pm.MvStudentT,
+                    var_mapping = dict(
+                        mu = f'μ_{level}',
+                        scale = f'cov_{level}',
+                        nu = f'ν_{level}' if not self.common_shape \
+                            else 'ν'
+                    )
+                )
+                likelihoods.append(likelihood)
+            self._check_illegal_std(pooled_stds)
+            self._group_distributions[level]=dict(
+                mean = core_dists[f'μ_{level}'], 
+                std = core_dists[f'σ_{level}'], 
+                shape = core_dists[
+                    f'ν_{level}'
+                    ] if not self.common_shape else core_dists['ν']
+                )
+        response_component = ResponseFunctionComponent(
+            ResponseFunctions(
+                functions = functions,
+                application_targets = application_targets,
+                records = records
+            )
+        )
+        core_component = BESTCoreComponent(
+            distributions = core_dists,
+            group_distributions = self._group_distributions,
+            permutations = self._permutations,
+            std_difference = self.std_difference ,
+            effect_magnitude = self.effect_magnitude,
+        )
+        builder = ModelDirector(
+            core_component = core_component,
+            response_component = response_component,
+            likelihood_component = likelihoods,
+            coords = self.coords,
+        )
+        builder()
+        self._model = builder.model
+        self.var_names = core_component.variables
         self._io_handler._model = self._model
         self._io_handler._class = self
         self.initialized = True
