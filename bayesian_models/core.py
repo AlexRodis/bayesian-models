@@ -549,6 +549,7 @@ class LinearRegressionCoreComponent(CoreModelComponent):
     )
     model_vars = {"slope", "intercept", "data", "equation"}
     
+    
     def __init__(self, distributions:dict[str, Distribution]=dict(),
                  var_names:dict[str, str] = {},
                  model:Optional[pymc.Model] = None)->None:
@@ -585,8 +586,6 @@ class LinearRegressionCoreComponent(CoreModelComponent):
                     } | {
                         k:v for k,v in cls.var_names if k in s2-s1
                     }
-                
-
         
     def __call__(self)->None:
         super().__call__()
@@ -597,7 +596,79 @@ class LinearRegressionCoreComponent(CoreModelComponent):
         expr = W*X + b
         f = pymc.Deterministic(f_name, expr)
         self.variables[f_name] = f
+        
 
+class BESTCoreComponent(CoreModelComponent):
+    '''
+        Core Model Component for the BEST group comparison model
+    '''
+    
+    __slots__ = ('_group_distributions', 'variables', '_permutations',
+                 '_derived_quantities', '_std_difference', 
+                 '_effect_magnitude', )
+    
+    def __init__(self,
+                 distributions:dict[str, Distribution]=dict(),
+                  model:Optional[pymc.Model] = None,
+                  group_distributions = tuple(),
+                  permutations = tuple(),
+                  std_difference:bool = False,  
+                  effect_magnitude:bool = False,
+                  )->None:
+        super().__init__(distributions = distributions, 
+                         model = model)
+        self._group_distributions = group_distributions
+        self._permutations:tuple = permutations
+        self._derived_quantities:dict[str, list] = dict(
+            means = [], stds = [], effect_magnitude = [],
+        )
+        self._std_difference:bool = std_difference
+        self._effect_magnitude:bool = effect_magnitude
+        
+    def __call__(self)->None:
+        super().__call__()
+        for permutation in self._permutations:
+            pair_id = "({one_level}, {other_level})".format(
+                one_level = permutation[0],
+                other_level = permutation[1],
+            )
+            ν_name_mu = "{mean_symbol}{pair}".format(
+                mean_symbol = 'Δμ',
+                pair = pair_id,
+            )
+            diff = pymc.Deterministic(
+                ν_name_mu, 
+                self.variables[
+                    f'μ_{permutation[0]}'
+                    ] - self.variables[f'μ_{permutation[1]}'
+                                                    ],
+                    dims = 'dimentions'
+            )
+            self.variables[ν_name_mu] = diff
+            self._derived_quantities['means'].append(ν_name_mu)
+            
+            if self._std_difference:
+                v_name_std = "{std_symbol}{pair}".format(
+                std_symbol = 'Δσ', pair = pair_id)
+                std1=self.variables[f'σ_{permutation[0]}']
+                std2 = self.variables[f'σ_{permutation[1]}']
+                std_diff = pymc.Deterministic(v_name_std,
+                                    std1-std2,
+                                    dims='dimentions')
+                self._derived_quantities['stds'].append(v_name_std)
+                self.variables[v_name_std] = std_diff
+            
+            if self._effect_magnitude:
+                v_name_magnitude = "{ef_size_sym}{pair}".format(
+                    ef_size_sym='Effect_Size', pair=pair_id)
+                effect_magnitude = pymc.Deterministic(
+                    v_name_magnitude, diff/pymc.math.sqrt(
+                        (std1**2+std2**2)/2), dims='dimentions')
+                self.variables[v_name_magnitude].append(
+                    effect_magnitude)
+                self._derived_quantities['effect_magnitude'].append(
+                    v_name_magnitude
+                )
 
 class NeuralNetCoreComponent(CoreModelComponent):
     '''
@@ -671,6 +742,7 @@ class CoreModelBuilder(ModelBuilder):
     model_variables:dict = field(default_factory = dict, init=False)
     free_vars:Optional[FreeVariablesComponent] = None
     adaptor:Optional[ModelAdaptorComponent] = None
+    coords:dict[str,Any] = field(default_factory=dict)
     response:Optional[ResponseFunctionComponent] = None
     
     
@@ -730,7 +802,7 @@ class CoreModelBuilder(ModelBuilder):
             self.adaptor(self.model_variables.get('f'))
             self.model_variables = self.model_variables| self.adaptor.variables
         if self.response is not None:
-            self.response()
+            self.response(self.model_variables)
             self.model_variables=self.model_variables|self.response.variables
         
         # Apply users specified mapping from likelihood shape params
@@ -755,15 +827,13 @@ class CoreModelBuilder(ModelBuilder):
                 }
             # Lots of back-and-forth between builder and LikelihoodComponent object
             # See if it can be refactored out. Redux has a similar patter
-            outputs = self.model_variables.get('outputs')
-            observed = outputs if outputs is not None else \
-                self.model_variables.get(likelihood.observed)
+            observed = self.model_variables.get(likelihood.observed)
             likelihood(observed,
                             **likelihood_kwargs)
     
     def __call__(self):
         if self.model is None:
-            with pymc.Model() as model:
+            with pymc.Model(coords = self.coords) as model:
                 self.build()
             self.model = model
         else:
@@ -771,7 +841,6 @@ class CoreModelBuilder(ModelBuilder):
                 self.build()
         return self.model
     
-
 
 class ModelDirector:
     '''
@@ -797,7 +866,8 @@ class ModelDirector:
                  likelihood_component:list[LikelihoodComponent],
                  response_component:Optional[ResponseFunctionComponent] = None,
                  free_vars_component:Optional[FreeVariablesComponent] = None,
-                 adaptor_component:Optional[ModelAdaptorComponent] = None
+                 adaptor_component:Optional[ModelAdaptorComponent] = None,
+                 coords:Optional[dict] = dict(),
                  )->None:
     
         self.builder:ModelBuilder = self.builder(
@@ -805,7 +875,8 @@ class ModelDirector:
             adaptor = adaptor_component,
             response = response_component,
             core_model = core_component,
-            likelihoods = likelihood_component
+            likelihoods = likelihood_component,
+            coords = coords,
         )
         
     
