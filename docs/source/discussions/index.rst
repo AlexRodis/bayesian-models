@@ -14,3 +14,4 @@ principles of the library.
     documentation
     models/index
     data_handling
+    core
