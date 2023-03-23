@@ -332,3 +332,9 @@ class TestBESTModel(unittest.TestCase):
             UserWarning, BEST, multivariate_likelihood=True,
             common_shape=False
         )
+    
+    def test_57(self):
+        '''
+            `predict` raises `TypeError` even with expected inputs
+        '''
+        
