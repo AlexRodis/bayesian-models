@@ -27,6 +27,7 @@ class TestBESTModel(unittest.TestCase):
                  group=np.r_[["drug"] * len(drug), ["placebo"] * len(
             placebo)])
             )
+        
 
     def tearDown(self):
         targets = ["temp_model.netcdf","temp_model.pickle"]
@@ -332,3 +333,16 @@ class TestBESTModel(unittest.TestCase):
             UserWarning, BEST, multivariate_likelihood=True,
             common_shape=False
         )
+        
+    def test_55(self):
+        import sklearn
+        from sklearn.datasets import load_iris
+        X, y = load_iris(return_X_y=True, as_frame = True)
+        names = load_iris().target_names
+        df = pd.concat([X, y], axis=1)
+        df_names = df.copy(deep=True)
+        df_names.iloc[:, -1] = df_names.iloc[:,-1].replace({
+            i:names[i] for i in range(len(names))
+        })
+        obj = BEST()(df_names, 'target')
+        obj.fit(tune=100, draws=100, chains=2)
