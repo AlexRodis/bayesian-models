@@ -2,7 +2,7 @@
 
 name = "bayesian-models"
 
-version = "0.0.6"
+version = "0.0.7"
 
 authors = [
   { name="Alexander Rodis", email="alexanderrhodis@gmail.com" },
@@ -30,7 +30,7 @@ classifiers = [
 keywords = ["bayesian", "models", "statistics", "pymc"]
 
 dependencies = [
-  'interval>=1.1', 'pymc>=5.1.2',
+  'interval>=1.0', 'pymc>=5.1.2',
   'sklearn>=1.2.2',
 ]
 
