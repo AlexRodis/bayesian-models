@@ -26,7 +26,7 @@ Until official publication the library can be installed directly via the repo. F
 You can then install the library with the command:
 
 ```
-git install pip install git+ssh://git@github.com/AlexRodis/bayesian_models.git
+pip install pip install git+ssh://git@github.com/AlexRodis/bayesian_models.git
 ```
 It is often desirable to run models with a GPU if available. At present, there are known issues with the `numpyro` dependency. Only these versions are supported:
 
