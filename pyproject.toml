@@ -1,14 +1,8 @@
-[build-system]
-
-requires = ['setuptools>=61.0']
-
-build-backend = 'setuptools.build_meta'
-
 [project]
 
 name = "bayesian-models"
 
-version = "0.0.0"
+version = "0.0.3"
 
 authors = [
   { name="Alexander Rodis", email="alexanderrhodis@gmail.com" },
@@ -25,8 +19,15 @@ readme = 'README.md'
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
-    "Development Status :: 1 - Planning",
+    "License :: OSI Approved :: Apache Software License",
+    "Development Status :: 2 - Pre-Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Healthcare Industry",
+    "Intended Audience :: Developers",
+
 ]
+
+keywords = ["bayesian", "models", "statistics", "pymc"]
 
 [project.urls]
 
