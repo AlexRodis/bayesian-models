@@ -2,7 +2,7 @@
 
 name = "bayesian-models"
 
-version = "0.0.7"
+version = "0.0.8"
 
 authors = [
   { name="Alexander Rodis", email="alexanderrhodis@gmail.com" },
