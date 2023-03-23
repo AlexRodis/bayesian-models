@@ -31,7 +31,7 @@ keywords = ["bayesian", "models", "statistics", "pymc"]
 
 dependencies = [
   'interval>=1.0', 'pymc>=5.1.2',
-  'sklearn>=1.2.2',
+  'scikit-learn>=1.2',
 ]
 
 [project.optional-dependencies]
