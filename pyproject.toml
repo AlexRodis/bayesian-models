@@ -2,7 +2,7 @@
 
 name = "bayesian-models"
 
-version = "0.0.3"
+version = "0.0.6"
 
 authors = [
   { name="Alexander Rodis", email="alexanderrhodis@gmail.com" },
@@ -29,11 +29,32 @@ classifiers = [
 
 keywords = ["bayesian", "models", "statistics", "pymc"]
 
+dependencies = [
+  'interval>=1.1', 'pymc>=5.1.2',
+  'sklearn>=1.2.2',
+]
+
+[project.optional-dependencies]
+GPU = [
+  'jax',
+  'jaxlib',
+  'numpyro',
+]
+dev = [
+  'sphinx',
+  'sphinxcontrib-katex',
+  'sphinx-rtd-theme',
+]
+
+
 [project.urls]
 
 "Homepage" = "https://github.com/AlexRodis/bayesian_models"
 
 "Bug Tracker" = "https://github.com/AlexRodis/bayesian_models/issues"
+
+[build-system]
+requires = ["setuptools"]
 
 
 [tool.setuptools]
