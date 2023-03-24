@@ -337,4 +337,17 @@ class TestBESTModel(unittest.TestCase):
         '''
             `predict` raises `TypeError` even with expected inputs
         '''
+        from sklearn.datasets import load_iris
+        X, y = load_iris(return_X_y=True, as_frame=True)
+        names = load_iris().target_names
+        df = pd.concat([X, y], axis=1)
+        df_names = df.copy(deep=True)
+        df_names.iloc[:, -1] = df.iloc[:, -1].replace({
+        i:names[i] for i in range(len(names))
+        })
+        obj = BEST()(df, 'target')
+        obj_names = BEST()(df_names, 'target')
+        obj.fit(tune=100, draws=100, chains=2)
+        obj.predict()
+        print("Hello World")
         
