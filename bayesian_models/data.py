@@ -104,6 +104,8 @@ class DataStructure(ABC):
             Generator which yields exactly one tuple of (None, UNIQUES),
             where UNIQUES is a vector of all the unique values in the structure
             
+            - mean() := Compute the mean
+            
             - ops := Elementwise comparison operations such as '>', '>=', 
             '==', '<=', '<' and 'neq' are included in the interface but
             generally delegated to the underlying library 
@@ -221,6 +223,10 @@ class DataStructure(ABC):
     
     @abstractmethod
     def __gt__(self)->Union[bool, DataStructure]:
+        raise NotImplementedError()
+
+    @abstractmethod
+    def mean(self):
         raise NotImplementedError()
     
     def _slice_coords(self, obj:Iterable)->COORDS:
@@ -559,6 +565,9 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             for subtensor, crd in zip(np.transpose(self._obj, axii),
                                  crds):
                 yield (crd , np.unique(subtensor))
+                
+    def mean(self):
+        pass
 
 class DataFrameStructure(DataStructure, UtilityMixin):
     
@@ -842,6 +851,9 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             kz = list(self.coords.keys())[axis]
             for crd, substruct in zip(self.coords[kz], ob):
                 yield (crd, np.unique(substruct))
+    
+    def mean(self):
+        pass
 
 class DataArrayStructure(DataStructure, UtilityMixin):
     
@@ -1184,6 +1196,9 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                     self._obj.values, axii)
                 ):
                 yield (crd, np.unique(subtensor))
+                
+    def mean(self):
+        pass
     
 
 

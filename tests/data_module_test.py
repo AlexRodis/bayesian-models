@@ -1206,4 +1206,23 @@ class TestDataModule(unittest.TestCase):
         '''
             As per #49 `mean` added to the common interface
         '''
-        pass
+        from sklearn.datasets import load_iris
+        X, y = load_iris(return_X_y=True, as_frame=True)
+        df = pd.concat([X,y], axis=1)
+        arr = np.concatenate(
+            [X.values, y.values[:,None]], axis=1
+        )
+        xarr = xr.DataArray(arr)
+        ref_mu = arr.mean()
+        arrobj = NDArrayStructure(arr)
+        dfobj = DataFrameStructure(df)
+        xarrobj = DataArrayStructure(xarr)
+        predicates:PREDICATES = dict(
+            np_truth = (ref_mu == arrobj.mean().values).all(),
+            pd_truth = (ref_mu == dfobj.mean().values).all(),
+            xarr_truth = (ref_mu == xarrobj.mean().values).all(),
+        )
+        self.assertTrue([
+            v for _,v in predicates.items()
+        ])
+        
