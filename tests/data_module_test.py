@@ -1201,3 +1201,9 @@ class TestDataModule(unittest.TestCase):
             obj.dims == dims and
             interface.dims() == dims
         ))
+        
+    def test_mean(self):
+        '''
+            As per #49 `mean` added to the common interface
+        '''
+        pass

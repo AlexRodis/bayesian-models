@@ -470,6 +470,10 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 )
 
     def isna(self):
+        '''
+            Unsafe. Will raise on arrays with dtypes of string or
+            object
+        '''
         return NDArrayStructure(np.isnan(self.obj),
                                 coords = self.coords,
                                 dims = self.dims)
