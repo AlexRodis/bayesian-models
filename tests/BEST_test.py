@@ -349,5 +349,4 @@ class TestBESTModel(unittest.TestCase):
         obj_names = BEST()(df_names, 'target')
         obj.fit(tune=100, draws=100, chains=2)
         obj.predict()
-        print("Hello World")
         
