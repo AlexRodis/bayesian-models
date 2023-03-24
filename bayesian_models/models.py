@@ -9,7 +9,7 @@ from .utilities import SklearnDataFrameScaler, tidy_multiindex
 import xarray as xr
 import arviz as az
 import pytensor
-from interval import Interval
+from interval import interval
 import functools
 from bayesian_models.math import ELU, GELU, SiLU, SWISS, ReLU
 from bayesian_models.core import ModelDirector, CoreModelComponent
@@ -1156,15 +1156,14 @@ class BEST(BESTBase):
             warn(("Length of variables, ropes and hdis not equal. The"
                   " shortest value will be considered"))
         results=dict()
-        null_interval = Interval(0,0, lower_closed=False, 
-                                 upper_closed=False)
+        null_interval = interval(0,0)
         for var_name, rope,hdi in zip(var_names,ropes, hdis):
             raw_summary = az.summary(self.idata, var_names=[var_name],
             filter_vars='like', hdi_prob=hdi)
-            rope=Interval(*rope)
+            rope=interval(*rope)
             out=[]
             for idx,row in raw_summary.iterrows():
-                ci=Interval(row[2],row[3])
+                ci=interval(row[2], row[3])
                 if ci in rope:
                     out.append("Not Significant")
                 elif ci & rope != null_interval:
@@ -1418,7 +1417,6 @@ class FreeAdditionLayer:
 
 
 
-
 class BayesianNeuralNetwork:
 
     '''
@@ -1475,9 +1473,6 @@ class BayesianNeuralNetwork:
 
     def __init__(self, layers:Iterable[Layer]):
         self.layers = layers
-        # self.layers:dict[str,Iterable[Layer]] 
-        # i.e. dict(main = [Layer(), Layer()])
-        # self.likelihood_map = dict(model_output = mu, s = sigma)
         self._trained:bool = False
         self._initialized:bool = False
         self._model:Optional[pymc.Model] = None
@@ -1611,30 +1606,3 @@ class BayesianNeuralNetwork:
         for layer in self.layers:
             lstring += str(layer)
         return ((f"BayesianNeuralNetwork <{lstring}>"))
-
-
-
-if __name__ == '__main__':
-    import numpy as np
-    import pandas as pd
-    from bayesian_models import BEST
-
-    drug = (101,100,102,104,102,97,105,105,98,101,100,123,105,103,100,95,102,106,
-        109,102,82,102,100,102,102,101,102,102,103,103,97,97,103,101,97,104,
-        96,103,124,101,101,100,101,101,104,100,101)
-    placebo = (99,101,100,101,102,100,97,101,104,101,102,102,100,105,88,101,100,
-        104,100,100,100,101,102,103,97,101,101,100,101,99,101,100,100,
-        101,100,99,101,100,102,99,100,99)
-
-    y1 = np.array(drug)
-    y2 = np.array(placebo)
-    df = pd.DataFrame(
-        dict(value=np.r_[y1, y2], group=np.r_[["drug"] * len(drug), ["placebo"] * len(placebo)])
-    )
-    obj=BEST()(df, "group")
-    obj.fit(chains=2, draws=1000, tune=1000)
-    obj.predict(
-        var_names=['Δμ', 'Δσ'],
-        ropes = [(0,1),(0,1)],
-        hdis=[.95,.95]
-    )
