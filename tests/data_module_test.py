@@ -1202,7 +1202,7 @@ class TestDataModule(unittest.TestCase):
             interface.dims() == dims
         ))
         
-    def test_mean(self):
+    def test_np_mean(self):
         '''
             As per #49 `mean` added to the common interface
         '''
@@ -1212,11 +1212,16 @@ class TestDataModule(unittest.TestCase):
         arr = np.concatenate(
             [X.values, y.values[:,None]], axis=1
         )
-        xarr = xr.DataArray(arr)
-        ref_mu = arr.mean()
+        ref_mu = arr.mean()       
         arrobj = NDArrayStructure(arr)
-        # dfobj = DataFrameStructure(df)
-        # xarrobj = DataArrayStructure(xarr)
+        dims0 = np.asarray(["dim1"])
+        dims1 = np.asarray(["dim0"])
+        crds0 = dict(
+            dim1 = np.asarray([e for e in range(arr.shape[1])]),
+        )
+        crds1 = dict(
+            dim0 = np.asarray([e for e in range(arr.shape[0])]),
+        )
         predicates:PREDICATES = dict(
             np_truth = (ref_mu == arrobj.mean()).all(),
             np_truthax0 = (arr.mean(axis=0) == arrobj.mean(axis=0).values ).all(),
@@ -1237,17 +1242,182 @@ class TestDataModule(unittest.TestCase):
             ),
             np_ax0_dims = (arrobj.mean(axis=0).dims == arrobj.dims ).all(),
             np_ax1_dims = (arrobj.mean(axis=1).dims == arrobj.dims ).all(),
+            np_ax0_dropdims_dims = (arrobj.mean(
+                axis=0, keepdims=False).dims == dims0).all(),
+            np_ax1_dropdims_dims = (arrobj.mean(
+                axis=1, keepdims=False).dims == dims1).all(),
+            np_ax0_dropdims_coords = dict_arr_compare(
+                arrobj.mean(axis=0, keepdims=False).coords, crds0),
+            np_ax1_dropdims_coords = dict_arr_compare(
+                arrobj.mean(axis=1, keepdims=False).coords, crds1),
+        )
+        self.assertTrue([
+            v for _,v in predicates.items()
+        ])
+    
+    def test_df_mean(self):
+        '''
+            As per #49 `mean` added to the common interface
+        '''
+        from sklearn.datasets import load_iris
+        X, y = load_iris(return_X_y=True, as_frame=True)
+        df = pd.concat([X,y], axis=1)
+        ref_mu = arr.mean()
+        arr = DataFrameStructure(X)
+        cols = X.columns.to_list()
+        indx = X.index.to_list()
+        dims0 = np.asarray(["dim1"])
+        dims1 = np.asarray(["dim0"])
+        crds0 = dict(
+            dim1 = np.asarray(cols),
+        )
+        crds1 = dict(
+            dim0 = np.asarray(indx),
+        )
+        predicates:PREDICATES = dict(
+            df_truth = (ref_mu == arrobj.mean()).all(),
+            df_truthax0 = (arr.mean(axis=0) == arrobj.mean(axis=0).values ).all(),
+            df_truthax1 = (arr.mean(axis=1) == arrobj.mean(axis=1).values).all(),
+            df_ax0_coords = dict_arr_compare(
+                arrobj.mean(axis=0).coords, 
+                dict(
+                    dim0 = np.asarray(["sum"]),
+                    dim1 = np.asarray([e for e in range(arr.shape[1])]),
+                )
+            ),
+            df_ax1_coords = dict_arr_compare(
+                arrobj.mean(axis=1).coords, 
+                dict(
+                    dim0 = np.asarray([e for e in range(arr.shape[0])]),
+                    dim1 = np.asarray(["sum"]),
+                )
+            ),
+            df_ax0_dims = (arrobj.mean(axis=0).dims == arrobj.dims ).all(),
+            df_ax1_dims = (arrobj.mean(axis=1).dims == arrobj.dims ).all(),
+            df_ax0_dropdims_dims = (arrobj.mean(
+                axis=0, keepdims=False).dims == dims0).all(),
+            df_ax1_dropdims_dims = (arrobj.mean(
+                axis=1, keepdims=False).dims == dims1).all(),
+            df_ax0_dropdims_coords = dict_arr_compare(
+                arrobj.mean(axis=0, keepdims=False).coords, crds0),
+            df_ax1_dropdims_coords = dict_arr_compare(
+                arrobj.mean(axis=1, keepdims=False).coords, crds1),
         )
         self.assertTrue([
             v for _,v in predicates.items()
         ])
         
-    def test_dev(self):
+        def test_np_mean(self):
+        '''
+            As per #49 `mean` added to the common interface
+        '''
         from sklearn.datasets import load_iris
         X, y = load_iris(return_X_y=True, as_frame=True)
         df = pd.concat([X,y], axis=1)
         arr = np.concatenate(
             [X.values, y.values[:,None]], axis=1
         )
-        m = NDArrayStructure(arr)
-        m.mean(axis=1)
+        xarr = xr.DataArray(arr)
+        ref_mu = arr.mean()       
+        arrobj = NDArrayStructure(arr)
+        dims0 = np.asarray(["dim1"])
+        dims1 = np.asarray(["dim0"])
+        crds0 = dict(
+            dim1 = np.asarray([e for e in range(arr.shape[1])]),
+        )
+        crds1 = dict(
+            dim0 = np.asarray([e for e in range(arr.shape[0])]),
+        )
+        predicates:PREDICATES = dict(
+            np_truth = (ref_mu == arrobj.mean()).all(),
+            np_truthax0 = (arr.mean(axis=0) == arrobj.mean(axis=0).values ).all(),
+            np_truthax1 = (arr.mean(axis=1) == arrobj.mean(axis=1).values).all(),
+            np_ax0_coords = dict_arr_compare(
+                arrobj.mean(axis=0).coords, 
+                dict(
+                    dim0 = np.asarray(["sum"]),
+                    dim1 = np.asarray([e for e in range(arr.shape[1])]),
+                )
+            ),
+            np_ax1_coords = dict_arr_compare(
+                arrobj.mean(axis=1).coords, 
+                dict(
+                    dim0 = np.asarray([e for e in range(arr.shape[0])]),
+                    dim1 = np.asarray(["sum"]),
+                )
+            ),
+            np_ax0_dims = (arrobj.mean(axis=0).dims == arrobj.dims ).all(),
+            np_ax1_dims = (arrobj.mean(axis=1).dims == arrobj.dims ).all(),
+            np_ax0_dropdims_dims = (arrobj.mean(
+                axis=0, keepdims=False).dims == dims0).all(),
+            np_ax1_dropdims_dims = (arrobj.mean(
+                axis=1, keepdims=False).dims == dims1).all(),
+            np_ax0_dropdims_coords = dict_arr_compare(
+                arrobj.mean(axis=0, keepdims=False).coords, crds0),
+            np_ax1_dropdims_coords = dict_arr_compare(
+                arrobj.mean(axis=1, keepdims=False).coords, crds1),
+        )
+        self.assertTrue([
+            v for _,v in predicates.items()
+        ])
+        
+    def test_xr_mean(self):
+        '''
+            As per #49 `mean` added to the common interface
+        '''
+        from sklearn.datasets import load_iris
+        X, y = load_iris(return_X_y=True, as_frame=True)
+        df = pd.concat([X,y], axis=1)
+        arr = np.concatenate(
+            [X.values, y.values[:,None]], axis=1
+        )
+        xarr = DataArrayStructure(
+            xr.DataArray(arr, coords = dict(
+                dimention_0 = np.asarray([f"sample_{e}" for e in range(arr.shape[0])]),
+                dimention_1 = np.asarray([f"var_{e}" for e in range(arr.shape[1])]),
+                ), 
+                dims = ("dimention_0", "dimention_1") 
+            ) 
+        )
+        ref_mu = arr.mean()       
+        arrobj = NDArrayStructure(arr)
+        dims0 = np.asarray(["dim1"])
+        dims1 = np.asarray(["dim0"])
+        crds0 = dict(
+            dim1 = np.asarray([e for e in range(arr.shape[1])]),
+        )
+        crds1 = dict(
+            dim0 = np.asarray([e for e in range(arr.shape[0])]),
+        )
+        predicates:PREDICATES = dict(
+            np_truth = (ref_mu == arrobj.mean()).all(),
+            np_truthax0 = (arr.mean(axis=0) == arrobj.mean(axis=0).values ).all(),
+            np_truthax1 = (arr.mean(axis=1) == arrobj.mean(axis=1).values).all(),
+            np_ax0_coords = dict_arr_compare(
+                arrobj.mean(axis=0).coords, 
+                dict(
+                    dim0 = np.asarray(["sum"]),
+                    dim1 = np.asarray([e for e in range(arr.shape[1])]),
+                )
+            ),
+            np_ax1_coords = dict_arr_compare(
+                arrobj.mean(axis=1).coords, 
+                dict(
+                    dim0 = np.asarray([e for e in range(arr.shape[0])]),
+                    dim1 = np.asarray(["sum"]),
+                )
+            ),
+            np_ax0_dims = (arrobj.mean(axis=0).dims == arrobj.dims ).all(),
+            np_ax1_dims = (arrobj.mean(axis=1).dims == arrobj.dims ).all(),
+            np_ax0_dropdims_dims = (arrobj.mean(
+                axis=0, keepdims=False).dims == dims0).all(),
+            np_ax1_dropdims_dims = (arrobj.mean(
+                axis=1, keepdims=False).dims == dims1).all(),
+            np_ax0_dropdims_coords = dict_arr_compare(
+                arrobj.mean(axis=0, keepdims=False).coords, crds0),
+            np_ax1_dropdims_coords = dict_arr_compare(
+                arrobj.mean(axis=1, keepdims=False).coords, crds1),
+        )
+        self.assertTrue([
+            v for _,v in predicates.items()
+        ])

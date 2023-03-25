@@ -104,9 +104,17 @@ class DataStructure(ABC):
             Generator which yields exactly one tuple of (None, UNIQUES),
             where UNIQUES is a vector of all the unique values in the structure
             
-            - mean(axis:int=None, keepdims:bool=True,
-            ignore_na:bool=True) := Compute the mean along the specified
-            axis.
+            - mean(axis:Optional[int] = None, keepdims:bool=True,
+            skipna:bool=True) := Compute the mean along the specified
+            axis. If axis is `None` the mean will be computed over the entire
+            structure and a numeric is returned. Otherwise a data structure
+            of the same type as the original is returned. If axis is not None,
+            the mean is computed over the specified axis. If `keepdims=True`
+            (default) the axis is reduced and removed. If `keepdims=True` then
+            the axis is maintained (and the result is broadcastable to the 
+            original) with a single coordicate named "sum". If `skipna=True`
+            any invalid elements will be ignored (default) otherwise `nan` is
+            returned where mean would otherwise be.
             
             - ops := Elementwise comparison operations such as '>', '>=', 
             '==', '<=', '<' and 'neq' are included in the interface but
@@ -228,7 +236,8 @@ class DataStructure(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def mean(self):
+    def mean(self, axis:Optional[int] = None, keepdims:bool=True,
+             skipna:bool=True):
         raise NotImplementedError()
     
     def _slice_coords(self, obj:Iterable)->COORDS:
@@ -577,11 +586,19 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             computer = np.nanmean if skipna else np.mean
             vals = computer(self._obj, keepdims = keepdims,
                             axis=axis)
-            ndims:DIMS = copy(self.dims)
-            ncoords:COORDS = {
-                k:(v if i!=axis else np.asarray(["sum"])
-                   ) for i, (k,v) in enumerate(self.coords.items())
-            }
+            if keepdims:
+                ndims:DIMS = copy(self.dims)
+                ncoords:COORDS = {
+                    k:(v if i!=axis else np.asarray(["sum"])
+                    ) for i, (k,v) in enumerate(self.coords.items())
+                }
+            else:
+                ndims:DIMS = copy(self.dims).tolist()
+                ndims.pop(axis)
+                ndims = np.asarray(ndims)
+                ncoords:COORDS = {
+                    k:v for i, (k,v) in enumerate(self.coords.items()) if i!=axis 
+                }
             return NDArrayStructure(
                 vals, coords=ncoords, dims=ndims
             )
@@ -1214,7 +1231,9 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                 ):
                 yield (crd, np.unique(subtensor))
                 
-            
+    def mean(self, axis:Optional[int] = None, keepdims:bool=True,
+             skipna:bool=True):
+        pass
 
 
 
