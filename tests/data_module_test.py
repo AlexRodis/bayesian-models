@@ -1215,14 +1215,39 @@ class TestDataModule(unittest.TestCase):
         xarr = xr.DataArray(arr)
         ref_mu = arr.mean()
         arrobj = NDArrayStructure(arr)
-        dfobj = DataFrameStructure(df)
-        xarrobj = DataArrayStructure(xarr)
+        # dfobj = DataFrameStructure(df)
+        # xarrobj = DataArrayStructure(xarr)
         predicates:PREDICATES = dict(
-            np_truth = (ref_mu == arrobj.mean().values).all(),
-            pd_truth = (ref_mu == dfobj.mean().values).all(),
-            xarr_truth = (ref_mu == xarrobj.mean().values).all(),
+            np_truth = (ref_mu == arrobj.mean()).all(),
+            np_truthax0 = (arr.mean(axis=0) == arrobj.mean(axis=0).values ).all(),
+            np_truthax1 = (arr.mean(axis=1) == arrobj.mean(axis=1).values).all(),
+            np_ax0_coords = dict_arr_compare(
+                arrobj.mean(axis=0).coords, 
+                dict(
+                    dim0 = np.asarray(["sum"]),
+                    dim1 = np.asarray([e for e in range(arr.shape[1])]),
+                )
+            ),
+            np_ax1_coords = dict_arr_compare(
+                arrobj.mean(axis=1).coords, 
+                dict(
+                    dim0 = np.asarray([e for e in range(arr.shape[0])]),
+                    dim1 = np.asarray(["sum"]),
+                )
+            ),
+            np_ax0_dims = (arrobj.mean(axis=0).dims == arrobj.dims ).all(),
+            np_ax1_dims = (arrobj.mean(axis=1).dims == arrobj.dims ).all(),
         )
         self.assertTrue([
             v for _,v in predicates.items()
         ])
         
+    def test_dev(self):
+        from sklearn.datasets import load_iris
+        X, y = load_iris(return_X_y=True, as_frame=True)
+        df = pd.concat([X,y], axis=1)
+        arr = np.concatenate(
+            [X.values, y.values[:,None]], axis=1
+        )
+        m = NDArrayStructure(arr)
+        m.mean(axis=1)

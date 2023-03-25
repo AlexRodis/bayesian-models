@@ -104,7 +104,9 @@ class DataStructure(ABC):
             Generator which yields exactly one tuple of (None, UNIQUES),
             where UNIQUES is a vector of all the unique values in the structure
             
-            - mean() := Compute the mean
+            - mean(axis:int=None, keepdims:bool=True,
+            ignore_na:bool=True) := Compute the mean along the specified
+            axis.
             
             - ops := Elementwise comparison operations such as '>', '>=', 
             '==', '<=', '<' and 'neq' are included in the interface but
@@ -566,8 +568,23 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                                  crds):
                 yield (crd , np.unique(subtensor))
                 
-    def mean(self):
-        pass
+    def mean(self, axis:Optional[int] = None, keepdims:bool=True,
+             skipna:bool=True):
+        from copy import copy
+        if axis is None:
+            return np.nanmean(self._obj)
+        else:
+            computer = np.nanmean if skipna else np.mean
+            vals = computer(self._obj, keepdims = keepdims,
+                            axis=axis)
+            ndims:DIMS = copy(self.dims)
+            ncoords:COORDS = {
+                k:(v if i!=axis else np.asarray(["sum"])
+                   ) for i, (k,v) in enumerate(self.coords.items())
+            }
+            return NDArrayStructure(
+                vals, coords=ncoords, dims=ndims
+            )
 
 class DataFrameStructure(DataStructure, UtilityMixin):
     
@@ -760,7 +777,6 @@ class DataFrameStructure(DataStructure, UtilityMixin):
                 coords = self.coords
                 )
             
-            
     def isna(self):
         return DataFrameStructure( self.obj.isna(), coords=self.coords, #type:ignore
                                 dims=self.dims)  
@@ -852,7 +868,8 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             for crd, substruct in zip(self.coords[kz], ob):
                 yield (crd, np.unique(substruct))
     
-    def mean(self):
+    def mean(self, axis:Optional[int] = None, keepdims:bool=True,
+             skipna:bool=True):
         pass
 
 class DataArrayStructure(DataStructure, UtilityMixin):
@@ -1197,9 +1214,8 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                 ):
                 yield (crd, np.unique(subtensor))
                 
-    def mean(self):
-        pass
-    
+            
+
 
 
 class DataStructureInterface(ABC):
