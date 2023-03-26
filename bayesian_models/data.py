@@ -393,8 +393,6 @@ class DataStructure(ABC):
             )
         else:
             return self._obj[nobj]
-    
-    
 
 class UtilityMixin:
     
@@ -1406,6 +1404,14 @@ class DataStructureInterface(ABC):
             If axis is provided, the generator iterates over the specified
             dimention, yielding tuples of the form (label, values) where
             values is a vector of unique values for the flattened subtensor.
+            
+            - mean(axis=None, keepdims=True, skipna=True) := Compute the
+            arithmetic mean along the specified axis (or the entire structure
+            if `None` - default). If `keepdims=True` the specified dimention
+            is kept in the result with a single coordinate named 'sum', making
+            the result correctly broadcastable to the original. Else the 
+            dimention is reduced. If `skipna=True` `NaN` values are ignored
+            else, all coordinates with at least one `NaN` will return `NaN`
     
             - ops := Elementwise operations '>', '<', '>=', '<=', '==', 
             '!=' are delegated to the underlying library but a wrapped
@@ -1497,6 +1503,11 @@ class DataStructureInterface(ABC):
     @abstractmethod
     def __gt__(self, obj)->Union[bool, DataStructureInterface]:
         raise NotImplementedError()
+    
+    @abstractmethod
+    def mean(self, axis: Optional[int]=None, keepdims: bool=True,
+             skipna: bool= False)->None:
+        raise NotImplementedError()
 
 
 @dataclass(kw_only=True)
@@ -1570,6 +1581,14 @@ class CommonDataStructureInterface(DataStructureInterface):
                 obj['sample_5',...]
                 # Illegal - step must be an integer
                 obj[0:15:"sample",...]
+                
+            - mean(axis=None, keepdims=True, skipna=True) := Compute the
+            arithmetic mean along the specified axis (or the entire structure
+            if `None` - default). If `keepdims=True` the specified dimention
+            is kept in the result with a single coordinate named 'sum', making
+            the result correctly broadcastable to the original. Else the 
+            dimention is reduced. If `skipna=True` `NaN` values are ignored
+            else, all coordinates with at least one `NaN` will return `NaN`
                 
             - ops := Basic operators are supported and generally delegated
             to the underlying library '==', '>=', '!=', '>', '<', '<='
@@ -1719,7 +1738,50 @@ class CommonDataStructureInterface(DataStructureInterface):
         else:
             return CommonDataStructureInterface(
                 _data_structure = raw
-            ) 
+            )
+            
+    def mean(self, axis: Optional[int]=None, skipna: bool=True,
+             keepdims: bool=True)->Union[float, 
+                                         CommonDataStructureInterface]:
+            '''
+                Compute the arithmetic mean along the specified axis
+                
+                Args:
+                ------
+                
+                    - axis:Optional[int]=None := The axis along which to
+                    compute the mean. If `None` (default) returns the mean
+                    along the entire structure
+                    
+                    - skipna:bool=True := If `True` (default) `NaN` values
+                    will be ignored, else every coordinate along the specified
+                    axis with at least one `NaN` will return `NaN`.
+                    
+                    - keepdims:bool=True := If `True` (default), the axis along
+                    which the mean is computed is kept in the result with a 
+                    single coordinate named 'sum', making the result correctly
+                    broadcastable agaist the original. Else reduce the
+                    dimention in the result. This argument is ignored if axis
+                    is `None`
+                    
+                Return:
+                -------
+                
+                    - mean:float := The mean of the entire structure
+                    
+                    - means:CommonDataStructureInterface := A new structure
+                    of means. If `keepdims=False` would reduce the structure
+                    below 2D, a 2D structure is returned instead (equivalent
+                    to `keepdims=True`)
+            '''
+            if axis is None:
+                return self._data_structure.mean(axis=axis, skipna=skipna,
+                                            keepdims=keepdims)
+            else:
+                return CommonDataStructureInterface(
+                    _data_structure = self._data_structure.mean(
+                        axis=axis, skipna=skipna, keepdims=keepdims) 
+                )
             
     
 

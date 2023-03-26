@@ -1263,6 +1263,8 @@ class TestDataModule(unittest.TestCase):
                         e for e in range(arr.shape[0])])
                     ).all()
             ),
+            interface = CommonDataStructureInterface(
+                _data_structure = arrobj).mean(axis=None) == ref_mu
         )
         self.assertTrue([
             v for _,v in predicates.items()
@@ -1318,6 +1320,8 @@ class TestDataModule(unittest.TestCase):
                 arrobj.mean(axis=0, keepdims=False).coords, crds0),
             df_ax1_dropdims_coords = dict_arr_compare(
                 arrobj.mean(axis=1, keepdims=False).coords, crds1),
+            interface = CommonDataStructureInterface(
+                _data_structure = arrobj).mean(axis=None) == ref_mu
         )
         self.assertTrue([
             v for _,v in predicates.items()
@@ -1382,6 +1386,8 @@ class TestDataModule(unittest.TestCase):
                 arrobj.mean(axis=0, keepdims=False).coords, crds0),
             xr_ax1_dropdims_coords = dict_arr_compare(
                 arrobj.mean(axis=1, keepdims=False).coords, crds1),
+            interface = CommonDataStructureInterface(
+                _data_structure = arrobj).mean(axis=None) == ref_mu
         )
         self.assertTrue([
             v for _,v in predicates.items()
