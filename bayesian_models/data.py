@@ -10,7 +10,8 @@ from .typing import AXIS_PERMUTATION
 from dataclasses import dataclass, field
 
 # TODO: 
-# * Impute missing data
+# * Impute missing data. Maybe add slicing to the common data 
+# interface
 # * Much of this code is inefficient. Refactor
 # * Replace long if/else statements with structural pattern matching
 # * xarray constructor needs refactoring
@@ -233,17 +234,6 @@ class DataStructure(ABC):
     @abstractmethod
     def __gt__(self)->Union[bool, DataStructure]:
         raise NotImplementedError()
-    
-    @staticmethod
-    def __isna__(array):
-        '''
-            Custom `numpy.isnan` implementation, capable of handling arrays
-            of objects. Exploits the fact that in `numpy` and
-            derived implementations `numpy.nan!=numpy.nan`
-        '''
-            
-        cmp:Callable = np.vectorize(lambda elem : elem!=elem)
-        return cmp(array)
     
     def __mean__(self, obj, axis: Optional[int] = None, 
                  skipna:bool=True, keepdims: bool=True)->NamedTuple:
@@ -527,8 +517,11 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 )
 
     def isna(self):
-        return NDArrayStructure(
-            super().__isna__(self.obj),
+        '''
+            Unsafe. Will raise on arrays with dtypes of string or
+            object
+        '''
+        return NDArrayStructure(np.isnan(self.obj),
                                 coords = self.coords,
                                 dims = self.dims)
         
@@ -1183,8 +1176,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                                   )
     
     def isna(self):
-        return DataArrayStructure( 
-                                  super().__isna__(self._obj),
+        return DataArrayStructure( np.isnan(self.obj.values),
                                 coords = self._coords,
                                 dims = self._dims)
     
