@@ -355,6 +355,22 @@ class TestBESTModel(unittest.TestCase):
         obj.predict()
         
     def test_56(self):
+        '''
+            Partially resolved. `pymc` tries to check with `np.isnan`
+            which will raise for dtype object (even if the underlying
+            elems really are float)
+        '''
         from sklearn.datasets import load_iris
         X, y = load_iris(return_X_y=True)
+        y = y.astype(float)
+        y = y[:,None]
+        arr = np.concatenate(
+            [X, y], axis=1
+        )
+        A = np.random.rand(30,9,3)
+        obj = BEST()(arr, 4)
+        obj.fit(tune=10, draws=10, chains=2)
+        obj.predict()
+        self.assertTrue(True)
+        
         
