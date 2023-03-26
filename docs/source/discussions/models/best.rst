@@ -10,20 +10,20 @@ Introduction
 -------------
 
 A common problem in statistical inference is deciding if two or more groups
-are different with respect to some measured quantity of intrest or not. Making
+are different with respect to some measured quantity of intrest. Making
 this inferece is complicated somewhat, by the fact that real data are "contaminated"
 with some amount of randomness that hinders attempts based on direct differences
-in the data. The *de facto* method and standard for addressing these questions
+in the data. The *de facto* standard for addressing these questions
 is **ANOVA** (*One Way Analysis Of Variance*) and the **t Test** - more generally
 **hypothesis testing**. These proccedures typically involve expressing a **null
-hypothesis** (:math:`$H_0$`) which usually declares that there are no differences, and
-an **alternative hypothesis** (:math:`$H_1$``) which typically states some differences
+hypothesis** (:math:`H_0`) which usually declares that there are no differences, and
+an **alternative hypothesis** (:math:`H_A`) which typically states some differences
 exist. A **test statistic** is then formulated, which is a quantity that determines
 if the observed data (in terms of their distribution) are sufficiently plausible
 under the given hypothesis.
 
-Unfortunatelly, it can be quit difficult to use hypothesis tests correctly. There
-are several subjective choices involved in the proccedure such as the test statistic
+Unfortunatelly, it can be quite difficult to use hypothesis tests correctly. There
+are several subjective choices involved in the proceedure such as the test statistic
 and the hypothesis. These are usually abstracted away form the user and a kind
 of "default" is used, based on habit and tradition rather than justification
 on the problem at hand. Moreover the justification for these proccedures are
@@ -54,6 +54,129 @@ use IQ as a measure of intelligence and test the candidate drug by splitting
 drug trial participants into a treatment and a control group. We fit a distribution
 to each group and compare the distributions.
 
+Historical Context
+--------------------
+
+The broad class of techniques under the **Null Hypothesis Statistical Testing**
+(*NHST*) umbrella were developed in the context of the frequentist statistical
+paradigm and avoid invoking Bayes' theorem in the inference process. Chronologically
+the **p-value** technique was developed by Fischer and its the probability of
+making observations that are just as extreme or more extreme as those made. It
+was intended to intended to express some notion of how "distant" the observations
+are from the Null Hypothesis, after it is combined with prior knowledge in some
+non-specific manner. 
+
+The mathematical machinery of NHST was developed originally by Neyman and Spearman
+as an alternative approach to the one by Fischer. In these proceedures the pairs
+of Null and Alternative Hypotheses are formulated and a test statistic is used
+to select the more plausible of the two. Typical examples of NHST are **ANOVA**
+(*One Way Analysis Of Variance*) and the t-Test. For example in the context of
+the t-test:
+
+.. math::
+        \begin{array}{c}
+            \begin{array}{ccc}
+                \begin{array}{cc}
+                    H_0:& \mu_1=\mu_2\\
+                    H_A: & \mu_1 > \mu_2\\
+                \end{array}& & 
+            \begin{array}{cc}
+                H_0:& \mu_1=\mu_2\\
+                H_A: & \mu_1 \ne \mu_2\\
+                \end{array}
+            \end{array}\\
+            \\
+            t\ =\ \dfrac{\bar{x_1}-\bar{x_2}}{
+            \sqrt{\frac{s_1^2}{n_1}+\frac{s_2^2}{n_2}}
+            }
+        \end{array}
+
+These two approaches were eventually "hybridized" and combined into one, and
+it is these version that are commonly used today
+
+
+Objections and Criticisms
+---------------------------
+
+NHST proceedures have come under severe criticism by experts in the field, already
+since the 60's:
+
+
+    pass
+
+Problem 1: Focusing on the Null Hypothesis
++++++++++++++++++++++++++++++++++++++++++++++
+
+The null hypothesis constitutes a statement of no differnce or relationship
+which is generally contrary to what the analyst believes. After all if an analyst
+truly believed there was no relation between a categorical variable (which defines
+the group) and some continuous quantity of intrest they likely would not be conducting
+the test to begin with. Indeed to begin conducting a hypothesis test, the analyst
+nearly always suspects that the groups are indeed different. Furthermore, the
+null hypothesis ought to accepted as being "absolutely" true - its a mathematical
+statement that doesn't include any notion of precision. This is nearly impossible
+for most real world systems, where virtualy every variable is related to all other
+variables however weakly *(Meeh, 1980)*. It pointless to question if they are different
+in practice - they always are to some level of precision and to some decimal *(Turkey, 1991)*.
+Therefore, there is always a sample size, large enough, for which the differences
+are statistically significant (more on that later).
+
+Problem 2: The popular rationale behind NHST is problematic
++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+The logic underlying NHST is difficult is very unintuitive. Hence exceedingly
+prone misinterpretation and erroneous extrapolation, leading scientists and
+researchers to the wrong conclusions. Mathematicians and statisticians are
+of course well aware of how to correctly read the results of these proceedures,
+however, these techniques are also being widely applied to other fields, from
+chemistry to ecology, where they are even more likely to be misinterpreted.
+Most non-specialists reason about NHSTs as follows:
+
+
+    
+    If the null hypothesis were true, then it would be unlikely that data would
+    be observed. These data have been observed. Therefore, it is unlikely that
+    the null hypothesis is correct
+
+The syllogism seems innocuous at first, but is in fact wrong. This becomes easier
+to see if we transform it another, logically equivalent one *(Cohen, 1994)*
+
+
+
+    If a person is an American, then they probably aren't a member of the Senate.
+    This person is a member of the Senate. Therefore, he is not an American
+
+It is evident that this syllogism is simply wrong, and the above assumes that
+concepts such are the alternate hypothesis and the p-value are being interpreted
+correctly, though frequently they are not.
+
+Problem 3: Misinterpretation of the Null Hypothesis
+++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+Researchers frequently assume that if the groups are not the same, then they must
+be different. The reality is more complex than that, due to the role of chance
+and bias. One needs to draw a destinction between the alternate (:math:`H_A`)
+and the **research hypothesis** (:math:`H_R`). A thorough examination of the
+logic of t tests (*A logical analysis of null hypothesis significance testing 
+using popular terminology, Richard McNulty, 2022*) and NHSTs reveals that one
+cannot conclude that grouping variable is singularly responsible for any observed
+differences between groups. If the p-value drops below the specified threshold
+what one can actually conclude is that "the observed differences are not due to
+chance **alone**". Bridging the gap between the alternate and research hypothesis
+requires some additional assumptions that rarely justified and which are usually
+ignored, specifically:
+
+1. The observed differences are **not** due to bias alone
+2. There is no factor or combination of factors in which chance plays a role
+
+Therefore NHST is rarely transparent about the assumptions it makes, but still
+convays a false sense of security
+
+Problem 4: The Test Does Not Reveal If The Null Hypothesis Is True
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
 
 Model Specification
 ---------------------
@@ -65,11 +188,11 @@ some guidelines for these extentions, these are left somewhat nebulous and open
 to interpretation. The following extentions are specific to this library.
 
 
-Let :math:`$\overset{N \times M+1}{X}$` by a matrix representing our measurements. This
-matrix is composed of $N$ observations of $M$ continuous variables, and we further
+Let :math:`\overset{N \times M+1}{X}` be a matrix representing our measurements. This
+matrix is composed of :math:`N` observations of :math:`M` continuous variables, and we further
 assume an additional, categorical variable whose values represents the groups
 themselves. Suppose this group variables takes $K$ possible values. We split the
-data according to the values of this variable :math:`$\{\mathbf{X_0, \dots, X_K}\}$`
+data according to the values of this variable :math:`\{\mathbf{X_0, \dots, X_K}\}`
 and fit distributions to each group. The distribution choses here is the
 **Student T** distribution. This distribution is chosen because, while similar
 to the Normal, it has thicker tails and hence better at describing data with
@@ -307,5 +430,5 @@ use and works well for many common cases. The decision making process itself
 is defered to the `predict` method, since it is meaningless prior to training
 completion. This way, a user could also rapidly test many options of ROPEs and
 HDI thresholds on the same model and aggragate the results, without retraining
-each time. After all the decition making process itself is independant of the
+each time. After all the desition making process itself is independant of the
 inference process.
