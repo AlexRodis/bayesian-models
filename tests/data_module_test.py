@@ -152,6 +152,33 @@ class TestDataModule(unittest.TestCase):
         self.assertTrue(cond1 and cond2 and cond3 and cond4 and cond5 \
             and cond6 and cond7)
         
+    def test_60_expanded_nan(self):
+        '''
+            Test alternate `np.isnan` implementation that handles dtypes
+            string and object
+        '''
+        from bayesian_models.data import DataStructure
+        arr = np.random.rand(50,9,3)
+        oarr = arr.astype(object)
+        sarr = arr.astype(np.str_)
+        narr = arr.copy()
+        narr[0,0,0] = np.nan
+        narr[1,0,1] = np.nan
+        res = DataStructure.__isna__(arr)
+        nres = DataStructure.__isna__(narr)
+        ref_nan = np.zeros_like(arr, dtype=np.bool_)
+        ref_nan[0,0,0] = True
+        ref_nan[1,0,1] = True
+        predicates:PREDICATES = dict(
+            all_present = (res == np.zeros_like(arr, dtype=np.bool_)
+                           ).all(),
+            nan_present  = (nres == ref_nan).all()
+        )
+        self.assertTrue(all([
+            v for k,v in predicates.items()
+        ]))
+        
+        
     def test_np_isna(self):
         notnan = self.A
         nan = self.A.copy()
