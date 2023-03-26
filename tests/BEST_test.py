@@ -354,3 +354,7 @@ class TestBESTModel(unittest.TestCase):
         obj.fit(tune=100, draws=100, chains=2)
         obj.predict()
         
+    def test_56(self):
+        from sklearn.datasets import load_iris
+        X, y = load_iris(return_X_y=True)
+        
