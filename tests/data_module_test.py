@@ -158,21 +158,28 @@ class TestDataModule(unittest.TestCase):
             string and object
         '''
         from bayesian_models.data import DataStructure
+        isnan = DataStructure.__isna__
         arr = np.random.rand(50,9,3)
         oarr = arr.astype(object)
-        sarr = arr.astype(np.str_)
         narr = arr.copy()
+        noarr = oarr.copy()
         narr[0,0,0] = np.nan
         narr[1,0,1] = np.nan
+        noarr[0,0,0] = np.nan
+        noarr[1,0,1] = np.nan
         res = DataStructure.__isna__(arr)
         nres = DataStructure.__isna__(narr)
         ref_nan = np.zeros_like(arr, dtype=np.bool_)
         ref_nan[0,0,0] = True
         ref_nan[1,0,1] = True
         predicates:PREDICATES = dict(
-            all_present = (res == np.zeros_like(arr, dtype=np.bool_)
+            all_present_num = (res == np.zeros_like(arr, dtype=np.bool_)
                            ).all(),
-            nan_present  = (nres == ref_nan).all()
+            nan_present_num  = (nres == ref_nan).all(),
+            all_present_obj = ( isnan(oarr) == np.zeros_like(arr, dtype=np.bool_)
+                           ).all(),
+            nan_present_obj = ( isnan(noarr) == ref_nan
+                           ).all(),
         )
         self.assertTrue(all([
             v for k,v in predicates.items()
@@ -182,15 +189,37 @@ class TestDataModule(unittest.TestCase):
     def test_np_isna(self):
         notnan = self.A
         nan = self.A.copy()
+        onotnan = nan.astype(object).copy()
+        onan = onotnan.copy()
         nan = numpy.append(self.A,self.A[[-1],:,:], axis=0)
         nan[-1,-1,-1] = numpy.nan
+        onan[0,0,0] = np.nan
+        nan_ref = np.zeros_like(notnan, dtype=np.bool_)
+        nan_ref[0,0,0] = np.nan
+        chain_call_ref = ~self.A.copy()[0,:,:].astype(bool)
+        chain_call_ref[0,0] = True
         obj_clean = NDArrayStructure(notnan)
         obj_dirty = NDArrayStructure(nan)
-        cond_shape_full:bool = obj_clean.isna().shape == obj_clean.shape
-        cond_clean_correct:bool = not obj_clean.isna().any()
-        cond_dirty_correct:bool = obj_dirty.isna().any()
-        self.assertTrue(cond_shape_full and cond_clean_correct and\
-            cond_dirty_correct)
+        obj_clean2 = NDArrayStructure(onotnan)
+        obj_dirty2 = NDArrayStructure(onan)
+        predicates:PREDICATES = dict(
+            cond_shape_full = obj_clean.isna().shape == obj_clean.shape,
+            cond_clean_correct = not obj_clean.isna().any(),
+            cond_dirty_correct = obj_dirty.isna().any(),
+            obj_dirty2_trueness = (
+                obj_dirty2.isna().values == nan_ref
+                ).all(),
+            obj_clean2_trueness = (
+                obj_clean2.isna().values == np.zeros_like(
+                    notnan, dtype=np.bool_) 
+                ).all(),
+            obj_dirty2_chain_call = (
+                obj_dirty2.isna().any(axis=0).values == chain_call_ref
+                ).all(),
+        )
+        self.assertTrue(all([
+            v for _, v in predicates.items()
+        ]))
         
     def test_pd_isna(self):
         notnan = self.B
@@ -208,14 +237,36 @@ class TestDataModule(unittest.TestCase):
     def test_xr_isna(self):
         notnan = self.C
         nan = self.C.copy()
+        onotnan = nan.copy()
+        onan = nan.copy()
         nan[0,0,0] = numpy.nan
-        obj_clean = NDArrayStructure(notnan)
-        obj_dirty = NDArrayStructure(nan)
-        cond_shape_full:bool = obj_clean.isna().shape == obj_clean.shape
-        cond_clean_correct:bool = not obj_clean.isna().any()
-        cond_dirty_correct:bool = obj_dirty.isna().any()
-        self.assertTrue(cond_shape_full and cond_clean_correct and\
-            cond_dirty_correct)
+        onan[0,0,0] = np.nan
+        obj_clean = DataArrayStructure(notnan)
+        obj_dirty = DataArrayStructure(nan)
+        obj_clean2 = DataArrayStructure(onotnan)
+        obj_dirty2 = DataArrayStructure(onan)
+        onan_ref_arr = np.zeros_like(onan, dtype=np.bool_)
+        onan_ref_arr[0,0,0] = True
+        reduced_nan_ref = onan_ref_arr[0,:,:]
+        predicates:PREDICATES = dict(
+            cond_shape_full = obj_clean.isna().shape == obj_clean.shape,
+            cond_clean_correct = not obj_clean.isna().any(),
+            cond_dirty_correct = obj_dirty.isna().any(),
+            object_type_not_nan = (
+                obj_clean2.isna().values == np.zeros_like(
+                    onotnan, dtype=np.bool_
+                    )
+                ).all(),
+            object_type_nan = (
+                obj_dirty2.isna().values == onan_ref_arr
+                ).all(),
+            object_type_chain_call = (
+                obj_dirty2.isna().any(axis=0).values == reduced_nan_ref
+                ).all()
+        )
+        self.assertTrue(all([
+            v for _, v in predicates.items()
+        ]))
         
         
     def test_np_transpose(self):

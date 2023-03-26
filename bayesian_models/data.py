@@ -238,9 +238,10 @@ class DataStructure(ABC):
     def __isna__(array):
         '''
             Custom `numpy.isnan` implementation, capable of handling arrays
-            of strings and objects. Exploits the fact that in `numpy` and
+            of objects. Exploits the fact that in `numpy` and
             derived implementations `numpy.nan!=numpy.nan`
         '''
+            
         cmp:Callable = np.vectorize(lambda elem : elem!=elem)
         return cmp(array)
     
@@ -526,11 +527,8 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 )
 
     def isna(self):
-        '''
-            Unsafe. Will raise on arrays with dtypes of string or
-            object
-        '''
-        return NDArrayStructure(np.isnan(self.obj),
+        return NDArrayStructure(
+            super().__isna__(self.obj),
                                 coords = self.coords,
                                 dims = self.dims)
         
@@ -1185,7 +1183,8 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                                   )
     
     def isna(self):
-        return DataArrayStructure( np.isnan(self.obj.values),
+        return DataArrayStructure( 
+                                  super().__isna__(self._obj),
                                 coords = self._coords,
                                 dims = self._dims)
     
