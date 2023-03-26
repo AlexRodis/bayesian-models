@@ -4,7 +4,7 @@ import  pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Any, Hashable, Iterable, Type
-from typing import Callable
+from typing import Callable, NamedTuple
 from .typing import ndarray, InputData, SHAPE, DIMS, COORDS
 from .typing import AXIS_PERMUTATION
 from dataclasses import dataclass, field
@@ -234,6 +234,38 @@ class DataStructure(ABC):
     @abstractmethod
     def __gt__(self)->Union[bool, DataStructure]:
         raise NotImplementedError()
+    
+    def __mean__(self, obj, axis: Optional[int] = None, 
+                 skipna:bool=True, keepdims: bool=True)->NamedTuple:
+        '''
+            Compute the mean along the specified axis. See the docstrings
+            of concrete implementation methods for more info on these
+            arguments
+        '''
+        from copy import copy
+        from collections import namedtuple
+        Results = namedtuple('Results', ['structure', 'dims', 'coords'])
+        if axis is None:
+            return np.nanmean(obj)
+        else:
+            ndims:int = len(obj.shape)
+            computer = np.nanmean if skipna else np.mean
+            vals = computer(obj, keepdims = keepdims,
+                            axis=axis)
+            if keepdims or ndims==2:
+                ndims:DIMS = copy(self.dims)
+                ncoords:COORDS = {
+                    k:(v if i!=axis else np.asarray(["sum"])
+                    ) for i, (k,v) in enumerate(self.coords.items())
+                }
+            else:
+                ndims:DIMS = copy(self.dims).tolist()
+                ndims.pop(axis)
+                ndims = np.asarray(ndims)
+                ncoords:COORDS = {
+                    k:v for i, (k,v) in enumerate(self.coords.items()) if i!=axis 
+                }
+        return Results(structure = vals, dims = ndims, coords = ncoords)
 
     @abstractmethod
     def mean(self, axis:Optional[int] = None, keepdims:bool=True,
@@ -576,32 +608,45 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             for subtensor, crd in zip(np.transpose(self._obj, axii),
                                  crds):
                 yield (crd , np.unique(subtensor))
-                
+    
     def mean(self, axis:Optional[int] = None, keepdims:bool=True,
              skipna:bool=True):
-        from copy import copy
-        if axis is None:
-            return np.nanmean(self._obj)
-        else:
-            computer = np.nanmean if skipna else np.mean
-            vals = computer(self._obj, keepdims = keepdims,
-                            axis=axis)
-            if keepdims:
-                ndims:DIMS = copy(self.dims)
-                ncoords:COORDS = {
-                    k:(v if i!=axis else np.asarray(["sum"])
-                    ) for i, (k,v) in enumerate(self.coords.items())
-                }
-            else:
-                ndims:DIMS = copy(self.dims).tolist()
-                ndims.pop(axis)
-                ndims = np.asarray(ndims)
-                ncoords:COORDS = {
-                    k:v for i, (k,v) in enumerate(self.coords.items()) if i!=axis 
-                }
-            return NDArrayStructure(
-                vals, coords=ncoords, dims=ndims
+        '''
+            Compute the arithmetic mean along the specified axis. 
+            
+            Args:
+            ------
+            
+                - axis:Optional[int]=None : = When `axis=None` return the scalar 
+                mean of the entire structure (default). Otherwise computes 
+                the mean along the specified axis.
+                
+                - keepdims:bool=True := If `keepdims=True` the dimention is maintained 
+                in the resulting structure with a single coordinate named 
+                'sum' (default). Otherwise, the dimention is reduced and 
+                removed from the resulting structure. 
+                
+                - skipna:bool=True :=  If `skipna=True` `NaN` values will be 
+                ignored in the result, otherwise `NaN` is returned for 
+                coordinates with at least one `NaN`
+                
+            Returns:
+            ---------
+            
+                - nstruct:NDArray := Returns a new NDArrayStructure of means
+                
+                - mean:float := If `axis=None` the mean of the entire structure
+        '''
+        results:Union[NamedTuple, float] = super().__mean__(
+            self._obj, axis=axis, keepdims=keepdims, skipna=skipna
             )
+        if axis is None:
+            return results
+        else:
+            return NDArrayStructure(
+            results.structure, coords= results.coords, dims=results.dims
+            )
+        
 
 class DataFrameStructure(DataStructure, UtilityMixin):
     
@@ -887,7 +932,65 @@ class DataFrameStructure(DataStructure, UtilityMixin):
     
     def mean(self, axis:Optional[int] = None, keepdims:bool=True,
              skipna:bool=True):
-        pass
+        '''
+            Compute the arithmetic mean along the specified axis
+            
+            Args:
+            -----
+            
+                - axis:Optional[int]=None := The axis to compute the mean
+                over. If `None` (default), computes the mean over the entire
+                `DataFrame`. Values are `0` (mean over the rows), `1` (mean
+                over the columns) and `None` (mean of the entire array)
+                
+                - skipna:bool=True := If `True` ignores `NaN` values in the
+                dataframe. Else returns `NaN` for coordinates with at least one
+                `NaN`
+                
+                - keepdims:bool=True := If `True` the axis over which the mean
+                is computed, is kept in the result with a single coordinate
+                named 'sum' (default), making the result correctly broadcastable
+                against the original. Otherwise, the result axis is reduced. Since
+                `ArrayStructure` object cannot be reduced past 2D the arguement
+                if effectively ignored and always `True` for DataFrames
+                
+            Returns:
+            ---------
+            
+                - mean:float := The mean of the entire dataframe (`axis=None`)
+                
+                - means:DataFrameStructure := A DataFrame with a single row
+                of means along the specified axis
+                
+            Raises:
+            -------
+            
+                - ValueError := If `axis` is not `None`, `1` or `0`
+        '''
+        if axis is None:
+            return self._obj.mean().mean()
+        elif axis==1:
+            vals = self._obj.mean(axis=axis, skipna=skipna).to_frame().T
+            return DataFrameStructure(
+                vals, dims=self.dims, coords= {
+                    self.dims[0] : self.coords[self.dims[0]],
+                    self.dims[1] : np.asarray(["sum"])
+                } )
+        elif axis==0:
+            vals = self._obj.mean(axis=axis, skipna=skipna).to_frame().T
+            return DataFrameStructure(
+                vals, dims=self.dims, coords= {
+                    self.dims[1] : self.coords[self.dims[1]],
+                    self.dims[0] : np.asarray(["sum"])
+                } )
+            
+        else:
+            raise ValueError((
+                "Illegal argument for axis. Expected on of `0` (rows)"
+                "`1` (columns) or `None` (along the entire DataFrame). "
+                f"Received axis={axis} instead"
+            ))
+            
 
 class DataArrayStructure(DataStructure, UtilityMixin):
     
@@ -1233,7 +1336,16 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                 
     def mean(self, axis:Optional[int] = None, keepdims:bool=True,
              skipna:bool=True):
-        pass
+        raw_mean = super().__mean__(
+            self._obj.values, axis=axis, keepdims=keepdims, skipna=skipna)
+        if axis is None:
+            return raw_mean
+        else:
+            return DataArrayStructure(
+                raw_mean.structure, coords = raw_mean.coords,
+                dims = raw_mean.dims
+            )
+            
 
 
 
