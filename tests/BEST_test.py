@@ -249,11 +249,15 @@ class TestBESTModel(unittest.TestCase):
                           ropes=[(1.0,2.0)],
                           hdis=[.94,])["Δμ"]
         
-        self.assertTrue(
-            not_sig_results.Significance.values[0] == "Not Significant"\
-            and \
-            sig_results.Significance.values[0] == "Significant" and \
-            ind_results.Significance.values[0] == "Indeterminate"
+        predicates = dict(
+            not_sig_results = not_sig_results.Significance.values[0] == "Not Significant",
+            sig_results = sig_results.Significance.values[0] == "Significant",
+            ind_results = ind_results.Significance.values[0] == "Indeterminate"
+        )
+        
+        self.assertTrue([
+            v for k,v  in  predicates.items()
+        ]
         )
 
     def test_multivariate(self):
