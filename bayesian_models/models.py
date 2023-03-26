@@ -707,11 +707,11 @@ class BEST(BESTBase):
             e for e in next(data[:,self.group_var].unique())[1]
             ]
         self.num_levels=len(self.levels)
-        self.features = [
+        self.features = np.asarray([
             k for k in data.coords()[
                 list(data.coords().keys())[1]
                                      ] if k != self.group_var
-            ]
+            ])
         self._ndims=len(self.features)
         
         self._groups = {
@@ -839,8 +839,11 @@ class BEST(BESTBase):
                 The output of `transform`. Generally a `pandas.Series`
                 of empirical means, or standard deviations
         '''
-        
-        selected = data[row_indexer, column_indexer]
+        if isinstance(row_indexer, np.ndarray):
+            row_indexer = row_indexer.tolist()
+        if isinstance(column_indexer, np.ndarray):
+            column_indexer = column_indexer.tolist()
+        selected = data[row_indexer, :][:, column_indexer]
         transformed = transform(selected)
         if unwrap:
             warped_input=transformed.values()

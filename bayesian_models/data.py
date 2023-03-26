@@ -368,7 +368,9 @@ class DataStructure(ABC):
                 elif isinstance(e, list):
                     subcollected:list[int] = []
                     for elem in e:
-                        if isinstance(elem, (int, str)):
+                        alltype = (int, str, np.str_, np.int_,
+                                   )
+                        if isinstance(elem, alltype):
                             subcollected.append(lookup(dim, elem)
                                 )
                         else:
