@@ -9,13 +9,13 @@ Introduction
 ==============
  
 A common problem in statistical inference is deciding if two or more
-groups are different with respect to some measured quantity of intrest.
-Making this inferece is complicated somewhat, by the fact that real
+groups are different with respect to some measured quantity of interest.
+Making this inference is complicated somewhat, by the fact that real
 data are "contaminated" with some amount of randomness that hinders
 attempts based on direct differences in the data. The *de facto*
 standard for addressing these questions is **ANOVA** (*One Way Analysis
 Of Variance*) and the **t Test** - more generally **hypothesis
-testing**. These proccedures typically involve expressing a **null
+testing**. These procedures typically involve expressing a **null
 hypothesis** (:math:`H_0`) which usually declares that there are no
 differences, and an **alternative hypothesis** (:math:`H_A`) which
 typically states some differences exist. A **test statistic** is then
@@ -23,16 +23,16 @@ formulated, which is a quantity that determines if the observed data
 (in terms of their distribution) are sufficiently plausible under the
 given hypothesis.
  
-Unfortunatelly, it can be quite difficult to use hypothesis tests
+Unfortunately, it can be quite difficult to use hypothesis tests
 correctly. There are several subjective choices involved in the
-proceedure such as the test statistic and the hypothesis. These are
+procedure such as the test statistic and the hypothesis. These are
 usually abstracted away form the user and a kind of "default" is used,
 based on habit and tradition rather than justification on the problem
-at hand. Moreover the justification for these proccedures are are seen
+at hand. Moreover the justification for these procedures are are seen
 as questionable by some, as they are essentially based on maximization
 of the repeatability of the experiment - but surely, we should care
 about the outcomes of individual experiments as well. More over these
-proccedures frequently fail to accuratly describe reality, for they do
+procedures frequently fail to accurately describe reality, for they do
 not generally contain any notion of the extent or size of the
 difference. Two different datasets with major differences in extent of
 they differences may for example give the same P-value. The
@@ -67,7 +67,7 @@ to intended to express some notion of how "distant" the observations
 are from the Null Hypothesis, after it is combined with prior knowledge
 in some non-specific manner.   The mathematical machinery of NHST was
 developed originally by Neyman and Spearman as an alternative approach
-to the one by Fischer. In these proceedures the pairs of Null and
+to the one by Fischer. In these procedures the pairs of Null and
 Alternative Hypotheses are formulated and a test statistic is used to
 select the more plausible of the two. Typical examples of NHST are
 **ANOVA** (*One Way Analysis Of Variance*) and the t-Test. For example
@@ -96,24 +96,23 @@ and it is this version that is commonly used today
 Objections and Criticisms 
 ============================= 
  
-NHST proceedures
-have come under severe criticism by experts in the field, already since
-the 60's:
+NHST procedures have come under severe criticism by experts in the
+field, already since the 60's:
  
 Problem 1: Focusing on the Null Hypothesis
 -------------------------------------------
 
-The null hypothesis constitutes a statement of no differnce or
+The null hypothesis constitutes a statement of no difference or
 relationship which is generally contrary to what the analyst believes.
 After all if an analyst truly believed there was no relation between a
 categorical variable (which defines the group) and some continuous
-quantity of intrest they likely would not be conducting the test to
+quantity of interest they likely would not be conducting the test to
 begin with. Indeed to begin conducting a hypothesis test, the analyst
 nearly always suspects that the groups are indeed different.
 Furthermore, the null hypothesis ought to accepted as being
 "absolutely" true - its a mathematical statement that doesn't include
 any notion of precision. This is nearly impossible for most real world
-systems, where virtualy every variable is related to all other
+systems, where virtually every variable is related to all other
 variables however weakly *(Meeh, 1980)*. It pointless to question if
 they are different in practice - they always are to some level of
 precision and to some decimal *(Turkey, 1991)*. Therefore, there is
@@ -127,7 +126,7 @@ The logic underlying NHST is difficult is very unintuitive. Hence
 exceedingly prone misinterpretation and erroneous extrapolation,
 leading scientists and researchers to the wrong conclusions.
 Mathematicians and statisticians are of course well aware of how to
-correctly read the results of these proceedures, however, these
+correctly read the results of these procedures, however, these
 techniques are also being widely applied to other fields, from
 chemistry to ecology, where they are even more likely to be
 misinterpreted. Most non-specialists reason about NHSTs as follows:
@@ -176,32 +175,81 @@ still convays a false sense of security
 Problem 4: The Test Does Not Reveal If The Null Hypothesis Is True
 ---------------------------------------------------------------------
 
+Usually the analyst resorts to NHST because he is intrusted in answering
+the question "is the research hypothesis true based on the data?" or at
+least is the null hypothesis is true or not. However procedures such as
+t-Tests and ANOVAs reveal nothing of this sort though many researchers
+believe that it does. The p-value is the probability of making
+observations as extreme or more extreme than those observed conditioned
+on the null hypothesis, not the probability that the null hypothesis is
+True. In mathematical notation the p value can written as
+:math:`p(\mathbb{D}|H_0)` whereas the researchers is generally interested
+in :math:`p(H_R|\mathbb{D})` or at least :math:`p(H_0|\mathbb{D})`.
+Furthermore one should bear in mind:
+
+.. math:: 
+
+    p(H_A|\mathbb{D})\ne p(\mathbb{D}|H_0)\\
+    p(H_0|\mathbb{D})\ne 1-p(\mathbb{D}|H_0)
+
+This quantities are distinct and should not be conflated. Yet it is very
+tempting to do so, especially for the non specialist
+
+Problem 5: Effect Size and Sample Size
+----------------------------------------
+
+The p-value is frequently interpreted and providing an estimate of the
+"importance" of the findings. A lower p-value is frequently interpreted
+as corresponding to larger difference between groups, however this is
+not the case. Consider for example the t-Test:
+
+.. math:: 
+
+    t = \dfrac{\bar{x_1}-\bar{x_2}}{
+        \sqrt{\frac{s_1^2}{N_1}+\frac{s_2^2}{N_2}}
+        }
+
+Notice that the statistic depends on both the effect size
+(:math:`\bar{x_1}-\bar{x_2}`) and the sample size. This is what Cohen
+and the others above were referencing. For any arbitrarily small
+:math:`\bar{x_1}-\bar{x_2}` there is always a sample size sufficient to
+reject the null hypothesis. Then, rejecting the null hypothesis becomes
+a matter of collecting enough information (power). The fact that the
+test provides little information on the magnitude of the observed
+differences is particularly problematic.
+
 Model Specification 
 =======================
  
 In Kruschke's original paper a model is described for the case of two
-groups and one quantity of intrest. In real world data, we are dealing
-with multiple variables of intrest and possibly, multiple groups. While
-Kruschke provides some guidelines for these extentions, these are left
-somewhat nebulous and open to interpretation. The following extentions
-are specific to this library. Let :math:`\overset{N \times M+1}{X}` be a
-matrix representing our measurements. This matrix is composed of
-:math:`N` observations of :math:`M` continuous variables, and we further
-assume an additional, categorical variable whose values represents the
-groups themselves. Suppose this group variables takes $K$ possible
-values. We split the data according to the values of this variable
-:math:`\{\mathbf{X_0, \dots, X_K}\}` and fit distributions to each
-group. The distribution choses here is the **Student T** distribution.
-This distribution is chosen because, while similar to the Normal, it has
+groups and one quantity of interest, with some instructions for further
+extensions. Real world data, generally involve multiple variables of
+interest and possibly, multiple groups. While Kruschke provides some
+guidelines for these extensions, these are left somewhat nebulous and
+open to interpretation. The following extensions are specific to this
+library. Let :math:`\overset{N \times M+1}{X}` be a matrix representing
+our measurements. This matrix is composed of :math:`N` observations of
+:math:`M` continuous variables, and we further assume an additional,
+categorical variable whose values represent the groups themselves.
+Suppose this group variables takes :math:`K` possible values. We split
+the data according to the value of this variable
+:math:`{\mathbf{X_0,\dots, X_K}\}` and fit distributions to each group.
+The distribution chosen here is the **Student T** distribution. This
+distribution is chosen because, while similar to the Normal, it has
 thicker tails and hence better at describing data with "extreme" values,
 which are quite common in practice.  The Student T distribution (in one
-dimention) is given by:
+dimension) is given by:
 
- .. math:: 
-     f(x|\mu, \lambda, \nu) = \frac{\Gamma (\frac{\nu+1}2 )}{\Gamma (         \frac \nu 2)} \big( \frac{\lambda}{\pi\nu} \big)^{\frac 12}         \big[1+\frac{\lambda (x-\mu)^2}{\nu} \big]^{-\frac {\nu+1}2}
+ .. math::
+    f(x|\mu, \lambda, \nu) = \frac{\Gamma (\frac{\nu+1}2 )}{
+    \Gamma (\frac \nu 2)} \big( 
+        \frac{\lambda}{\pi\nu} \big)^{\frac 12}
+        \big[1+\frac{\lambda (x-\mu)^2}{\nu} \big]^
+        {-\frac {\nu+1}2
+    }
  
 This distribution is defined by three shape parameters, two which
-identicall to the Normal (mean and standard deviation) and a unique
+identical to the Normal (mean and standard deviation) and a unique
 parameter :math:`\nu`. This parameter is called the **degrees of
 freedom** and determines essentially the "normality" of the
 distribution. For values of :math:`\nu` close to 1, the distribution has
@@ -209,14 +257,27 @@ thick tails, which shrink toward the equivalent normal as it increases.
 Therefore, we can express this grouping as:
 
  .. math:: 
-     \begin{array}{c}     \mathbf{X_0} \thicksim \mathcal{T}(\nu_0, \mu_0, \sigma_0)\\     \mathbf{X_1} \thicksim \mathcal{T}(\nu_1, \mu_1, \sigma_1)\\     \vdots\\     \mathbf{X_K} \thicksim \mathcal{T}(\nu_K, \mu_K, \sigma_K)\\     \end{array}
+    \begin{array}{c}
+        \mathbf{X_0} \thicksim \mathcal{T}(\nu_0, \mu_0, \sigma_0)\\
+        \mathbf{X_1} \thicksim \mathcal{T}(\nu_1, \mu_1, \sigma_1)\\
+        \vdots\\
+        \mathbf{X_K} \thicksim \mathcal{T}(\nu_K, \mu_K, \sigma_K)\\     
+    \end{array}
  
 We must specify **priors** for these free parameters, which will be
 estimated from the observed data itself. Kruschke proposes the following
 prior distributions:
 
  .. math:: 
-    \begin{array}{c}     \nu_0=\nu_1=\dots =\nu_K=\nu\\     \\     \nu \thicksim 1 + \mathcal{Exp}(\lambda=\frac 1 {29.0})\\     \\     \mu_k \thicksim \mathcal{N}(\bar{\mu}_k,\ 2\bar{\sigma})\\     \\     \sigma_k \thicksim \mathcal{U}(10^{-3}, 10^3)     \end{array}
+    \begin{array}{c}
+        \nu_0=\nu_1=\dots =\nu_K=\nu\\
+        \\
+        \nu \thicksim 1 + \mathcal{Exp}(\lambda=\frac 1 {29.0})\\
+        \\
+        \mu_k \thicksim \mathcal{N}(\bar{\mu}_k,\ 2\bar{\sigma})\\
+        \\
+        \sigma_k \thicksim \mathcal{U}(10^{-3}, 10^3)
+    \end{array}
 
 We can make the simplifying assumption that the degrees of freedom are
 the same across all groups, which is usually a good idea (but not
@@ -233,36 +294,51 @@ abstractly encompass all possible data (astronomical, medical, etc). For
 most real-world applications, they are excessively large and should be
 adjusted according the data and their units.
 
+.. note:: 
+
+    `bayesian-models` assumes the same degrees of freedom across all
+    distributions and uses univariate student T by default. These defaults
+    are chosen because they are quite sensible and closely follow the
+    original formulation. Advanced users are given the option to set
+    independent degrees of freedom for each univariate Student T, or even
+    use a multivariate distribution instead. These settings are not
+    recommended as in our experience allowing different degrees of freedom
+    usually results in over fitting. The multivariate case assumes a
+    diagonal scale matrix is computationally more expensive
+
 From the above, we can calculate any derived, deterministic quantity,
-primarily the **difference of means **(:math:`\Delta \mu`), the
+primarily the **difference of means** (:math:`\Delta \mu`), the
 **difference of standard deviations** (:math:`\Delta \sigma`) and an
 additional quantity which Kruschke terms the **effect size**
 (:math:`E`). 
 
  .. math::
-     E_{ij} \triangleq \dfrac{\Delta \mu_{ij}}{     \frac{\sqrt{         \sigma_i^2+\sigma_j^2         }} {2}     }
+    E_{ij} \triangleq \dfrac{
+        \Delta \mu_{ij}}{
+        \frac{\sqrt{\sigma_i^2+\sigma_j^2}}{2}
+        }
 
 This quantity is no longer expressed in the same units as the inputs and
 hence it is somewhat harder to interpret than the others. :math:`\Delta
 \mu` expresses the expected difference between the groups and hence is
-the quantity we are primarily intrested in. :math:`\Delta \sigma`
-expresses the difference is variaces between groups and hence can be
+the quantity we are primarily interested in. :math:`\Delta \sigma`
+expresses the difference is variances between groups and hence can be
 interpreted as expressing whether specific instances of the observed,
 are affected differently for certain values of the grouping variable.
 The effect size expresses a standardized measure of the "magnitude" of
 the difference.
 
-Making Desitions: 
+Making Decisions: 
 ========================
 
-To move from the hazy space of propabilities to that of actionable
-decitions, we need to propose, apply and justify a **decition rule**.
-Classical hypothesis testing typically justifies its decition making
+To move from the hazy space of probabilities to that of actionable
+decisions, we need to propose, apply and justify a **decision rule**.
+Classical hypothesis testing typically justifies its decision making
 process by appealing to reproducibility. Applying the t-Test is valid,
 because it ensures Type I and Type II errors are minimized in the long
 run, for infinite experiments and infinite researchers. There are
 multiple rules by which one can arrive to binary (or really tertiary)
-decitions - the one considered here is the earliest proposed for this
+decisions - the one considered here is the earliest proposed for this
 model and is called the **HDI+ROPE** rule. The true innovation of this
 approach is the definition of the **ROPE** or the **Region Of Practical
 Significance**. This is a region of values that practically equivalent
@@ -271,19 +347,19 @@ to zero. Hence the ROPE interval is defined on a problem specific basis
 interval** (CI) is Bayesian equivalent of the confidence interval and
 expresses a similar idea. It can be though of as the interval of values
 considered plausible (under some probability threshold). From these two
-we can arrive at our decitions according to the following rule: If the
+we can arrive at our decisions according to the following rule: If the
 CI and the ROPE have nothing in common, then none of the plausible
 values are equivalent to zero. We therefore decide the groups are
 **different**. If the CI is entirely inside the ROPE, then all
 plausible values are equivalent to zero. Therefore we decide the groups
 are **the same**. If the two intervals partially overlap, then *some*
 plausible values are equivalent to zero, while some are not. We
-therefore **withold out decition** or simple declare it
-**Indeterminate**. This decition rule can be justified via a branch of
-mathematics called  **Bayesian Decition Theory** which studies
-decitions under a state of uncertainty. A full description is outside
+therefore **withold out decision** or simple declare it
+**Indeterminate**. This decision rule can be justified via a branch of
+mathematics called  **Bayesian Decision Theory** which studies
+decisions under a state of uncertainty. A full description is outside
 the scope of this document (and this library), however we can provide a
-rough outline. We begin be observing the decitions are generally not
+rough outline. We begin be observing the decisions are generally not
 made in a vacuum but are attended by **actions**. We therefore denote
 :math:`\alpha\in \Alpha` the set all possible actions, :math:`\Theta`
 the space of all possible values of model parameters and
@@ -293,8 +369,8 @@ the space of all possible values of model parameters and
  .. math:: 
      L:\mathcal{\Theta}\times\mathcal{\Alpha}\rightarrow \mathbb{R}_0^+
  
-This function maps values of the model and decitions taked to a "cost"
-of making this decition. We then define a **decition function**:
+This function maps values of the model and decisions taken to a "cost"
+of making this decision. We then define a **decision function**:
  
  .. math:: 
      \delta :\Theta \rightarrow \Alpha
@@ -303,7 +379,7 @@ From this, justification can be derived in a general way. In practice
 formulating a problem specific loss function is usually difficult in
 practice
 
-Extentions: Multiple Inputs
+Extensions: Multiple Inputs
 =================================
  
 To extend the model for multiple inputs, there are several options. We
@@ -312,18 +388,24 @@ multiple, univariate distributions. The multivariate Student T has a
 pdf of:
 
  .. math:: 
-         f(\mathbf{x}| \nu,\mu,\Sigma) =         \frac             {\Gamma\left[(\nu+p)/2\right]}             {\Gamma(\nu/2)\nu^{p/2}\pi^{p/2}              \left|{\Sigma}\right|^{1/2}              \left[                1+\frac{1}{\nu}                ({\mathbf x}-{\mu})^T                {\Sigma}^{-1}({\mathbf x}-{\mu})              \right]^{-(\nu+p)/2}}
+        f(\mathbf{x}| \nu,\mu,\Sigma) = \frac{
+            \Gamma\left[(\nu+p)/2\right]}{
+            \Gamma(\nu/2)\nu^{p/2}\pi^{p/2
+            }\left|{\Sigma}\right|^{1/2}\left[1+\frac{1}{\nu}({
+            \mathbf x}-{\mu})^T{\Sigma}^{-1}({\mathbf x}-{\mu})\right]^{
+            -(\nu+p)/2}
+            }
 
 Note the Multivariate distribution, replaces the parameter
 :math:`\sigma` with a **covariance matrix**. The element of the
-diagonal of his matrix are variances accross each input variable, and
+diagonal of his matrix are variances across each input variable, and
 the off-diagonal elements are **covariances** between different
 variables. We assume this matrix is diagonal i.e. that there are no
 covariances between the input variables (since we are generally not
-intrested in describing the covariances themselves). Alternatively we
-can fit independant univariate distributions for each input variable.
+interested in describing the covariances themselves). Alternatively we
+can fit independent univariate distributions for each input variable.
 We can assume the same degrees of freedom for each of allow them
-independant. The former case is theoretically identical to the
+independent. The former case is theoretically identical to the
 multivariate with a diagonal covariance matrix, but more
 computationally expensive. The latter case is possible but prone to
 overfitting.
@@ -332,16 +414,31 @@ Extentions: Multiple Groups:
 ------------------------------ 
 
 Kruschke provides some guidelines on how to extend this model for
-multiple groups but provides no tangible examples. We intrepret his
-recommendation to place independant :math:`\mu_k` and :math:`\nu_k` as
+multiple groups but provides no tangible examples. We interpret his
+recommendation to place independent :math:`\mu_k` and :math:`\nu_k` as
 pair-wise comparisons between the groups. Hence we implement
 comparisons for all combinations of values of the grouping variable.
 Therefore, for :math:`i,j\in\{0, \dots K\}` we generate all
-combinations (unique pairs withough repetition or order) and the
+combinations (unique pairs without repetition or order) and the
 derived metrics would be:
 
  .. math:: 
-     \begin{array}{c}     \Delta\mu_{00}\\     \Delta\sigma_{00}\\     E_{00}\\     \Delta\mu_{01}\\     \Delta\sigma_{01}\\     E_{01}\\     \vdots\\     \Delta\mu_{ij}\\     \Delta \sigma_{ij}\\     E_{ij}\\     \vdots\\     \Delta\mu_{KK}\\     \Delta \sigma_{KK}\\     E_{KK}\\     \end{array}
+    \begin{array}{c}
+        \Delta\mu_{00}\\
+        \Delta\sigma_{00}\\
+        E_{00}\\
+        \Delta\mu_{01}\\
+        \Delta\sigma_{01}\\ 
+        E_{01}\\
+        \vdots\\
+        \Delta\mu_{ij}\\
+        \Delta \sigma_{ij}\\
+        E_{ij}\\
+        \vdots\\
+        \Delta\mu_{KK}\\
+        \Delta \sigma_{KK}\\
+        E_{KK}\\
+    \end{array}
 
 Options and Alternative Formulations 
 ========================================
@@ -354,11 +451,11 @@ One could for example relax the diagonality assumption and model the
 resulting matrices with the specialized LKJCholesky distribution
 (included in `pymc`). Another possibility is including a hierarchical
 distribution for the means, however this formulation is rather
-nebuluous and would likely overcomplicate things. For this reason we
+nebulous and would likely overcomplicate things. For this reason we
 chose not to include it. It could potentially be considered in the
 future however. In terms of the options that are present in this
 implementation, the default option is univariate distribution with
-common degrees of freedom. Allowing independant degrees of freedom for
+common degrees of freedom. Allowing independent degrees of freedom for
 input variables, we've found (via loo) usually results in overfitting.
 This case is identical to the multivariate, but more efficient.
 
@@ -374,7 +471,7 @@ are class methods rather than object methods. This choice was made to
 enable rapid prototyping. The expected use-case is that a single
 'version' of the model can be applied to multiple data, in the sense of
 multiple grouping variables. We often deal with dataset with multiple
-categorical variables and we are intrested in knowing whether these
+categorical variables and we are intrusted in knowing whether these
 variables impact other continuous variables. This model accepts no
 "testing" data, and hence its data containers are declared immutable.
 The `predict` method itself renders the decisions and returns findings
@@ -385,9 +482,9 @@ results. These are typically of the same shape as those of
 according to the **HDI+ROPE** rule. Other rules are possible, but they
 are not implemented at present, as we think this rule is very
 intuitive, easy to use and works well for many common cases. The
-decision making process itself is defered to the `predict` method,
+decision making process itself is deferred to the `predict` method,
 since it is meaningless prior to training completion. This way, a user
 could also rapidly test many options of ROPEs and HDI thresholds on the
-same model and aggragate the results, without retraining each time.
-After all the desition making process itself is independant of the
+same model and aggregate the results, without retraining each time.
+After all the decision making process itself is independent of the
 inference process.
