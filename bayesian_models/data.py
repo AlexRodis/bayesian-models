@@ -235,6 +235,17 @@ class DataStructure(ABC):
     def __gt__(self)->Union[bool, DataStructure]:
         raise NotImplementedError()
     
+    @staticmethod
+    def __isna__(array):
+        '''
+            Custom `numpy.isnan` implementation, capable of handling arrays
+            of objects. Exploits the fact that in `numpy` and
+            derived implementations `numpy.nan!=numpy.nan`
+        '''
+            
+        cmp:Callable = np.vectorize(lambda elem : elem!=elem)
+        return cmp(array)
+    
     def __mean__(self, obj, axis: Optional[int] = None, 
                  skipna:bool=True, keepdims: bool=True)->NamedTuple:
         '''
@@ -1178,7 +1189,8 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                                   )
     
     def isna(self):
-        return DataArrayStructure( np.isnan(self.obj.values),
+        return DataArrayStructure( 
+                                  super().__isna__(self._obj),
                                 coords = self._coords,
                                 dims = self._dims)
     
