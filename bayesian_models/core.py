@@ -169,44 +169,50 @@ class FreeVariablesComponent:
 @dataclass(slots=True)
 class ResponseFunctions:
     '''
-        Data container for Response functions. Accepts three mappings
-        as dicts. All three map strings representing variable names for
-        the result of the response to a parameter. The `functions` argument
-        maps names to the actual functions themselves. The 
-        `application_targets` parameter maps transformed variable names
-        to the variables that are inputs to the transformation. The
-        `records` parameter maps variable names to a boolean representing
-        whether they should be recorded or not. `True` will wrap the
-        result of the transform into a deterministic node, False will not
-        The `application_targets` and `records` parameters can be partially
-        or completely omitted. In this case, record defaults to True
-        and the application_target default to 'f' a general name for the
-        raw model output. If any variable is found in either 
-        `application_targets` or `records` but not in `functions` an
-        exception is raised, since not reasobly inference can be made for
-        the tranform function instead. Example usage:
+        Data container for Response functions. 
+        
+        Accepts three mappings as dicts. All three map strings
+        representing variable names for the result of the response to a
+        parameter. The `functions` argument maps names to the actual
+        functions themselves. The `application_targets` parameter maps
+        transformed variable names to the variables that are inputs to
+        the transformation. The `records` parameter maps variable names
+        to a boolean representing whether they should be recorded or
+        not. `True` will wrap the result of the transform into a
+        deterministic node, False will not The `application_targets` and
+        * `records` parameters can be partially or completely omitted.
+        In this case, record defaults to True and the application_target
+        default to 'f' a general name for the raw model output. If any
+        variable is found in either `application_targets` or `records`
+        but not in `functions` an exception is raised, since not
+        reasonable inference can be made for the transform function
+        instead. Example usage:
         
         .. code-block::
         
-            # Pass all parameters explicitly (recommended)
-            In [4]: r = ResponseFunctions(
-            ...:     functions = dict(exp = pymc.math.exp, tanh = pymc.math.tanh),
-            ...:     records = dict(exp=True, tanh=False),
-            ...:     application_targets = dict(exp="f", tanh="exp")
-            ...:     )
-            # Partially ommit application_targets using defaults 'f'
-            In [5]: r = ResponseFunctions(
-            ...:     functions = dict(exp = pymc.math.exp, tanh = pymc.math.tanh),
-            ...:     records = dict(exp=True, tanh=False),
-            ...:     application_targets = dict(tanh="exp")
-            ...:     )
-            # Pass the desired Callables leaving everything to their defaults
-            # In this case two different response functions are applied
-            # to the same input 'f'. Both are recorded with `pymc.Deterministic`
-            # the name is the key provided
-            In [6]: r = ResponseFunctions(
-            ...:     functions = dict(exp = pymc.math.exp, tanh = pymc.math.tanh)
-            ...:     )
+            # Pass all parameters explicitly (recommended) r =
+            ResponseFunctions(
+                functions = dict(exp = pymc.math.exp, tanh =
+                pymc.math.tanh), records = dict(exp=True, tanh=False),
+                application_targets = dict(exp="f", tanh="exp")
+            ) # Partially omit application_targets using defaults 'f' r
+            = ResponseFunctions(
+                functions = dict(exp = pymc.math.exp, tanh =
+                pymc.math.tanh), records = dict(exp=True, tanh=False),
+                application_targets = dict(tanh="exp")
+            ) # Pass the desired Callables leaving everything to their
+            defaults # In this case two different response functions are
+            applied # to the same input 'f'. Both are recorded with
+            `pymc.Deterministic` # the name is the key provided r =
+            ResponseFunctions( functions = dict(exp = pymc.math.exp,
+            tanh = pymc.math.tanh) )
+            
+        Public Attributes:
+        ------------------
+
+            - | functions:dict[str, Callable] := A dictionary mapping 
+              | internal variable names to Callable objects defining the
+              | transformation
     
     '''
     

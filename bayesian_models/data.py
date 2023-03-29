@@ -32,93 +32,101 @@ class DataStructure(ABC):
             
             - shape:SHAPE := The shape property of the wrapped object
             
-            - dims:DIMS := Labels for the dimentions of the object - the
-            axii
+            - | dims:DIMS := Labels for the dimentions of the object - |
+              the axii
             
-            - coords:COORDS := Labels for each element in each axis (i.e
-            ) distinct row labels, column labels etc
+            - | coords:COORDS := Labels for each element in each axis
+              (i.e |) distinct row labels, column labels etc
             
             - rank:int := The tensors rank
             
-            - dtype := The datatype for the elements. For consistancy
-            all `DataStructure` are coerced into homogenous types
+            - | dtype := The datatype for the elements. For consistency
+              |all `DataStructure` are coerced into homogenous types
             
         Methods:
         ---------
-        
             Methods exposed by the tensor
         
-            - transpose(axis:Optional[AXES_PERMUTATION] = None) := 
-            Return a tranposed version of the object. Signature is the
-            same as numpy and must return the same default. Should
-            always return the same type of object. The T attribute is
-            an alias for this methods
+            - | transpose(axis:Optional[AXES_PERMUTATION] = None) :=
+                Return a transposed version of the object. Signature is
+                the same as numpy and must return the same default.
+                Should always return the same type of object. The T
+                attribute is an alias for this method
             
-            - isna(axis:Optional[int] = None) := Elementwise `isnan`.
-            Should default to returning the a boolean tensor of the same
-            shape as the original tensor. When `axis` is provided should
-            this is equivalent to an `any` operation over this axis. The
-            axis should be preseved in the return
+            - | isna(axis:Optional[int] = None) := Elementwise `isnan`.
+                Should default to returning the a boolean tensor of the
+                same shape as the original tensor. When `axis` is
+                provided should this is equivalent to an `any` operation
+                over this axis. The axis should be preserved in the
+                return
             
-            - any(axis:Optional[int] = None) := When `axis=None` perform
-            `any` over the entire array and return a boolean. Otherwise
-            perform the operation over the specified axis, preserving
-            the axis
+            - | any(axis:Optional[int] = None) := When `axis=None`
+                perform `any` over the entire array and return a
+                boolean. Otherwise perform the operation over the
+                specified axis, preserving the axis
             
-            - all(axis:Optional[int] = None) := When `axis=None` perform
-            `all` over the entire array and return a boolean. Otherwise
-            perform the operation over the specified axis, preserving
-            the axis
+            - | all(axis:Optional[int] = None) := When `axis=None`
+                perform `all` over the entire array and return a
+                boolean. Otherwise perform the operation over the
+                specified axis, preserving the axis
             
-            - iterrows() := Iterate over the first axis of the structure
-            Similar to `pandas.DataFrame.iterrows()`
+            - | iterrows() := Iterate over the first axis of the
+                structure. Similar to `pandas.DataFrame.iterrows()`
             
-            - itercolumns() := Iterate over the second axis of the 
-            structure. Similar to `pandas.DataFrame.itercolumns`
+            - | itercolumns() := Iterate over the second axis of the
+                structure. Similar to `pandas.DataFrame.itercolumns`
             
-            - cast(dtype, **kwargs) := Attempt to cast tensor elements to
-            to `dtype`. All kwargs are forwarded to `numpy`. Returns a
-            new copy of the tensor (as a DataStructure object) with the
-            update data type
+            - | cast(dtype, **kwargs) := Attempt to cast tensor elements
+                to `dtype`. All kwargs are forwarded to `numpy`. Returns
+                a new copy of the tensor (as a DataStructure object)
+                with the update data type
             
-            - __getitem__(self, obj) := Slice the object in any number of
-            ways. Integer and label based, slices should be acceptable along
-            with arbitrary combinations thereof. Acceptable slice inputs
-            should be: int, str, slice, Ellipsis, list[int,str], 
-            tuple[int,str] and all combinations of these 
-            Slice should accept label based specs or integers based ones, 
-            or mixes of the two. The step argument only accept integers and
-            raise otherwise. All of the following should be valid:
-                obj[5,6]
-                obj["sample_0", 7]
-                obj["sample_7":10:1, ...]
-                obj[[6,9], "var1":10:2,...]
-            If the object would be reduced below a 2d structure, it should
-            padded into 2D as a row-vector
+            - | __getitem__(self, obj) := Slice the object in any number
+                of ways. Integer and label based, slices should be
+                acceptable along with arbitrary combinations thereof.
+                Acceptable slice inputs should be: int, str, slice,
+                Ellipsis, list[int,str], tuple[int,str] and all
+                combinations of these. Slice should accept label based
+                specs or integers based ones, or mixes of the two. The
+                step argument only accept integers and raise otherwise.
+                All of the following should be valid:
+                
+                .. code-block::
+                
+                   obj[5,6] obj["sample_0", 7] obj["sample_7":10:1, ...]
+                   obj[[6,9], "var1":10:2,...]
+                
+                If the object would be reduced below a 2d structure, it
+                should padded into 2D as a row-vector
             
-            - unique(axis=None) := Return a the unique values of the data
-            structure as a generator of length 2 tuples. When axis is 
-            specified as an integer, the generator iterates over the specified
-            axis, yielding tuples of the label and the unique values of the
-            subtensor. When axis is None (default) return a single element
-            Generator which yields exactly one tuple of (None, UNIQUES),
-            where UNIQUES is a vector of all the unique values in the structure
+            - | unique(axis=None) := Return a the unique values of the
+                data structure as a generator of length 2 tuples. When
+                axis is specified as an integer, the generator iterates
+                over the specified axis, yielding tuples of the label
+                and the unique values of the subtensor. When axis is
+                None (default) return a single element Generator which
+                yields exactly one tuple of (None, UNIQUES), where
+                UNIQUES is a vector of all the unique values in the
+                structure
             
-            - mean(axis:Optional[int] = None, keepdims:bool=True,
-            skipna:bool=True) := Compute the mean along the specified
-            axis. If axis is `None` the mean will be computed over the entire
-            structure and a numeric is returned. Otherwise a data structure
-            of the same type as the original is returned. If axis is not None,
-            the mean is computed over the specified axis. If `keepdims=True`
-            (default) the axis is reduced and removed. If `keepdims=True` then
-            the axis is maintained (and the result is broadcastable to the 
-            original) with a single coordicate named "sum". If `skipna=True`
-            any invalid elements will be ignored (default) otherwise `nan` is
-            returned where mean would otherwise be.
+            - | mean(axis:Optional[int] = None, keepdims:bool=True,
+                skipna:bool=True) := Compute the mean along the
+                specified axis. If axis is `None` the mean will be
+                computed over the entire structure and a numeric is
+                returned. Otherwise a data structure of the same type as
+                the original is returned. If axis is not None, the mean
+                is computed over the specified axis. If `keepdims=True`
+                (default) the axis is reduced and removed. If
+                `keepdims=True` then the axis is maintained (and the
+                result is broadcastable to the original) with a single
+                coordinate named "sum". If `skipna=True` any invalid
+                elements will be ignored (default) otherwise `nan` is
+                returned where mean would otherwise be.
             
-            - ops := Elementwise comparison operations such as '>', '>=', 
-            '==', '<=', '<' and 'neq' are included in the interface but
-            generally delegated to the underlying library 
+            - | ops := Elementwise comparison operations such as '>',
+                '>=', '==', '<=', '<' and 'neq' are included in the
+                interface but generally delegated to the underlying
+                library 
     '''
     
     @property
@@ -238,9 +246,44 @@ class DataStructure(ABC):
     def __mean__(self, obj, axis: Optional[int] = None, 
                  skipna:bool=True, keepdims: bool=True)->NamedTuple:
         r'''
-            Compute the mean along the specified axis. See the docstrings
-            of concrete implementation methods for more info on these
-            arguments
+            Compute the mean along the specified axis. 
+
+            Args:
+            -----
+            
+                - obj := The data structure object
+                
+                - | axis:Optional[int] = None := The dimension along
+                    which the mean will be computed. When `None`
+                    computes the mean of the entire structure. When an
+                    integer is specified, return a data structure, of
+                    the same type as the original with the computed
+                    means
+                
+                - | skipna:bool=True := If `True`, `NaN` values will be
+                    ignored during computation. Else `NaN` will be
+                    returned if any `NaN` values are encountered along
+                    each coordinate
+                    
+                - | keepdims:bool=True := If `True`, the axis along
+                        which the mean is computed in preserved in the
+                        returned structure, making it correctly
+                        broadcastable to the original. Otherwise, the
+                        dimention is reduced. If this reduction would
+                        reduce the structure below 2D, a 2D row-vector
+                        structure is returned instead
+                
+            Returns:
+            ---------
+            
+                - | mean:float := The mean of the entire structure (if
+                  `axis=None`)
+            
+                - | Results:namedtuple: A namedtuple containing the
+                    results of mean. Has three fields 'structure' the
+                    actual structure, 'dims' for the dimentions after
+                    computation and coords containing the coordinates of
+                    the result
         '''
         from copy import copy
         from collections import namedtuple
@@ -274,9 +317,22 @@ class DataStructure(ABC):
     
     def _slice_coords(self, obj:Iterable)->COORDS:
         r'''
-            Given a slice/index type object
-            collect the sliced objects' labels as
-            coords and returns them
+            Convert the argument to indexer into coordinates
+            
+            Given a slice/index type object, collects the sliced
+            objects' labels as coords and returns them
+            
+            Args:
+            -----
+            
+                - obj:Iterable := The input to the indexer function
+                
+            Returns:
+            --------
+            
+                - coords:COORDS := The corresponding coordinates object
+                  (a dictionary of dimension names to numpy arrays or
+                  coordinates)
         '''
         from copy import copy
         from itertools import count
@@ -305,13 +361,17 @@ class DataStructure(ABC):
     def __getitem__(self, obj:Union[str, int, Iterable]
                     )->Union[NDArrayStructure, np.ndarray]:
         r'''
-            Index slicing for CommonDataStructure objects. Index or 
-            label based slicing is supported in arbitary combinations.
-            DataStructure objects can be sliced with (nearly) any
-            combination of int, str, slice, list, None, Ellipsis.
-            Note label slicing is supported, however the `step` argument
-            must be blank or an integer, not a label. Example usage:
+            Index slicing for CommonDataStructure objects. 
+            
+            Index or label based slicing is supported in arbitrary
+            combinations of DataStructure objects can be sliced with
+            (nearly) any combination of int, str, slice, list, None,
+            Ellipsis. Note label slicing is supported, however the
+            `step` argument must be blank or an integer, not a label.
+            Example usage:
+            
             .. code-block::
+            
                 # Pseudo-code
                 obj = DataStructure()
                 obj[5]
@@ -324,6 +384,7 @@ class DataStructure(ABC):
                 obj["sample_0":"sample_10":"group"]
                 
             Returns:
+            --------
                 - numpy.NDArray := If boolean indexing or an exact element
                 is selected i.e. `obj[1,0,1]` or `obj[obj.values>5]`
                 
