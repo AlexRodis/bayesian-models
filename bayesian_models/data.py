@@ -490,6 +490,59 @@ class UtilityMixin:
         return permuted_dims, permuted_coords
 
 class NDArrayStructure(DataStructure, UtilityMixin):
+    r'''
+        Wrapper class around numpy arrays implementing the common
+        interface.
+        
+        Like all implementations this class implements a common,
+        standardized interface for acceptable tensor data structures, as
+        defined by the `DataStructure` abstract base class
+        
+        Object Properties:
+        ------------------
+        
+            - obj:numpy.typing.NDArray := The underlying `numpy.ndarray`
+              object
+            
+            - shape:tuple[int,...] := The shape of the object
+            
+            - dims:DIMS := Dimensions of the object. A `numpy` vector of
+              labels of the dimensions / axes of the object. For numpy arrays defaults are typically used (since numpy arrays have no labels). The default names are 'dim_{i}' where i the integer indexer of the axis
+            
+            - coords:COORDS := The coordinates of the object. Is a
+                dictionary of strings, which are axes names (the same as
+                those of `dims`) mapped to numpy vectors of labels.
+                These are the labels of the 'steps' in each axis
+            
+            - rank:int := The structures' rank i.e. the number of axes
+            
+            - dtype:np.dtype := The data type of the structure
+            
+            - missing_nan_flag:Optional[bool] = None := Flag for
+              existence of   missing values. Should be set by the public
+              interface class
+              
+        Object Methods:
+        ---------------
+        
+            - isna()
+            
+            - any()
+            
+            - all()
+            
+            - transpose()
+            
+            - iterrows()
+            
+            - itercolumns()
+            
+            - cast()
+            
+            - unique()
+            
+            - mean()
+    '''
     
     def __init__(self, obj:Union[ndarray, DataStructure],
                  dims:Optional[DIMS] = None,
@@ -581,8 +634,8 @@ class NDArrayStructure(DataStructure, UtilityMixin):
 
     def isna(self):
         r'''
-            Unsafe. Will raise on arrays with dtypes of string or
-            object
+            Check if the structure has missing or `nan` values
+            
         '''
         return NDArrayStructure(np.isnan(self.obj),
                                 coords = self.coords,
