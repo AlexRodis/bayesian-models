@@ -18,7 +18,7 @@ std_scale = lambda df: pd.DataFrame(
 
 
 def rowwise_value_counts(df:pd.DataFrame):
-    '''
+    r'''
         Returns row-wise counts of values for
         categorical variables.
 
@@ -42,7 +42,7 @@ def rowwise_value_counts(df:pd.DataFrame):
 invert_dict = lambda e: {v:k for k, v in e.items()}
 
 def flatten(obj:Iterable):
-    '''
+    r'''
         Recursively flatten arbitary an arbitary input iterable, yielding
         values iteratively.
 
@@ -65,7 +65,7 @@ def flatten(obj:Iterable):
 
 
 def tidy_multiindex(df:pd.DataFrame, sep:str="."):
-    '''
+    r'''
         Compress a hierarchically indexed dataframe to standardized tidy
         format. A unique sepperator `sep` is used to allow reversal. All
         levels of the index are appended together with a delimeter to allow
@@ -102,7 +102,7 @@ def tidy_multiindex(df:pd.DataFrame, sep:str="."):
 
 
 def reverse_tidy_multiindex(df:pd.DataFrame, sep="."):
-    '''
+    r'''
         Reverses the tidying to a hierachical format. Different
         levels of the index are identified based on "sep"
         
@@ -129,7 +129,7 @@ def undummify(df:pd.DataFrame,cols:list[str, tuple[str]],
     sep:typing.Optional[str]=None,
     rmap:typing.Optional[dict[int, typing.Union[str, tuple[str]]]]=None
              )->pd.DataFrame:
-    '''
+    r'''
         Reverses hot-encoded variables in the DataFrame. A series of 
         hot-encoded variable levels $(i_1, i2, \dots, i_k)$ is mapped to a 
         single new column $(k)$, whose name is specified by `ncol_name`, in 
@@ -179,7 +179,7 @@ list_difference = lambda l1, l2: [e for e  in l1 if e not in set(l2)]
 
 
 class SklearnDataFrameScaler:
-    '''
+    r'''
         Simple wrapper for `sklearn.preprocessing` scalers.
         For labeled inputs, these return numpy arrays. This
         wrapper adds the labels back to the result
@@ -213,7 +213,7 @@ class SklearnDataFrameScaler:
             columns = arr.columns) for arr in arrs ])
 
 class DictTable(dict):
-    '''
+    r'''
         Jupyter utility class that overrides the dicts' defaults
         __repr__ rendering the input dictionary to an HTML table
         for convenient jupyter rendering
@@ -229,7 +229,7 @@ class DictTable(dict):
         return ''.join(html)
 
 def count_missing_nan(df:pd.DataFrame, axis:int=0):
-    '''
+    r'''
         Return a new DataFrame with the counts of missing
         and invalid values across specified axis.
         
@@ -283,7 +283,7 @@ def select_subarray(df:pd.DataFrame,
 
 def dataarray_from_pandas(df:pd.DataFrame,dim_names=["dim_0", "dim_1"],
     **kwargs ):
-    '''
+    r'''
         Convert a `pandas.DataFrame` to an equivalent `xarray.DataArray`
         
         Args:
@@ -308,7 +308,7 @@ def dataarray_from_pandas(df:pd.DataFrame,dim_names=["dim_0", "dim_1"],
 
 def package_dirichlet_predictions(raw_preds,outputs, 
     inputs=None,model=None)->xr.DataArray:
-    '''
+    r'''
         Converts the raw numpy tensor output of an A.N.N
         to a human-readable `xarray.DataArray`, with optional
         post-processing
@@ -362,7 +362,7 @@ def package_dirichlet_predictions(raw_preds,outputs,
     return predictions
 
 def dirichlet_moments(a:np.ndarray,standardize:bool=True):
-    '''
+    r'''
         Calculate the Dirichlet distributions'
         critical moments. A dirichlet is fully
         specified by it's first two moments,
@@ -409,7 +409,7 @@ def dirichlet_moments(a:np.ndarray,standardize:bool=True):
 def mean_squared_error(true:np.typing.NDArray, 
     predicted:np.typing.NDArray, sample_weights=None, squared:bool=True, 
     mean:bool=True, average:bool=True, sample_dim:int=0):
-    '''
+    r'''
         Squared Error implementation, based  on 
         `sklearn.metrics.mean_squared_error` with more options.
 
@@ -490,7 +490,7 @@ def gen_masked_predictions(model, masked_generator,
                             ]=[functools.partial(mean_squared_error,
                             squared=False)],
                             return_elements:bool=False, **kwargs):
-    '''
+    r'''
         Generate performance metric evaluations on masked
         inputs.
         
@@ -570,7 +570,7 @@ def gen_masked_predictions(model, masked_generator,
         
 def extract_dist_shape(dist:Type[Distribution])->list[str]:
     from inspect import signature
-    '''
+    r'''
         Extracts the names of a distributions' shape parameters,
         returning them as strings. For example:
         .. code-block::
@@ -581,7 +581,7 @@ def extract_dist_shape(dist:Type[Distribution])->list[str]:
 
 
 def powerset(sequence:Sequence)->Iterable:
-    '''
+    r'''
         Powerset implementation in pure python. Returns all possible
         'subsets' of input sequence, including the empty set. Evaluation
         is lazy, and each element returned is a tuple of the elements
@@ -638,7 +638,7 @@ def powerset(sequence:Sequence)->Iterable:
         )
 
 def dict_powerset(dictionary:dict, keys_only:bool=False)->Iterable:
-    '''
+    r'''
         Dictionary powerset function. Lazily returns all possible 
         'sub-dictionaries' from an input dict - including an emtpy
         dict. Returns entire dicts if `keys_only=True` or tuples of

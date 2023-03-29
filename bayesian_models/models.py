@@ -38,7 +38,7 @@ __all__ = (
 
 
 class BayesianModel(ABC):
-    '''
+    r'''
         Abstract base class for all Bayesian Models in pymc. All models
         should conform to the following general API:
 
@@ -152,7 +152,7 @@ class BayesianModel(ABC):
 
 
 class BayesianEstimator(BayesianModel):
-    '''
+    r'''
         Abstract base class for "predictive" style models. These models
         take some input information X and return some output predicted
         quantity Y.
@@ -164,7 +164,7 @@ class BayesianEstimator(BayesianModel):
 
 @dataclass(slots=True)
 class ModelIOHandler:
-    '''
+    r'''
         Cooperative inheritance class that handles model saving and
         loading. Injects the `save` and `load` methods to subclasses
         and adds the `save_path` property
@@ -207,7 +207,7 @@ class ModelIOHandler:
 
     def save(self, save_path:Optional[str] = None,
             method:str = 'netcdf')->None:
-        '''
+        r'''
             Save a trained model, allowing later reuse.
 
             Args:
@@ -270,7 +270,7 @@ class ModelIOHandler:
 
     def load(self, load_path:str,
              method:Optional[str]='netcdf'):
-        '''
+        r'''
             Load a pretrained model. This feature is experimental and 
             will likely fail
 
@@ -304,7 +304,7 @@ class ModelIOHandler:
 
 @dataclass(slots=True)
 class ConvergencesHandler:
-    '''
+    r'''
         Convergence checking object. Called with the idata as the result
         of MCMC, detects divergences and warnins. WIP: Should detect the
         divergences more extensively in the future
@@ -361,7 +361,7 @@ class BESTBase:
 
 @dataclass(slots=True)
 class BEST(BESTBase):
-    '''
+    r'''
         Bayesian Group difference estimation with pymc. The implementation
         is based on the official pymc documentation. The model assumes
         StudentT likelihood over observations for added robustness.
@@ -414,18 +414,18 @@ class BEST(BESTBase):
             
         Object Attrs:
         -------------
-
-            - group_var:`pandas.Index` := An index specifying the factor
-            column in the provided DataFrame. Must be a valid column. Note,
-            if `tidify_data` is not None, it will be invoked prior to all
-            calls, hence `group_var` should reflect the variables' name after
-            tidification (i.e. ('chemical', 'antioxidants', 'squalene')->
+        
+            - group_var:`pandas.Index` := An index specifying the        factor column in the provided DataFrame. Must be a valid
+            column. Note, if `tidify_data` is not None, it will be
+            invoked prior to all calls, hence `group_var` should reflect
+            the variables' name after tidification (i.e. ('chemical',
+            'antioxidants', 'squalene')->
             'chemical.antioxidants.squalene')
             
-            - effect_magnitude:bool=False := Whether to compute an 
-            'effect size' during inference. This metric is somewhat more
-            abstract than direct differences and is defined as
+            - effect_magnitude:bool=False := Whether to compute an 'effect size' during inference. This metric is somewhat more             abstract than direct differences and is defined as
+            
             .. math::
+            
                 ES=\dfrac{\Delta\mu_{1,2}}{\sqrt{\dfrac{
                     \sigma_{1}^{2}\sigma_{2}^{2}}{2}}}
             
@@ -670,7 +670,7 @@ class BEST(BESTBase):
     
     
     def _preprocessing_(self, data):
-        '''
+        r'''
             Handled data preprocessing steps by 1. checking and 
             handling missing values, 2. collapsing multiindices
             3. extracting groups, 4. extracting feature labels
@@ -729,7 +729,7 @@ class BEST(BESTBase):
         self._fetch_differential_permutations_()
     
     def _fetch_differential_permutations_(self):
-        '''
+        r'''
             Generate all possible unique pairs of levels
             of the target factor.
         '''
@@ -806,7 +806,7 @@ class BEST(BESTBase):
     @staticmethod
     def warp_input(data, row_indexer, column_indexer, transform,
                   unwrap:bool=True):
-        '''
+        r'''
             Utility method that selects a subset of the data and applies
             `transform` one it.
             
@@ -852,7 +852,7 @@ class BEST(BESTBase):
         return warped_input
     
     def _check_illegal_std(self, stds:list[np.typing.NDArray])->None:
-        '''
+        r'''
             Check against edge case where the empirical pooled std is
             invalid (0). This happens if:
                 (1) There is a group in the data, such that at least one
@@ -878,7 +878,7 @@ class BEST(BESTBase):
     
     
     def __call__(self, data, group_var:Union[str, tuple[str]]):
-        '''
+        r'''
             Initialize the full probability model
 
             Args:
@@ -1041,7 +1041,7 @@ class BEST(BESTBase):
     
 
     def fit(self, *args, sampler=pymc.sample , **kwargs)->az.InferenceData:
-        '''
+        r'''
             Perform inference by sampling from the posterior. `infer` is
             an alias for `fit`
 
@@ -1088,7 +1088,7 @@ class BEST(BESTBase):
             ropes:typing.Sequence[tuple[float, float]]=[(-.1,.1)],
             hdis:typing.Sequence[float]=[.95],
             multilevel_on:str='[',  extend_summary:bool=True):
-        '''
+        r'''
             Calculate inter-group differences according to the ROPE+HDI
             criterion. Results a DataFrame with a new column labeled
             'Significance' containing the decision for the variable indicated
@@ -1193,7 +1193,7 @@ class BEST(BESTBase):
 
     def summary(self, *args, **kwargs)->Union[
             xr.DataArray, pd.DataFrame]:
-        '''
+        r'''
             Wrapper for `arviz.summary(idata)`
 
             Args:
@@ -1217,8 +1217,9 @@ class BEST(BESTBase):
 
 
     def plot_posterior(self, *args, **kwargs):
-        '''
+        r'''
             Wrapper for `arviz.plot_posterior`
+            
         Args:
         -----
 
@@ -1235,8 +1236,9 @@ class BEST(BESTBase):
 
 
     def plot_trace(self, *args, **kwargs):
-        '''
+        r'''
             Wrapper for `arviz.plot_trace`
+            
         Args:
         -----
 
@@ -1260,27 +1262,8 @@ class BEST(BESTBase):
         self._io_handler.load(save_path)
 
 class Layer:
-
-    transfer_functions:dict[str, Optional[Callable]] = dict(
-        exp = pymc.math.exp,
-        softmax = pymc.math.softmax,
-        sigmoid = pymc.math.invlogit,
-        linear = lambda e:e,
-        tanh = pymc.math.tanh,
-        relu = ReLU,
-        leaky_relu = functools.partial(ReLU, leak=1e-2),
-        parameteric_relu = functools.partial(ReLU, leak=1),
-        elu = ELU,
-        swiss = SWISS,
-        gelu = GELU,
-        selu = SiLU,
-    )
-    transfer_function_names:set = set(transfer_functions.keys())
-    transfer_function_callables = set([v for k,v in \
-                                       transfer_functions.items()])
-
-    '''
-        Object representing a Neural Network layer
+    r'''
+        Object representing a Neural Network layer. WIP
 
         Object Attributes:
         -------------------
@@ -1321,11 +1304,29 @@ class Layer:
             object
         
         '''
+    transfer_functions:dict[str, Optional[Callable]] = dict(
+        exp = pymc.math.exp,
+        softmax = pymc.math.softmax,
+        sigmoid = pymc.math.invlogit,
+        linear = lambda e:e,
+        tanh = pymc.math.tanh,
+        relu = ReLU,
+        leaky_relu = functools.partial(ReLU, leak=1e-2),
+        parameteric_relu = functools.partial(ReLU, leak=1),
+        elu = ELU,
+        swiss = SWISS,
+        gelu = GELU,
+        selu = SiLU,
+    )
+    transfer_function_names:set = set(transfer_functions.keys())
+    transfer_function_callables = set([v for k,v in \
+                                       transfer_functions.items()])
+
 
     def _validate_inputs_(self, *args:tuple[Any],
                           **kwargs:dict[str,Any])->None:
         
-        '''
+        r'''
             Validate object inputs and options
         '''
         if not isinstance(args[0], int):
@@ -1377,7 +1378,7 @@ class Layer:
 
 
 class MapLayer:
-    '''
+    r'''
         Special pseudo-layer that splits network outputs into several
         named variables. Useful for allowing the outputs of a network
         to be shape variables of a distribution
@@ -1402,29 +1403,12 @@ class MapLayer:
         for var, splitter in self.splitter.items():
             v = pymc.Deterministic(var, splitter(tensor))
 
-class FreeAdditionLayer:
-    '''
-        Specify additional variables for a network model, i.e. noise
-        parameters for the likelihood
-
-        WIP
-    '''
-
-
-    def __init__(self, vars:Iterable[str], name:str):
-        self._name = name
-        self.vars = vars
-    
-    def __call__(self):
-        pass
-
-
 
 class BayesianNeuralNetwork:
 
-    '''
+    r'''
 
-        Class representing a dense Bayesian Neural Network (BNN)
+        Class representing a dense Bayesian Neural Network (BNN). WIP
 
         Object Attributes:
         --------------------
@@ -1514,7 +1498,7 @@ class BayesianNeuralNetwork:
         self._posterior_predictive = val
 
     def __call__(self, X_train:xr.DataArray, Y_train:xr.DataArray):
-        '''
+        r'''
             Fully initialize the object by specifying the full probability
             model for inference
 
@@ -1553,7 +1537,7 @@ class BayesianNeuralNetwork:
 
     def fit(self, *args, sampler=pymc.sample,
             **kwargs)->az.InferenceData:
-        '''
+        r'''
             Perform inference on the model
 
             Args:
@@ -1580,7 +1564,7 @@ class BayesianNeuralNetwork:
         return self.idata
     
     def predict(self, X_new, *args, **kwargs)->xr.DataArray:
-        '''
+        r'''
             Predict on new inputs, using the models' posterior predictive
 
             Args:

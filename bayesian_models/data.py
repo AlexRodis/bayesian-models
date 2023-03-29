@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 
 # Data Types Bridge
 class DataStructure(ABC):
-    '''
+    r'''
         Abstract Base Class for Data Structure implementations
         
         Properties:
@@ -237,7 +237,7 @@ class DataStructure(ABC):
     
     def __mean__(self, obj, axis: Optional[int] = None, 
                  skipna:bool=True, keepdims: bool=True)->NamedTuple:
-        '''
+        r'''
             Compute the mean along the specified axis. See the docstrings
             of concrete implementation methods for more info on these
             arguments
@@ -273,7 +273,7 @@ class DataStructure(ABC):
         raise NotImplementedError()
     
     def _slice_coords(self, obj:Iterable)->COORDS:
-        '''
+        r'''
             Given a slice/index type object
             collect the sliced objects' labels as
             coords and returns them
@@ -304,7 +304,7 @@ class DataStructure(ABC):
     
     def __getitem__(self, obj:Union[str, int, Iterable]
                     )->Union[NDArrayStructure, np.ndarray]:
-        '''
+        r'''
             Index slicing for CommonDataStructure objects. Index or 
             label based slicing is supported in arbitary combinations.
             DataStructure objects can be sliced with (nearly) any
@@ -519,7 +519,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 )
 
     def isna(self):
-        '''
+        r'''
             Unsafe. Will raise on arrays with dtypes of string or
             object
         '''
@@ -592,7 +592,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
         )
         
     def unique(self, axis:Optional[int]=None):
-        '''
+        r'''
             Return unique values of the NDArrayStructure as Generator
             of length 2 tuples. When axis is None, the generator yields
             a single tuple of (None, vals) where vals are all the unique
@@ -611,7 +611,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     
     def mean(self, axis:Optional[int] = None, keepdims:bool=True,
              skipna:bool=True):
-        '''
+        r'''
             Compute the arithmetic mean along the specified axis. 
             
             Args:
@@ -679,7 +679,7 @@ class DataFrameStructure(DataStructure, UtilityMixin):
         
     def __getitem__(self, obj:Union[str, int, Iterable]
                     )->Union[DataFrameStructure, np.ndarray]:
-        '''
+        r'''
             Index slicing for CommonDataStructure objects. Index or 
             label based slicing is supported in arbitary combinations.
             DataStructure objects can be sliced with (nearly) any
@@ -932,7 +932,7 @@ class DataFrameStructure(DataStructure, UtilityMixin):
     
     def mean(self, axis:Optional[int] = None, keepdims:bool=True,
              skipna:bool=True):
-        '''
+        r'''
             Compute the arithmetic mean along the specified axis
             
             Args:
@@ -1216,7 +1216,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
         )
     def __getitem__(self, obj:Union[str, int, Iterable]
                     )->Union[DataArrayStructure, np.ndarray]:
-        '''
+        r'''
             Index slicing for CommonDataStructure objects. Index or 
             label based slicing is supported in arbitary combinations.
             DataStructure objects can be sliced with (nearly) any
@@ -1307,7 +1307,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
             return self._obj.values[nobj]
         
     def unique(self, axis:Optional[int]=None):
-        ''' 
+        r''' 
             Return unique values of the NDArrayStructure as Generator
             of length 2 tuples. When axis is None, the generator yields
             a single tuple of (None, vals) where vals are all the unique
@@ -1350,7 +1350,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
 
 
 class DataStructureInterface(ABC):
-    '''
+    r'''
         Abstract Base Class for the external interface (The bridge 
         Abstraction)
         
@@ -1514,7 +1514,7 @@ class DataStructureInterface(ABC):
 
 @dataclass(kw_only=True)
 class CommonDataStructureInterface(DataStructureInterface):
-    '''
+    r'''
         Core interface for supported data structures. Should be the only
         'refined abstraction' provided
         
@@ -1745,7 +1745,7 @@ class CommonDataStructureInterface(DataStructureInterface):
     def mean(self, axis: Optional[int]=None, skipna: bool=True,
              keepdims: bool=True)->Union[float, 
                                          CommonDataStructureInterface]:
-            '''
+            r'''
                 Compute the arithmetic mean along the specified axis
                 
                 Args:
@@ -1788,7 +1788,7 @@ class CommonDataStructureInterface(DataStructureInterface):
     
 
 class NANHandler(ABC):
-    '''
+    r'''
         Abstract Base Class for missing value handlers
     '''
     
@@ -1798,7 +1798,7 @@ class NANHandler(ABC):
 
 @dataclass
 class ImputeMissingNAN(NANHandler):
-    '''
+    r'''
         Core class from missing data imputation strategy. Currently not
         implemented and will raise
     '''
@@ -1810,7 +1810,7 @@ class ImputeMissingNAN(NANHandler):
 
 @dataclass
 class ExcludeMissingNAN(NANHandler):
-    '''
+    r'''
         Common use-case for missing value handling. Discards all coordinates
         on the first dimention (i.e. rows) along which there are any missing 
         values - updating the objects' metadata
@@ -1875,9 +1875,11 @@ class ExcludeMissingNAN(NANHandler):
 
 @dataclass
 class IgnoreMissingNAN(NANHandler):
-    '''
-        Identity strategy for nan handling the does nothing. Only included
-        for completeness' sake. Returns the object unmodified
+    r'''
+        Identity strategy for nan handling the does nothing. 
+        
+        Only included for completeness' sake. Returns the object 
+        unmodified
         
         Object Methods:
         ---------------
@@ -1893,8 +1895,8 @@ class IgnoreMissingNAN(NANHandler):
 
 @dataclass(kw_only = True)
 class NANHandlingContext:
-    '''
-        Composite for missing values handlin. Defines the external interface
+    r'''
+        Composite for missing values handling. Defines the external interface
         
         Object Properties:
         --------------------
@@ -1921,7 +1923,7 @@ class NANHandlingContext:
 
 
 class DataProcessor(ABC):
-    '''
+    r'''
         Abstract base class for Data Processors
     '''
     
@@ -1931,7 +1933,7 @@ class DataProcessor(ABC):
 
 @dataclass(kw_only = True)
 class CommonDataProcessor(DataProcessor):
-    '''
+    r'''
         Common use-case data pre processor. Will handle:
         
             - converting the data structure to a common internal interface
@@ -1981,7 +1983,7 @@ class CommonDataProcessor(DataProcessor):
     
     def _convert_structure(self, data: InputData
                            )->DataStructureInterface:
-        '''
+        r'''
             Convert the input structure to a common interface by wrapping
             it in the appropriate implementation class
             
@@ -2038,7 +2040,7 @@ class CommonDataProcessor(DataProcessor):
         return data.isna().any() #type:ignore
     
     def __call__(self, data: InputData)->DataStructureInterface:
-        '''
+        r'''
             Preprocess the object according to set options and return the
             results
             
@@ -2071,7 +2073,7 @@ class CommonDataProcessor(DataProcessor):
 
 @dataclass(kw_only=True)
 class DataProcessingDirector:
-    '''
+    r'''
         Master composite for data pre processing
         
         Object Attributes:
@@ -2112,7 +2114,7 @@ class DataProcessingDirector:
 
 
 class Data:
-    '''
+    r'''
         Container for model data with optional preprocessing
         functionality.
         
@@ -2190,7 +2192,7 @@ class Data:
         self.casting_kwargs = casting_kwargs
     
     def __call__(self,data:InputData)->CommonDataStructureInterface:
-        '''
+        r'''
             Process input data according to specifications
             
             Args:
