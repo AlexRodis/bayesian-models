@@ -1,32 +1,38 @@
 import pymc
 import pymc as pm
 import typing
-from typing import Any, Union, Callable, Sequence, Optional, Iterable
+from typing import Any, Union, Callable, Optional, Iterable
 from abc import ABC, abstractmethod
 import pandas as pd
 import numpy as np
 from .utilities import SklearnDataFrameScaler, tidy_multiindex
-from functools import partial
-import sklearn
 import xarray as xr
 import arviz as az
 import pytensor
-from interval import Interval
+from interval import interval
 import functools
-
+from bayesian_models.math import ELU, GELU, SiLU, SWISS, ReLU
+from bayesian_models.core import ModelDirector, CoreModelComponent
+from bayesian_models.core import LikelihoodComponent, distribution
+from bayesian_models.core import FreeVariablesComponent, Distribution
+from bayesian_models.core import BESTCoreComponent, ResponseFunctions
+from bayesian_models.core import ResponseFunctionComponent
+from bayesian_models.data import Data
+from dataclasses import dataclass, field
+from warnings import warn
 
 __all__ = (
         'BayesianModel',
         'BayesianEstimator',
         'BayesianNeuralNetwork',
         'BEST',
+        'Layer',
+        'MapLayer',
         'ReLU',
         'GELU',
         'ELU',
         'SWISS',
         'SiLU',
-        'Layer',
-        'MapLayer',
         'FreeAdditionLayer',
         )
 
@@ -156,11 +162,12 @@ class BayesianEstimator(BayesianModel):
     def posterior_trace(self):
         pass
 
-class IOMixin:
+@dataclass(slots=True)
+class ModelIOHandler:
     '''
         Cooperative inheritance class that handles model saving and
         loading. Injects the `save` and `load` methods to subclasses
-        and add the `save_path` property
+        and adds the `save_path` property
 
         Object Methods:
         ----------------
@@ -183,12 +190,13 @@ class IOMixin:
             attribute, allowing users to specify a save path during object
             initialization
     '''
-
-
-    def __init__(self, save_path: Optional[str] = None, *args,
-        **kwargs)->None:
-        self._save_path = save_path
-        super().__init__(*args, **kwargs)
+    _model:Optional[pymc.Model] = field(init=False, default=None)
+    _class:Optional[BayesianModel] = field(init=False,  default=None)
+    _save_path:Optional[str] = field(
+        init=True, default = None)
+    accepted_methods:set[str] = field(
+        init=True, default_factory = lambda : {"netcdf", "pickle"}
+    )
     
     @property
     def save_path(self)->Optional[str]:
@@ -218,7 +226,7 @@ class IOMixin:
                 loading. For `method='pickle'` (experimental) attempts to save
                 the entire object be serializing.
 
-                NOTE: Not checks are made to verify that the loaded models'
+                NOTE: No checks are made to verify that the loaded models'
                 structure and the one infered from trace are compatible. Will
                 likely result in unpredictable errors.
 
@@ -238,22 +246,33 @@ class IOMixin:
             self.save_path
         if spath is None:
             raise RuntimeError(("`save_path` not specified"))
-        if method=="pickle":
-            import pickle
-            with open(spath, 'wb') as file:
-                pickle.dump(self, file)
-        elif method=="netcdf":
-            self.idata.to_netcdf(spath)
-        else:
+        if not self._class.trained:
+            raise RuntimeError((
+                    "Cannot save model. Model has not been trained"
+                ))
+        if method not in self.accepted_methods:
             raise RuntimeError((f"method={method} is an invalid option."
                     " Specify either 'pickle' to pickle the entire class"
                     ", or 'netcdf', to save only the posterior "
                     "(recommended)"
                     ))
+        if method=="pickle":
+            import pickle
+            with open(spath, 'wb') as file:
+                pickle.dump(self._class, file)
+        elif method=="netcdf":
+            self._class.idata.to_netcdf(spath)
+        else:
+            raise RuntimeError((
+                "Unable to save model. Unspecified runtime error"
+            ))
+            
 
-    def load(self, load_path:str):
+    def load(self, load_path:str,
+             method:Optional[str]='netcdf'):
         '''
-            Load a pretrained model.
+            Load a pretrained model. This feature is experimental and 
+            will likely fail
 
             Args:
             -----
@@ -267,39 +286,44 @@ class IOMixin:
 
             NOTE: Updates the models' `idata` and `trained` attributes
         '''
+        warn((
+            "Warning! This feature is experimental and poorly tested. "
+            "No validations are done for consistency between the loaded "
+            "inference data the model."
+        ))
         # Add consistency checks to ensure the posterior
         # trace loaded is compatible with the initialized
         # model
-        self.idata = az.from_netcdf(load_path)
-        self.trained = True
-        return self
+        if method == 'netcdf':
+            idata = az.from_netcdf(load_path)
+        
+        self._class.idata=idata
+        self._class._initialized = True
+        self._class._trained = True
+        return self._class
 
-class ConvergenceChecksMixin:
+@dataclass(slots=True)
+class ConvergencesHandler:
     '''
-        WIP: Mixin for implementing posterior convergence checks. Currently
-        only alerts if divergences are detected and reports their number
-
-        Object Methods:
-        ----------------
-            Adds the following methods to the inheriting object:
-
-
-            - _check_divergences_ := If there are non-zero divergences
-            raises a warning and reports the divergences
-
+        Convergence checking object. Called with the idata as the result
+        of MCMC, detects divergences and warnins. WIP: Should detect the
+        divergences more extensively in the future
+        
         Object Properties:
-        --------------------
-            Adds the following  properties to the inheriting object:
-
-            - divergences:Optional[xarray.DataArray] := A `xarray.DataArray`
-            containing diverging samples
+        -------------------
+        
+            - divergences:xarray.DataArray := Diverging posterior samples
+        
+        Object Methods:
+        ---------------
+        
+            - __call__(idata) := Investigate the posterio trace for 
+            divergences. Warns if any diverging samples are found
     '''
 
+    _divergences:Optional[xr.DataArray] = field(
+        init = False, default=None)
 
-    def __init__(self, *args, **kwargs):
-
-        self._divergences:Optional[xr.DataArray] = None
-        super().__init__(*args, **kwargs)
 
     @property
     def divergences(self)->Optional[xr.DataArray]:
@@ -308,174 +332,35 @@ class ConvergenceChecksMixin:
     def divergences(self, val:xr.DataArray)->None:
         self._divergences = val
 
-    def _check_divergences_(self):
+    def __call__(self, idata:xr.DataArray):
+        '''
+            Execute divergences checks
+        '''
         from warnings import warn
-        assert self.idata is not None
-        # Make this HTML
-        self.divergences=self.idata.sample_stats['diverging']
+        self.divergences = idata.sample_stats['diverging']
         if self.divergences.sum() > 0:
             warn((f'There were {self.divergences.sum().values} '
                 'divergences after tuning'))
+        return self.divergences
 
-class DataValidationMixin:
+class BESTBase:
     '''
-        Cooperative inheritance mixin adding data validation capapilities
-        to inheriting models.
-
-        Class Attributes:
-        ------------------
-            Adds the following class attributes to inheriting class:
-
-            - nan_handling_values:tuple[str] := Defines valid values for the
-            `nan_handling` argument
-
-        Static Methods:
-        ----------------
-
-            Adds the following static methods to inheriting classes:
-
-            - exclude_missing_nan(df:pandas.DataFrame)->pandas.DataFrame:
-            := Drops all rows with missing values.
-
-            - impute_missing_nan(df:pandas.DataFrame)->None: := Inputes
-            missings data values. NotImplemented and will raise an error
-
-            - check_missing_nan(df:pandas.DataFrame, nan_handling:str
-                )->bool := Returns a flag signaling missing values are
-                present in the input dataset. Warns if True.
-
-        Object Properties:
-        ----------------
-
-            Adds the following properties to inheriting objects:
-
-            - nan_handling:str='exclude' := Selects the strategy in dealing
-            with missing values. Valid options are 'exclude' and 'inpute'. The
-            latter is not implemented and will raise an error.
-
-            - tidify_data:Optional[Callable[pandas.DataFrame,
-                pandas.DataFrame]]=tidify_multindex := Optional Callable that
-                takes as input DataFrame with multilevel indices and squashes
-                them to a single level. By default will append all labels
-                joined by dots i.e. `level_0_name.level_1_name.level_2_name`.
-                WARNING! At present does not check that dataframe actually has
-                a multilevel index and join all letters in single level inputs
-                will sepperated by dots, i.e. 'ABCD' becomes 'A.B.C.D'.
-
-            - scaler:Optional[SklearnDataFrameScaler]=None := Scaler object 
-            handling possible rescaling of input data. Initialize the wrapper
-            class `SklearnDataFrameScaler` with the scaler argument as one of
-            `sklearn.preprocessing` scaler classes.
+        Base class for class level variable injection to the BEST
+        model
     '''
+    WarperFunction = Callable[[pd.DataFrame], pd.Series]
+    std_upper:float = 1e1
+    std_lower:float = 1e0
+    ν_λ:float = 1/29.0
+    ν_offset:float = 1
+    ddof:int = 1
+    std_diffusion_factor:int = 2
+    zero_offset:float = 1e-4
+    jax_device:str = 'gpu'
+    jax_device_count: int =1
 
-
-    nan_handling_values = ("exclude", "impute")
-
-    def __init__(self,tidify_data:typing.Callable[...,Any]=tidy_multiindex,
-                scaler:Optional[SklearnDataFrameScaler] = None,
-                nan_handling:str='exclude',*args, **kwargs)->None:
-            self._tidify_data = tidify_data
-            self._scaler = scaler
-            self._nan_present_flag:Optional[bool]=None
-            if nan_handling in DataValidationMixin.nan_handling_values:
-                self._nan_handling=nan_handling
-            else:
-                raise ValueError((f"{nan_handlng} is not valid option for "
-                    "`nan_handling`. Valid options are `exclude` and "
-                    "`impute` "))
-            super().__init__(*args, **kwargs)
-        
-
-    @property
-    def nan_handling(self)->str:
-        return self._nan_handling
-    @nan_handling.setter
-    def nan_handling(self, val:str)->None:
-        self._nan_handling=val
-    
-    @property
-    def tidify_data(self)->Callable[..., Any]:
-        return self._tidify_data
-    @tidify_data.setter
-    def tidify_data(self, val:Callable[..., Any])->None:
-        self._tidify_data = val
-    @property
-    def nan_present_flag(self)->Optional[bool]:
-        return self._nan_present_flag
-    @nan_present_flag.setter
-    def nan_present_flag(self, val:bool)->None:
-        self._nan_present_flag = val
-    @property
-    def scaler(self)->Optional[SklearnDataFrameScaler]:
-        return self._scaler
-    @scaler.setter
-    def scaler(self, val:SklearnDataFrameScaler)->None:
-        self._scaler = val
-
-    @staticmethod
-    def check_missing_nan(df:pd.DataFrame,
-                          nan_handling:str)->bool:
-        '''
-            Checks input dataframe for the possible presence of missing
-            values
-
-            Args:
-            ------
-
-                - df:pandas.DataFrame := The the dataframe to check
-
-                - nan_handling:str := The strategy used to handle the missing
-                values. Only used in warning
-
-            Returns:
-            --------
-
-                - missingNaN:bool := Missing values flag
-
-            Warns:
-            -------
-
-                - If missing values are detected
-        '''
-        from warnings import warn
-        flag=df.isna().any().any()
-        if flag:
-            warn(('Warning! The input DataFrame contains missing or '
-                'invalid values. Set the value of `nan_handling` to '
-                'control how these values are handled. Current flag: '
-                f'"{nan_handling}"'))
-        return flag
-    
-    @staticmethod
-    def impute_missing_nan(df:pd.DataFrame):
-        '''
-            Inpute missing values. Currently not Implemented
-            and will raise an error
-        '''
-        raise NotImplemented()
-    
-    @staticmethod  
-    def exclude_missing_nan(df:pd.DataFrame):
-        '''
-            Reject all rows with missing values from the dataframe(s)
-            Currently only works for a single input.
-
-            Args:
-            -----
-
-                - df:pandas.DataFrame := The input dataframe to handle
-
-            Returns:
-            --------
-
-                - ndf:pandas.DataFrame := New dataframe where all rows with
-                a missing value have been removed
-        '''
-        not_nan_indices = (~df.isna()).all(axis=1)
-        return df.loc[not_nan_indices]
-
-class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
-    BayesianModel):
+@dataclass(slots=True)
+class BEST(BESTBase):
     '''
         Bayesian Group difference estimation with pymc. The implementation
         is based on the official pymc documentation. The model assumes
@@ -527,9 +412,6 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             ignored unless the `pymc.sampling.jax.sample_numpyro_nuts`
             is passed during object call. Currently ignored
             
-            
-            
-        
         Object Attrs:
         -------------
 
@@ -569,8 +451,8 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             
             - nan_handling:str='exclude' := Specify how missing values are
             handled. Either `'exclude'` to remove all rows with missing values
-            or `'inpute'` to attempt to impute them. Optional. Defaults to
-            `'exclude'`. `'inpute'` not implemented and raises an error if
+            or `'impute'` to attempt to impute them. Optional. Defaults to
+            `'exclude'`. `'impute'` not implemented and raises an error if
             specified. Ignored if no missing values are present.
             
             - tidify_data:Optional[Callable[pandas.DataFrame,pandas.DataFrame
@@ -668,48 +550,50 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             Setters for all class attributes. Named set_attribute
         
     '''
-    WarperFunction = Callable[[pd.DataFrame], pd.Series]
-    std_upper:float = 1e1
-    std_lower:float = 1e0
-    ν_λ:float = 1/29.0
-    ν_offset:float = 1
-    ddof:int = 1
-    std_diffusion_factor:int = 2
-    μ_mean:WarperFunction = lambda df, axis=0: df.mean(axis=axis)
-    μ_std:WarperFunction = lambda df,ddof=ddof,\
-        η=std_diffusion_factor,ϵ=1e-4, axis=0:df.std(
-            ddof=ddof, axis=axis).replace({0.0:ϵ})*η
-    jax_device:str = 'gpu'
-    jax_device_count: int =1
     
-    def __init__(self, effect_magnitude:bool=False,
-                std_difference:bool=False,
-                tidify_data:typing.Callable[...,Any]=tidy_multiindex,
-                scaler:Optional[SklearnDataFrameScaler] = None,
-                common_shape:bool=True, nan_handling:str='exclude',
-                save_path:typing.Optional[str]=None,
-                multivariate_likelihood:bool = False,
-                ):
-        super().__init__(tidify_data= tidify_data, scaler = scaler, 
-        nan_handling=nan_handling, save_path = save_path)
-        self.group_var = None
-        self._permutations = None
-        self._n_perms = None
-        self._data_dimentions = None
-        self.effect_magnitude = effect_magnitude
-        self.std_difference = std_difference or effect_magnitude
-        self.common_shape = common_shape
-        self.multivariate_likelihood = multivariate_likelihood
-        self._levels=None
-        self._ndims=None
-        self.num_levels=None
-        self._coords=None
-        self._group_distributions=dict()
-        self._idata=None
-        self._model=None
-        self.var_names=dict(means=[], stds=[], effect_magnitude=[])
-        self._initialized = False
-        self._trained = False
+    nan_handling:str = field(
+        init=True, default_factory = lambda : 'exclude')
+    cast:Optional[np.dtype] = field(
+        init=True, default_factory = lambda : None)
+    group_var:Optional[Union[str, int]] = field(
+        init=True, default_factory=lambda : None)
+    _permutations:Any = field(init=False, default_factory=lambda : None)
+    _n_perms:Optional[int] = field(init=False, 
+                                   default_factory=lambda : None)
+    _data_dimentions:Any = field(init=False, default_factory=lambda : None)
+    effect_magnitude:bool = False
+    std_difference:bool = False
+    common_shape:bool = True
+    multivariate_likelihood:bool = False
+    _levels:Any = field(init=False, default_factory=lambda : None)
+    _ndims:Any = field(init=False, default_factory=lambda : None)
+    num_levels:Optional[int] = field(init=False, 
+                                     default_factory=lambda : None)
+    _coords:Any = field(init=False, default_factory=lambda : None)
+    _group_distributions:dict[str, Distribution] = field(init=False, default_factory=dict)
+    _idata:Optional[az.InferenceData] = field(
+        init=False, default_factory=lambda : None)
+    _data_processor:Optional[Data] = field(
+        default_factory = lambda : None
+        )
+    _model:Optional[pymc.Model] = field(init=False, 
+                                        default_factory=lambda : None)
+    var_names:dict[str, list] = field(init=False, 
+                      default_factory = lambda : dict(
+                          means=[], stds=[], effect_magnitude=[])
+                      )
+    _io_handler:Optional[ModelIOHandler] = field(
+        init=False, default=None
+    )
+    _divergence_handler:Optional[ConvergencesHandler] = field(
+        init=False, default=None
+    )
+    _initialized:Optional[bool] = field(default_factory=lambda : False)
+    _trained:Optional[bool] = field(default_factory=lambda : False)
+    save_path:Optional[str] = field(
+        init=True, default = None)
+    nan_present_flag:Optional[bool] = field(
+        init=False, default_factory=lambda :None)
     
     @property
     def coords(self)->Optional[dict[str,Any]]:
@@ -733,16 +617,7 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
     @model.setter
     def model(self, val:pymc.Model)->None:
         self._model = val
-    
-    @property
-    def save_path(self)->Optional[str]:
-        return self._save_path
-
-    @save_path.setter
-    def save_path(self, val:str)->None:
-        self._save_path = val 
-
-
+        
     @property
     def trained(self)->bool:
         return self._trained
@@ -758,25 +633,43 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
     @initialized.setter
     def initialized(self, val:bool)->None:
         self._initialized = val
-
-
-    def _consistency_checks_(self):
-        '''
-            Ensures all options specified are mutualy compatible
-        '''
-        from warnings import warn
+        
+        
+    def __post_init__(self)->None:
+        self._data_processor = Data(
+            nan_handling = self.nan_handling,
+            cast = self.cast,
+        )
+        self._io_handler = ModelIOHandler(
+            _save_path = self.save_path
+        )
+        self._divergence_handler = ConvergencesHandler()
         if not self.common_shape:
-            warn(("Allowing independant degrees of freedom for all"
-            " features may result in unidentifiable models and "
-            "multimodal posteriors"))
+            warn((
+                "Warning! Permitting independant degress of freedom for "
+                "input features can result in overfit. It recommended that "
+                "this be avoided, or else model comparison methods be used"
+            ))
+        if self.multivariate_likelihood:
+            warn((
+                "Warning! Deploying multivariate likelihood with a "
+                "diagonal covariance matrix. This is equivalent to "
+                "multiple independant univariate distributions, but more "
+                "computationally expensive. It recommended "
+                "that `multivariate_likelihood` be set to `False` instead"
+            ))
         if self.multivariate_likelihood and not self.common_shape:
-            warn(("Degrees of freedom parameter for a multivariate"
-            " StudentT must be a scalar. `common_shape` will be "
-            "ignored"))
-            self.common_shape=not self.common_shape
+            warn((
+                "Settings `multivariate_likelihood=True` and "
+                "`common_shape=True` are incompatible. Degrees of freedom "
+                "parameter for the Multivariate Student T must be a scalar. "
+                "The `common_shape` parameter will be ignored"
+            ))
+            self.common_shape = True
             
     
-    def _preprocessing_(self, data, group_var):
+    
+    def _preprocessing_(self, data):
         '''
             Handled data preprocessing steps by 1. checking and 
             handling missing values, 2. collapsing multiindices
@@ -796,43 +689,42 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             
                 - None
         '''
-        self.nan_present_flag = BEST.check_missing_nan(
-            data, self.nan_handling)
-        self.levels = data.loc[:,group_var].dropna().unique()
+        
+        def seek_group_indices(struct, lookup_val:str,
+                               axis:int=0):
+            '''
+                Return the indices of cells where elem == lookup_var
+                as a numpy vector
+            '''
+            # This type of lookup is weird. Need to consider a better
+            # API to perform value lookups in structures
+            this = np.where(
+                (struct[:, self.group_var] == lookup_val).values()
+                )[1]
+            return this
+
+        self.levels = [
+            e for e in next(data[:,self.group_var].unique())[1]
+            ]
         self.num_levels=len(self.levels)
-        self.features = data.columns.difference([group_var])
-        
-        # May result in an unindentifiable model. Requires updating along
-        # with additional options for handdling multivariate inputs. i.e.
-        # Single multivariate, independant Univariate with distrinct dof
-        # or independant multivariate with independant dof
-        
+        self.features = np.asarray([
+            k for k in data.coords()[
+                list(data.coords().keys())[1]
+                                     ] if k != self.group_var
+            ])
         self._ndims=len(self.features)
         
-        # Need to revisit branching logic here as if 
-        # `self.nan_present_flag==True` the below line
-        # is essentially computed and discarded
-        rescaled = data if self.scaler is None else self.scaler(data)[0]
-        if self._nan_present_flag and self.nan_handling=='exclude':
-            filtered_data=BEST.exclude_missing_nan(rescaled)
-            
-        elif self._nan_present_flag and self.nan_handling=='inpute':
-            filtered_data=BEST.impute_missing_nan(rescaled)
-    
-        else:
-            filtered_data = data
-
-        groups = {level : filtered_data.loc[
-            filtered_data.loc[:,group_var]==level].index for \
-                level in self.levels}
-
-        self._groups = groups
-            
-        if self.tidify_data is not None:
-            self._coords =dict(dimentions=data.loc[:,self.features
-                ].columns)
-        else:
-            self._coords=dict(dimentions=self.features)
+        self._groups = {
+            level :  seek_group_indices(data, level).tolist() for level in self.levels
+        }
+        crds = [
+            e for e in data.coords()[
+                list(data.coords().keys())[-1]
+                ] if e != self.group_var
+            ]
+        self._coords = dict(
+            dimentions =  crds
+        )
             
         self._fetch_differential_permutations_()
     
@@ -842,7 +734,6 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             of the target factor.
         '''
         from itertools import combinations
-        from math import comb
         self._permutations=list(combinations(self.levels ,2))
         self._n_perms=len(self._permutations)
     
@@ -895,6 +786,23 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
     def set_degrees_of_freedom(cls,val:int)->None:
         cls.ddof=val
     
+    @classmethod
+    def mean(cls, data, axis:int=0):
+        return np.mean(data.values(), axis=axis)
+    
+    @classmethod
+    def std(cls, data, ddof:Optional[int] = None, 
+            scale:Optional[int] = None, 
+            zero_offset:Optional[float]=None,
+            axis:int=0,
+            ):
+        _ddof = ddof if ddof is not None else cls.ddof
+        _scale = scale if scale is not None else cls.std_diffusion_factor
+        _zero_offset = zero_offset if zero_offset is not None else cls.zero_offset
+        # x1000 difference with ints. Explicitly typecast to floats
+        stds = np.std(data.values().astype(float) ,ddof = _ddof, axis=axis)
+        return _scale*stds
+    
     @staticmethod
     def warp_input(data, row_indexer, column_indexer, transform,
                   unwrap:bool=True):
@@ -931,20 +839,47 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
                 The output of `transform`. Generally a `pandas.Series`
                 of empirical means, or standard deviations
         '''
-        
-        selected = data.loc[row_indexer, column_indexer]
+        if isinstance(row_indexer, np.ndarray):
+            row_indexer = row_indexer.tolist()
+        if isinstance(column_indexer, np.ndarray):
+            column_indexer = column_indexer.tolist()
+        selected = data[row_indexer, :][:, column_indexer]
         transformed = transform(selected)
         if unwrap:
-            warped_input=transformed.values
+            warped_input=transformed.values()
         else:
             warped_input=transformed
         return warped_input
-        
     
-    def __call__(self, data:pd.DataFrame,
-        group_var:Union[str, tuple[str]]):
+    def _check_illegal_std(self, stds:list[np.typing.NDArray])->None:
         '''
-            Initialized the full probability model
+            Check against edge case where the empirical pooled std is
+            invalid (0). This happens if:
+                (1) There is a group in the data, such that at least one
+                variable column has all the same values, i.e.
+                x=[100,100,100,100]
+                (2) A group consists of exactly one observation
+        '''
+        gather:list[bool] = [
+            (std>.0).all() for std in stds
+        ]
+        invalid_idxs = filter(lambda e: e, gather)
+        invalid_levels:list[str] = [
+            self.levels[i] for i in invalid_idxs
+            ]
+        non_zero_sentinel = all(gather)
+        if not non_zero_sentinel:
+            raise ValueError((
+                "Detected groups with 0 variance at levels "
+                f"{invalid_levels}. This can happen is the group has"
+                "only one observation or all observations have the same"
+                " value (for at least one column)"
+            ))
+    
+    
+    def __call__(self, data, group_var:Union[str, tuple[str]]):
+        '''
+            Initialize the full probability model
 
             Args:
             -----
@@ -964,107 +899,148 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
                 
                 - obj:BEST := The object
         '''
-        data =self.tidify_data(data) if self.tidify_data is not None \
-            else data
-        self._preprocessing_(data, group_var)
-        if self.scaler is not None:
-            data = self.scaler(data.loc[:,self.features])
-        with pymc.Model(coords=self._coords) as BEST_model:
-            
-            σ_lower=BEST.std_lower
-            σ_upper=BEST.std_upper
-            
-            if self.common_shape:
-                ν  = pm.Exponential("ν_minus_one", 
-                                    BEST.ν_λ) + BEST.ν_offset
-            for level in self.levels:
-                obs = pymc.Data(f"y_{level}",
-                    BEST.warp_input(data, self._groups[level],
-                        self.features, lambda df:df), mutable=False)
-                μ = pymc.Normal(f'μ_{level}',
-                              mu = BEST.warp_input(
-                                  data, self._groups[level], 
-                                  self.features,
-                                  BEST.μ_mean
-                                  ),
-                                
-                              sigma = BEST.warp_input(
-                                  data, self._groups[level], 
-                                  self.features,
-                                  BEST.μ_std
-                                  ),
-                              shape=self._ndims
-                             )
-                σ = pymc.Uniform(f'{level}_std', lower=σ_lower,
-                upper=σ_upper, shape=self._ndims)
-                
-                if not self.common_shape:
-                    ν  = pm.Exponential(f"ν_minus_one_{level}",
-                    BEST.ν_λ,
-                                        shape=self._ndims) + \
-                                            BEST.ν_offset
-                if not self.multivariate_likelihood:
-                    y_obs = pymc.StudentT(f'y_obs_{level}', nu=ν,
-                    mu =μ, lam=σ**-2, observed= obs)
-                else:
-                    cov = pytensor.tensor.diag(σ**-2)
-                    y_obs = pymc.MvStudentT(f'y_obs_{level}', nu=ν,
-                    mu =μ, scale=cov, observed= obs)
-                
-                self._group_distributions[level]=dict( mean=μ, std=σ,
-                shape=ν)
-        
-        with BEST_model:
-            
-            for permutation in self._permutations:
-                pair_id = "({one_level}, {other_level})".format(
-                one_level = permutation[0],
-                other_level = permutation[1]
+        self.group_var = group_var
+        pdata = self._data_processor(data)
+        self.nan_present_flag = pdata.missing_nan_flag()
+        self._preprocessing_(pdata)
+        core_dists = dict() if not self.common_shape else dict(
+            ν = distribution(
+                pm.Exponential, "ν_minus_one", BEST.ν_λ, 
+                transform = lambda e: e+BEST.ν_offset
                 )
-                v_name_mu = "{mean_symbol}{pair}".format(mean_symbol='Δμ', 
-                                                  pair = pair_id)
-                # We may not need self._group_distributions for anything
-                diff = pymc.Deterministic(v_name_mu,
-                                          self._group_distributions[
-                                            permutation[0]]['mean']-\
-                                            self._group_distributions[
-                                                permutation[1]]['mean'],
-                                          dims='dimentions')
+        )
+        likelihoods:list[LikelihoodComponent] = []
+        functions:dict = dict()
+        records:dict = dict()
+        application_targets = dict()
+        response_component = None
+        pooled_stds:list = []
+        
+        for level in self.levels:
+            
+            pooled_std = BEST.warp_input(
+                            pdata, self._groups[level], 
+                            self.features,
+                            BEST.std,
+                            unwrap=False)
+            pooled_stds.append(pooled_std)
+            core_dists = core_dists| {
                 
-                self.var_names['means'].append(v_name_mu)
-                # Possible feature enhancement: Add custom Deterministic
-                # nodes for used-defined derived quantities
-                
-                if self.std_difference:
-                    v_name_std="{std_symbol}{pair}".format(
-                    std_symbol = 'Δσ', pair = pair_id)
-                    std1=self._group_distributions[permutation[0]][
-                        'std']
-                    std2=self._group_distributions[permutation[1]][
-                        'std']
-                    std_diff = pymc.Deterministic(v_name_std,
-                                          std1-std2,
-                                          dims='dimentions')
-                    self.var_names['stds'].append(v_name_std)
-                    
-                if self.effect_magnitude:
-                    v_name_magnitude = 'Effect_Size('+permutation[0]+\
-                        ','+permutation[1]+')'
-                    v_name_magnitude = "{ef_size_sym}{pair}".format(
-                        ef_size_sym='Effect_Size', pair=pair_id)
-                    
-                    effect_magnitude = pymc.Deterministic(
-                        v_name_magnitude, diff/np.sqrt(
-                            (std1**2+std2**2)/2), dims='dimentions')
-                    self.var_names['effect_magnitude'].append(
-                        v_name_magnitude)
-        self._model=BEST_model
+            f"obs_{level}" : distribution(
+                pm.Data, f"y_{level}",
+                BEST.warp_input(pdata, self._groups[level],
+                    self.features, lambda df:df)
+                , mutable=False
+                ),
+             f"μ_{level}": distribution(
+                    pm.Normal, f"μ_{level}", 
+                        mu = BEST.warp_input(
+                            pdata, self._groups[level], 
+                            self.features,
+                            BEST.mean,
+                            unwrap=False
+                            ),   
+                        sigma = pooled_std,
+                        shape = self._ndims
+                    ),
+            f"σ_{level}" : distribution(
+                pm.Uniform, f'σ_{level}', 
+                lower = BEST.std_lower,
+                upper = BEST.std_upper, 
+                shape=self._ndims)
+            }
+            if not self.common_shape:
+                core_dists = core_dists| {
+                    f'ν_{level}' : distribution(
+                        pm.Exponential, f"ν_minus_one_{level}",
+                        BEST.ν_λ, shape=self._ndims,
+                        transform = lambda d: d + BEST.ν_offset
+                                            
+                )}
+            if not self.multivariate_likelihood:
+                    like = LikelihoodComponent(
+                        distribution = pm.StudentT,
+                        observed = f"obs_{level}",
+                        name = f"y_obs_{level}",
+                        var_mapping = dict(
+                            nu = 'ν' if self.common_shape else f'ν_{level}', 
+                            mu = f'μ_{level}', 
+                            lam = f'σ_star_{level}' 
+                            )
+                    )
+                    fname:str = f'σ_star_{level}'
+                    functions = functions|{
+                        fname : lambda sigma: sigma**-2
+                    }
+                    application_targets = application_targets|{
+                        fname : f'σ_{level}'
+                    }
+                    records = records|{
+                        fname : False
+                    }
+                    likelihoods.append(like)
+            else:
+                fname = f"cov_{level}"
+                functions = functions|{
+                    fname : lambda sigma: pytensor.tensor.diag(
+                        sigma**-2)
+                }
+                application_targets = application_targets|{
+                    fname : f'σ_{level}'
+                }
+                records = records|{
+                    fname : False
+                }
+                likelihood = LikelihoodComponent(
+                    name = f"y_obs_{level}",
+                    observed = f"obs_{level}",
+                    distribution = pm.MvStudentT,
+                    var_mapping = dict(
+                        mu = f'μ_{level}',
+                        scale = f'cov_{level}',
+                        nu = f'ν_{level}' if not self.common_shape \
+                            else 'ν'
+                    )
+                )
+                likelihoods.append(likelihood)
+            self._check_illegal_std(pooled_stds)
+            self._group_distributions[level]=dict(
+                mean = core_dists[f'μ_{level}'], 
+                std = core_dists[f'σ_{level}'], 
+                shape = core_dists[
+                    f'ν_{level}'
+                    ] if not self.common_shape else core_dists['ν']
+                )
+        response_component = ResponseFunctionComponent(
+            ResponseFunctions(
+                functions = functions,
+                application_targets = application_targets,
+                records = records
+            )
+        )
+        core_component = BESTCoreComponent(
+            distributions = core_dists,
+            group_distributions = self._group_distributions,
+            permutations = self._permutations,
+            std_difference = self.std_difference ,
+            effect_magnitude = self.effect_magnitude,
+        )
+        builder = ModelDirector(
+            core_component = core_component,
+            response_component = response_component,
+            likelihood_component = likelihoods,
+            coords = self.coords,
+        )
+        builder()
+        self._model = builder.model
+        self.var_names = core_component.variables
+        self._io_handler._model = self._model
+        self._io_handler._class = self
         self.initialized = True
         return self
     
 
-    def fit(self, sampler=pymc.sample , *args, **kwargs
-        )->az.InferenceData:
+    def fit(self, *args, sampler=pymc.sample , **kwargs)->az.InferenceData:
         '''
             Perform inference by sampling from the posterior. `infer` is
             an alias for `fit`
@@ -1102,7 +1078,7 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
                 "initialized"))
         with self._model:
             self.idata=sampler(*args, **kwargs)
-        self._check_divergences_()
+        self._divergence_handler(self.idata)
         self.trained = True
         return self.idata
     
@@ -1161,17 +1137,39 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             raise RuntimeError(("Cannot make predictions. Model has "
                 "not been trained. Call the objects `fit` method first")
                 )
+        if 'Δσ' in var_names and not self.std_difference:
+            raise RuntimeError(("var_names contains the variable 'Δσ'"
+                                " but `std_difference` was not set to"
+                                " True. Ensure you specify "
+                                "`std_differnce=True` when initializing"
+                                " if you need to return standard "
+                                "deviations" ))
+        if 'Effect_Size' in var_names and not self.effect_magnitude:
+            raise RuntimeError(("var_names contains the variable 'Δσ'"
+                                " but `effect_magnitude` was not set to"
+                                " True. Ensure you specify "
+                                "`effect_magnitude=True` when "
+                                "initializing"
+                                " if you need to return standard "
+                                "deviations" ))
+        if not all(
+            (len(var_names) != len(ropes), len(ropes)!=len(hdis))
+            ):
+            from warnings import warn
+            warn(("Length of variables, ropes and hdis not equal. The"
+                  " shortest value will be considered"))
         results=dict()
+        null_interval = interval(0,0)
         for var_name, rope,hdi in zip(var_names,ropes, hdis):
             raw_summary = az.summary(self.idata, var_names=[var_name],
             filter_vars='like', hdi_prob=hdi)
-            rope=Interval(*rope)
+            rope=interval(*rope)
             out=[]
             for idx,row in raw_summary.iterrows():
-                ci=Interval(row[2],row[3])
+                ci=interval(row[2], row[3])
                 if ci in rope:
                     out.append("Not Significant")
-                elif ci & rope != Interval(0,0):
+                elif ci & rope != null_interval:
                     out.append("Indeterminate")
                 else:
                     out.append("Significant")
@@ -1252,131 +1250,16 @@ class BEST(ConvergenceChecksMixin, DataValidationMixin, IOMixin,
             raise RuntimeError("Cannot plot trace. Model is untrained")
         
         return az.plot_trace(self.idata, *args, **kwargs)
-
-def ReLU(x, leak:float=.0):
-    '''
-        `pytensor` implementation of the Leaky ReLU activation function:
-
-        .. math::
-
-            f(x)= max(leak, x)
-        NOTE: With leak=0 this is the standard ReLU function
-              With leak a small number i.e. 1e-2 this is Leaky ReLU
-              Otherwise this is Parametric ReLU
-
-        Args:
-        ------
-
-            - x := The input tensor
-
-            - leak:float=.0 := The leak parameter of the ReLU. When equal
-            to 0, returns the standard ReLU, when equal to a small number
-            i.e. 0.001 this is Leaky ReLU, otherwise it's parametric
-            ReLu
-
-        Returns:
-        ---------
-
-            - function := Elementwise operation
-
-    '''
-
-    return pytensor.tensor.switch(x<=0, leak, x)
-
-def ELU(x, alpha:float=1.0):
-    '''
-        `pytensor` implementation of the ELU activation function:
-
-        .. math::
-
-            f(x) = \begin{cases}
-                    x & x \gt 0 \\
-                    \alpha (e^x-1) &\text{if } b \\
-                    \end{cases}
-
-        Args:
-        -----
-
-            - x := The input tensor
-
-            - alpha:float=1.0 := The :math:`\alpha` parameter of the
-            ELU function
-
-        Returns:
-        ---------
-
-            - function := Elementwise operation
-    '''
-
-    return pytensor.tensor.switch(x<=0, 
-                                  alpha*(pytensor.tensor.exp(x)-1), 
-                                  x)
-
-def SWISS(x, beta:float=1):
-    '''
-        `pytensor` implementation of the Swiss activation function:
-
-        .. math::
-
-            f(x)=x sigmoid(\beta x)
-
-        NOTE: This implementation is equivalent to the 'Swiss-1' activation
-        function, where :math:`\beta` is **not** learned. The original
-        SWISS function has this as a learnable parameter instead
-    '''
-
-    return x*pymc.math.invlogit(beta*x)
-
-def GELU(x):
-    '''
-        `pytensor` implementaion of the GELU activation function. This 
-        function is defined as:
-
-        .. math::
-            X \thicksim \mathcal{N}(0,1)
-            f(x)\triangeq = xP(X\le x) = x\Phi (x)=x\frac 12 
-            [1+erf(\frac {x}{\sqrt{2}})]
-
-        Args:
-        ------
-
-            - x := Input tensor
-
-        Returns:
-        --------
-
-            - function := The elementwise operation
-    '''
-
-    return x*0.5*(1+pymc.math.erf(x/pymc.math.sqrt(2)))
-
-
-def SiLU(x):
-    '''
-        `pytensor` implementation of the SiLU activation function. This
-        function is defined as:
-
-        .. math::
-
-            f(x)\triangeq x \sigma (x)
-        
-        Args:
-        -----
-
-             - x := Input tensor
-
-        Returns:
-        ---------
-
-            - function := The elementwise operation
-    '''
-
-    return x*pymc.math.invlogit(x)
-
-
+    
+    def save(self, save_path:Optional[str]=None, 
+             method:str='netcdf'):
+        spath = save_path if save_path is not None else self.save_path
+        self._io_handler.save(spath, method=method)
+    
+    def load(self, save_path:Optional[str]=None):
+        self._io_handler.load(save_path)
 
 class Layer:
-
 
     transfer_functions:dict[str, Optional[Callable]] = dict(
         exp = pymc.math.exp,
@@ -1537,7 +1420,6 @@ class FreeAdditionLayer:
 
 
 
-
 class BayesianNeuralNetwork:
 
     '''
@@ -1594,9 +1476,6 @@ class BayesianNeuralNetwork:
 
     def __init__(self, layers:Iterable[Layer]):
         self.layers = layers
-        # self.layers:dict[str,Iterable[Layer]] 
-        # i.e. dict(main = [Layer(), Layer()])
-        # self.likelihood_map = dict(model_output = mu, s = sigma)
         self._trained:bool = False
         self._initialized:bool = False
         self._model:Optional[pymc.Model] = None
