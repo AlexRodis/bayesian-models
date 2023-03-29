@@ -28,32 +28,28 @@ correctly. There are several subjective choices involved in the
 procedure such as the test statistic and the hypothesis. These are
 usually abstracted away form the user and a kind of "default" is used,
 based on habit and tradition rather than justification on the problem
-at hand. Moreover the justification for these procedures are are seen
-as questionable by some, as they are essentially based on maximization
-of the repeatability of the experiment - but surely, we should care
-about the outcomes of individual experiments as well. More over these
-procedures frequently fail to accurately describe reality, for they do
-not generally contain any notion of the extent or size of the
-difference. Two different datasets with major differences in extent of
-they differences may for example give the same P-value. The
-interpretation of their results is also rather difficult and error
-prone, especially for non experts. For example if the P-value does not
-exceed some arbitrarily selected  threshold (often 95% by tradition)
-this **does not** mean the null hypothesis is upheld - indeed the null
-hypothesis can only be rejected, never upheld. A fundamentally more
-informative approach is one based on **estimation** rather than
-**testing**, and was proposed by *Kruschke, John. (2012) Bayesian
-estimation  supersedes the t-test. Journal of Experimental Psychology:
-General.* According to this approach complete distributions are fit to
-the data in each group, which enables calculation of any Deterministic
-derived quantity of intrest, such as difference of means, or difference
-of standard deviations. **[DIAGRAMS  HERE]** We'll use a famous example
-from Kruschke to illustrate this model. Suppose we are testing a "smart
-drug" that aims to make people smarter. We choose to use IQ as a
-measure of intelligence and test the candidate drug by splitting drug
-trial participants into a treatment and a control group. We fit a
-distribution to each group and compare the distributions.
- 
+at hand.
+
+The justification for these procedures is seen as questionable by
+some, as they are essentially based on maximization of the repeatability
+of the experiment - but surely, we should care about the outcomes of
+individual experiments as well. More over these procedures frequently
+fail to accurately describe reality, for they do not generally contain
+any notion of the extent or size of the difference. Two different
+datasets with major differences in extent of they differences may for
+example give the same P-value. The interpretation of their results is
+also rather difficult and error prone, especially for non experts. For
+example if the P-value does not exceed some arbitrarily selected
+threshold (often 95% by tradition) this **does not** mean the null
+hypothesis is upheld - indeed the null hypothesis can only be rejected,
+never upheld. A fundamentally more informative approach is one based on
+**estimation** rather than**testing**, and was proposed by *Kruschke,
+John. (2012) Bayesianestimation  supersedes the t-test. Journal of
+Experimental Psychology:General.* According to this approach complete
+distributions are fit to the data in each group, which enables
+calculation of any Deterministic derived quantity of interest, such as
+difference of means, or difference of standard deviations.
+
 Historical Context 
 ==========================
 
@@ -61,17 +57,18 @@ The broad class of techniques under the **Null Hypothesis Statistical
 Testing** (*NHST*) umbrella were developed in the context of the
 frequentist statistical paradigm and avoid invoking Bayes' theorem in
 the inference process. Chronologically the **p-value** technique was
-developed by Fischer and its the probability of making observations
-that are just as extreme or more extreme as those made. It was intended
-to intended to express some notion of how "distant" the observations
-are from the Null Hypothesis, after it is combined with prior knowledge
-in some non-specific manner.   The mathematical machinery of NHST was
-developed originally by Neyman and Spearman as an alternative approach
-to the one by Fischer. In these procedures the pairs of Null and
-Alternative Hypotheses are formulated and a test statistic is used to
-select the more plausible of the two. Typical examples of NHST are
-**ANOVA** (*One Way Analysis Of Variance*) and the t-Test. For example
-in the context of the t-test:
+developed by Fischer and its the probability of making observations that
+are just as extreme or more extreme as those that have been made. It was
+intended to intended to express some notion of how "distant" the
+observations are from the Null Hypothesis, after it is combined with
+prior knowledge in some non-specific manner.
+
+The mathematical machinery of NHST was developed originally by Neyman
+and Spearman as an alternative approach to the one by Fischer. In these
+procedures the pairs of Null and Alternative Hypotheses are formulated
+and a test statistic is used to select the more plausible of the two.
+Typical examples of NHST are **ANOVA** (*One Way Analysis Of Variance*)
+and the t-Test. For example in the context of the t-test:
 
  .. math::         
     \begin{array}{c}
@@ -91,7 +88,7 @@ in the context of the t-test:
     \end{array} 
     
 These two approaches were eventually "hybridized" and combined into one,
-and it is this version that is commonly used today
+and it is this version that is commonly used today.
 
 Objections and Criticisms 
 ============================= 
@@ -108,32 +105,32 @@ After all if an analyst truly believed there was no relation between a
 categorical variable (which defines the group) and some continuous
 quantity of interest they likely would not be conducting the test to
 begin with. Indeed to begin conducting a hypothesis test, the analyst
-nearly always suspects that the groups are indeed different.
-Furthermore, the null hypothesis ought to accepted as being
-"absolutely" true - its a mathematical statement that doesn't include
-any notion of precision. This is nearly impossible for most real world
-systems, where virtually every variable is related to all other
-variables however weakly *(Meeh, 1980)*. It pointless to question if
-they are different in practice - they always are to some level of
-precision and to some decimal *(Turkey, 1991)*. Therefore, there is
-always a sample size, large enough, for which the differences are
-statistically significant (more on that later).
+nearly always suspects that the groups are different. Furthermore, the
+null hypothesis ought to accepted as being "absolutely" true - its a
+mathematical statement that doesn't include any notion of precision.
+This is nearly impossible for most real world systems, where virtually
+every variable is related to all other variables however weakly *(Meeh,
+1980)*. It is pointless to question if they are different in practice -
+they always are to some level of precision and to some decimal *(Turkey,
+1991)*. Therefore, there is always a sample size, large enough, for
+which the differences are statistically significant (more on that
+later).
  
 Problem 2: The popular rationale behind NHST is problematic
 ----------------------------------------------------------------
  
 The logic underlying NHST is difficult is very unintuitive. Hence
-exceedingly prone misinterpretation and erroneous extrapolation,
-leading scientists and researchers to the wrong conclusions.
-Mathematicians and statisticians are of course well aware of how to
-correctly read the results of these procedures, however, these
-techniques are also being widely applied to other fields, from
-chemistry to ecology, where they are even more likely to be
-misinterpreted. Most non-specialists reason about NHSTs as follows:
+exceedingly prone misinterpretation and erroneous extrapolation, leading
+scientists and researchers to the wrong conclusions. Mathematicians and
+statisticians are of course well aware of how to correctly read the
+results of these procedures, however, these techniques are also being
+widely applied to other fields, from chemistry to ecology, where they
+are even more likely to be misinterpreted. Most non-specialists reason
+about NHSTs as follows:
 
     If the null hypothesis were true, then it would be unlikely that
-    data would     be observed. These data have been observed.
-    Therefore, it is unlikely that     the null hypothesis is correct
+    data would have been observed. These data have been observed.
+    Therefore, it is unlikely that the null hypothesis is correct
 
 The syllogism seems innocuous at first, but is in fact wrong. This
 becomes easier to see if we transform it another, logically equivalent
@@ -141,7 +138,7 @@ one *(Cohen, 1994)*
 
 
     If a person is an American, then they probably aren't a member of
-    the Senate.     This person is a member of the Senate. Therefore, he
+    the Senate. This person is a member of the Senate. Therefore, he
     is not an American
 
 It is evident that this syllogism is simply wrong, and the above
@@ -153,29 +150,29 @@ Problem 3: Misinterpretation of the Null Hypothesis
 
 Researchers frequently assume that if the groups are not the same, then
 they must be different. The reality is more complex than that, due to
-the role of chance and bias. One needs to draw a destinction between
-the alternate (:math:`H_A`) and the **research hypothesis**
-(:math:`H_R`). A thorough examination of the logic of t tests (*A
-logical analysis of null hypothesis significance testing  using popular
-terminology, Richard McNulty, 2022*) and NHSTs reveals that one cannot
-conclude that grouping variable is singularly responsible for any
-observed differences between groups. If the p-value drops below the
-specified threshold what one can actually conclude is that "the
-observed differences are not due to chance **alone**". Bridging the gap
-between the alternate and research hypothesis requires some additional
-assumptions that rarely justified and which are usually ignored,
-specifically: 
-1. The observed differences are **not** due to bias alone 
-2. There is no
-factor or combination of factors in which chance plays a role
+the role of chance and bias. One needs to draw a destinction between the
+alternate (:math:`H_A`) and the **research hypothesis** (:math:`H_R`). A
+thorough examination of the logic of t tests (*A logical analysis of
+null hypothesis significance testing  using popular terminology, Richard
+McNulty, 2022*) and NHSTs reveals that one cannot conclude that a
+grouping variable is singularly responsible for any observed differences
+between groups. If the p-value drops below the specified threshold what
+one can actually conclude is that "the observed differences are not due
+to chance **alone**". Bridging the gap between the alternate and
+research hypothesis requires some additional assumptions that rarely
+justified and which are usually ignored, specifically: 
+1. The observed
+differences are **not** due to bias alone 
+2. There is no factor or
+combination of factors in which chance plays a role
 
 Therefore NHST is rarely transparent about the assumptions it makes, but
-still convays a false sense of security
+still conveys a false sense of security.
  
 Problem 4: The Test Does Not Reveal If The Null Hypothesis Is True
 ---------------------------------------------------------------------
 
-Usually the analyst resorts to NHST because he is intrusted in answering
+Usually the analyst resorts to NHST because he is interested in answering
 the question "is the research hypothesis true based on the data?" or at
 least is the null hypothesis is true or not. However procedures such as
 t-Tests and ANOVAs reveal nothing of this sort though many researchers
@@ -183,7 +180,7 @@ believe that it does. The p-value is the probability of making
 observations as extreme or more extreme than those observed conditioned
 on the null hypothesis, not the probability that the null hypothesis is
 True. In mathematical notation the p value can written as
-:math:`p(\mathbb{D}|H_0)` whereas the researchers is generally interested
+:math:`p(\mathbb{D}|H_0)` whereas the researcher is generally interested
 in :math:`p(H_R|\mathbb{D})` or at least :math:`p(H_0|\mathbb{D})`.
 Furthermore one should bear in mind:
 
@@ -192,16 +189,24 @@ Furthermore one should bear in mind:
     p(H_A|\mathbb{D})\ne p(\mathbb{D}|H_0)\\
     p(H_0|\mathbb{D})\ne 1-p(\mathbb{D}|H_0)
 
-This quantities are distinct and should not be conflated. Yet it is very
+This quantities are distinct and should not be conflated. It is very
 tempting to do so, especially for the non specialist
+
+.. attention:: 
+
+    In case it is not obvious why t-Tests and the like, cannot answer
+    the question "is the null hypothesis true based on the data", which
+    the above papers alude to, pay close attention to the mathematical
+    notation. The general notation :math:`p(A|B)` means, the probability
+    of event :math:`A` occuring **conditioned** or given that event
+    :math:`B` has occured. The null hypothesis is assumed to be correct
+    when NHSTs are conducted, hence once cannot assign a probability to
+    it
 
 Problem 5: Effect Size and Sample Size
 ----------------------------------------
 
-The p-value is frequently interpreted and providing an estimate of the
-"importance" of the findings. A lower p-value is frequently interpreted
-as corresponding to larger difference between groups, however this is
-not the case. Consider for example the t-Test:
+The p-value is frequently interpreted as providing an estimate of the "importance" of the findings. A lower p-value is frequently seen as corresponding to larger difference between groups, however this is not the case. Consider for example the t-Test:
 
 .. math:: 
 
@@ -219,29 +224,27 @@ test provides little information on the magnitude of the observed
 differences is particularly problematic.
 
 Model Specification 
-=======================
+===================
  
 In Kruschke's original paper a model is described for the case of two
 groups and one quantity of interest, with some instructions for further
 extensions. Real world data, generally involve multiple variables of
 interest and possibly, multiple groups. While Kruschke provides some
 guidelines for these extensions, these are left somewhat nebulous and
-open to interpretation. The following extensions are specific to this
-library. Let :math:`\overset{N \times M+1}{X}` be a matrix representing
-our measurements. This matrix is composed of :math:`N` observations of
-:math:`M` continuous variables, and we further assume an additional,
-categorical variable whose values represent the groups themselves.
-Suppose this group variables takes :math:`K` possible values. We split
-the data according to the value of this variable
-:math:`{\mathbf{X_0,\dots, X_K}\}` and fit distributions to each group.
-The distribution chosen here is the **Student T** distribution. This
+open to interpretation.
+
+In the baseline case BEST operates by simply fitting distributions over the quantity of interest for every group and then comparing these distributions. Because in the Bayesian paradigm we have entire distributions to work with, instead of singular point estimates, the approach is fundamentally more informative that traditional NHST. In rendering our decision we essentialy examine the resulting distributions as follows:
+
+.. image:: best_intro_dists.png
+
+The distribution chosen is the **Student T** distribution. This
 distribution is chosen because, while similar to the Normal, it has
-thicker tails and hence better at describing data with "extreme" values,
-which are quite common in practice.  The Student T distribution (in one
-dimension) is given by:
+thicker tails and hence it is better at describing data with "extreme"
+values, which are quite common in practice. The Student T distribution
+(in one dimension) is given by:
 
  .. math::
-    f(x|\mu, \lambda, \nu) = \frac{\Gamma (\frac{\nu+1}2 )}{
+    f(x,\mu, \lambda, \nu) = \frac{\Gamma (\frac{\nu+1}2 )}{
     \Gamma (\frac \nu 2)} \big( 
         \frac{\lambda}{\pi\nu} \big)^{\frac 12}
         \big[1+\frac{\lambda (x-\mu)^2}{\nu} \big]^
@@ -253,8 +256,44 @@ identical to the Normal (mean and standard deviation) and a unique
 parameter :math:`\nu`. This parameter is called the **degrees of
 freedom** and determines essentially the "normality" of the
 distribution. For values of :math:`\nu` close to 1, the distribution has
-thick tails, which shrink toward the equivalent normal as it increases.
-Therefore, we can express this grouping as:
+thick tails, which shrink towards the equivalent normal as it increases.
+
+From the above, we can calculate any derived, deterministic quantity,
+primarily the **difference of means** (:math:`\Delta \mu`), the
+**difference of standard deviations** (:math:`\Delta \sigma`) and an
+additional quantity which Kruschke terms the **effect size**
+(:math:`E`). 
+
+ .. math::
+    E_{ij} \triangleq \dfrac{
+        \Delta \mu_{ij}}{
+        \frac{\sqrt{\sigma_i^2+\sigma_j^2}}{2}
+        }
+
+This quantity is no longer expressed in the same units as the inputs and
+hence it is somewhat harder to interpret than the others.
+:math:`\Delta\mu` expresses the expected difference between the groups
+and hence is the quantity we are primarily interested in.
+:math:`\Delta\sigma` expresses the difference is variances between
+groups and hence can be interpreted as expressing whether specific
+instances of the observed, are affected differently for certain values
+of the grouping variable. The effect size expresses a standardized
+measure of the "magnitude" of the difference.
+
+.. note::
+
+    The 'effect size' quantity is somewhat harder to interpret, because it not in the original units. It is not included by default and has to be explicitly specified by the user as `effect_size=True` to the BEST model object
+
+We can phrase this problem more abstractly, which will be usefull latter
+when multiple groups will be discussed. Let :math:`\overset{N \timesM+1}{X}` be a matrix representing our measurements. This matrix is
+composed of :math:`N` observations of :math:`M` continuous variables,
+and we further assume an additional, categorical variable whose values
+represent the groups themselves. Suppose this group variables takes
+:math:`K` possible values. We split the data according to the value of
+this variable :math:`{\mathbf{X_0,\dots,X_K}}` and fit distributions to
+each group.
+
+We can express this grouping as:
 
  .. math:: 
     \begin{array}{c}
@@ -265,7 +304,7 @@ Therefore, we can express this grouping as:
     \end{array}
  
 We must specify **priors** for these free parameters, which will be
-estimated from the observed data itself. Kruschke proposes the following
+estimated from the observed data. Kruschke proposes the following
 prior distributions:
 
  .. math:: 
@@ -274,7 +313,7 @@ prior distributions:
         \\
         \nu \thicksim 1 + \mathcal{Exp}(\lambda=\frac 1 {29.0})\\
         \\
-        \mu_k \thicksim \mathcal{N}(\bar{\mu}_k,\ 2\bar{\sigma})\\
+        \mu_k \thicksim \mathcal{N}(\bar{\mu}_k,\ 2\bar{\sigma_k})\\
         \\
         \sigma_k \thicksim \mathcal{U}(10^{-3}, 10^3)
     \end{array}
@@ -294,6 +333,11 @@ abstractly encompass all possible data (astronomical, medical, etc). For
 most real-world applications, they are excessively large and should be
 adjusted according the data and their units.
 
+.. note::
+
+    The default values for the Uniform distribution are :math:`0.1-10`
+    as opposed to :math:`10^{-1}-10^3`
+
 .. note:: 
 
     `bayesian-models` assumes the same degrees of freedom across all
@@ -306,30 +350,9 @@ adjusted according the data and their units.
     usually results in over fitting. The multivariate case assumes a
     diagonal scale matrix is computationally more expensive
 
-From the above, we can calculate any derived, deterministic quantity,
-primarily the **difference of means** (:math:`\Delta \mu`), the
-**difference of standard deviations** (:math:`\Delta \sigma`) and an
-additional quantity which Kruschke terms the **effect size**
-(:math:`E`). 
-
- .. math::
-    E_{ij} \triangleq \dfrac{
-        \Delta \mu_{ij}}{
-        \frac{\sqrt{\sigma_i^2+\sigma_j^2}}{2}
-        }
-
-This quantity is no longer expressed in the same units as the inputs and
-hence it is somewhat harder to interpret than the others. :math:`\Delta
-\mu` expresses the expected difference between the groups and hence is
-the quantity we are primarily interested in. :math:`\Delta \sigma`
-expresses the difference is variances between groups and hence can be
-interpreted as expressing whether specific instances of the observed,
-are affected differently for certain values of the grouping variable.
-The effect size expresses a standardized measure of the "magnitude" of
-the difference.
 
 Making Decisions: 
-========================
+=================
 
 To move from the hazy space of probabilities to that of actionable
 decisions, we need to propose, apply and justify a **decision rule**.
@@ -367,13 +390,13 @@ the space of all possible values of model parameters and
 **loss function**:
 
  .. math:: 
-     L:\mathcal{\Theta}\times\mathcal{\Alpha}\rightarrow \mathbb{R}_0^+
+    L:\mathcal{\Theta}\times\mathcal{\Alpha}\rightarrow \mathbb{R}_0^+
  
 This function maps values of the model and decisions taken to a "cost"
 of making this decision. We then define a **decision function**:
  
  .. math:: 
-     \delta :\Theta \rightarrow \Alpha
+    \delta :\Theta \rightarrow \Alpha
 
 From this, justification can be derived in a general way. In practice
 formulating a problem specific loss function is usually difficult in
@@ -388,13 +411,13 @@ multiple, univariate distributions. The multivariate Student T has a
 pdf of:
 
  .. math:: 
-        f(\mathbf{x}| \nu,\mu,\Sigma) = \frac{
-            \Gamma\left[(\nu+p)/2\right]}{
-            \Gamma(\nu/2)\nu^{p/2}\pi^{p/2
-            }\left|{\Sigma}\right|^{1/2}\left[1+\frac{1}{\nu}({
-            \mathbf x}-{\mu})^T{\Sigma}^{-1}({\mathbf x}-{\mu})\right]^{
-            -(\nu+p)/2}
-            }
+    f(\mathbf{x}| \nu,\mu,\Sigma) = \frac{
+        \Gamma\left[(\nu+p)/2\right]}{
+        \Gamma(\nu/2)\nu^{p/2}\pi^{p/2
+        }\left|{\Sigma}\right|^{1/2}\left[1+\frac{1}{\nu}({
+        \mathbf x}-{\mu})^T{\Sigma}^{-1}({\mathbf x}-{\mu})\right]^{
+        -(\nu+p)/2}
+        }
 
 Note the Multivariate distribution, replaces the parameter
 :math:`\sigma` with a **covariance matrix**. The element of the
@@ -410,7 +433,7 @@ multivariate with a diagonal covariance matrix, but more
 computationally expensive. The latter case is possible but prone to
 overfitting.
 
-Extentions: Multiple Groups:
+Extensions: Multiple Groups:
 ------------------------------ 
 
 Kruschke provides some guidelines on how to extend this model for
@@ -463,15 +486,15 @@ Implementation:
 ==================
 
 The terms of the actual software implementation, the above model is
-represented by the `bayesian_models.BEST` class. Like all models it
-implements the general four methods `__init__`, `__call__`, `fit` and
+represented by the `bayesian_models.models.BEST` class. Like all models
+it implements the general four methods `__init__`, `__call__`, `fit` and
 `predict`. The `__init__` method is responsible of setting all
-parameters and hyperparameters of the model itself. Unusually, these
-are class methods rather than object methods. This choice was made to
-enable rapid prototyping. The expected use-case is that a single
-'version' of the model can be applied to multiple data, in the sense of
-multiple grouping variables. We often deal with dataset with multiple
-categorical variables and we are intrusted in knowing whether these
+parameters and hyperparameters of the model itself. Unusually, these are
+class methods rather than object methods. This choice was made to enable
+rapid prototyping as the expected use-case is that a single 'version' of
+the model can be applied to multiple data (multiple variables to group
+by), in the sense of  We often deal with datasets with multiple
+categorical variables and we are interested in knowing whether these
 variables impact other continuous variables. This model accepts no
 "testing" data, and hence its data containers are declared immutable.
 The `predict` method itself renders the decisions and returns findings
@@ -480,11 +503,10 @@ as a dictionary, mapping each quantity :math:`\Delta \mu_{ij}`,
 results. These are typically of the same shape as those of
 `arviz.summary` with an additional column representing the decision,
 according to the **HDI+ROPE** rule. Other rules are possible, but they
-are not implemented at present, as we think this rule is very
-intuitive, easy to use and works well for many common cases. The
-decision making process itself is deferred to the `predict` method,
-since it is meaningless prior to training completion. This way, a user
-could also rapidly test many options of ROPEs and HDI thresholds on the
-same model and aggregate the results, without retraining each time.
-After all the decision making process itself is independent of the
-inference process.
+are not implemented at present, as we think this rule is very intuitive,
+easy to use and works well for many common cases. The decision making
+process itself is deferred to the `predict` method, since it is
+meaningless prior to training completion. This way, a user could also
+rapidly test many options of ROPEs and HDI thresholds on the same model
+and aggregate the results, without retraining each time. After all the
+decision making process itself is independent of the inference process.
