@@ -2027,14 +2027,16 @@ class NANHandlingContext:
         Object Properties:
         --------------------
         
-            - nan_handler:NANHandler := The nan handling strategy to apply
+            - nan_handler:NANHandler := The nan handling strategy to
+              apply
             
-        Objcet Methods:
+        Object Methods:
         ------------------
         
-            - __call__(data:DataStructureInterface))->DataStructureInterace :=
-            Delegate missing value handling to the handler and return the
-            results
+            - __call__(data:DataStructureInterface))->DataStructureInterace
+              :=
+                Delegate missing value handling to the handler and return
+                the results
     '''
     _nan_strategy:Type[NANHandler] = ExcludeMissingNAN
     nan_handler:Optional[NANHandler] = None

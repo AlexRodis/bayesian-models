@@ -701,45 +701,96 @@ class NeuralNetCoreComponent(CoreModelComponent):
 class CoreModelBuilder(ModelBuilder):
     
     '''
-        Core model builder object. Sequentialy composes the model object by
-        inserting it's various components. Every model should supply at
-        leat a subclass of `CoreModelComponent` and a list of `Likelihood`
-        components. All available components, in order are:
+        Core model builder object. 
+        
+        Sequentially composes the model object by inserting it's various
+        components. Every model should supply at least a subclass of
+        `CoreModelComponent` and a list of `Likelihood` components. All
+        available components, in order are:
 
 
-            - core_model:CoreModelComponents := The basic structure of
-            the model, including its equations and basic random variables
-            (REQUIRED)
+            - | core_model:CoreModelComponents := The basic structure of
+                the model, including its equations and basic random
+                variables (REQUIRED)
 
-            - link:LinkFunctionComponent := A link function to be applied
-            to the model. (OPTIONAL)
+            - | link:LinkFunctionComponent := A link function to be applied to
+                the model. (OPTIONAL)
             
-            - adaptors:ModeAdaptor := An 'output adaptor' component that
-            splits the model output tensor into multiple subtensor and 
-            inserts them to the computation graph. (OPTIONAL)
+            - | adaptors:ModeAdaptor := An 'output adaptor' component that
+                splits the model output tensor into multiple subtensor
+                and inserts them to the computation graph. (OPTIONAL)
             
-            - response:ResponseFunctionComponent := A response function
-            whose model outputs will be passed through. (OPTIONAL)
+            - | response:ResponseFunctionComponent := A response function
+                whose model outputs will be passed through. (OPTIONAL)
             
-            - free_vars:FreeVariablesComponent := A additional variables
-            component that inserts variables not explicitly involved in
-            the models' core equations. (OPTIONAL)
+            - | free_vars:FreeVariablesComponent := A additional variables
+                component that inserts variables not explicitly involved
+                in the models' core equations. (OPTIONAL)
+                
+            - | likelihoods:Sequence[LikelihoodComponent] := A collection
+                of likelihood components, to be added to the model.
+                (REQUIRED)
             
-            - likelihoods:Sequence[LikelihoodComponent] := A collection
-            of likelihood components, to be added to the model. (REQUIRED)
         Example usage:
         
         .. code-block:: python
         
-            # Will not work with empty objects. All except the first
-            # two arguements are optional and can be ignored
+            # Will not work with empty objects. All except the first #
+            # two arguments are optional and can be ignored 
             d = CoreModelBuilder(
                 core_model=CoreModelComponent(),
-                likelihoods=[LikelihoodComponent(), ...],
-                response  = ResponseFunctionComponent(),
+                likelihoods=[LikelihoodComponent(), ...], 
+                response  = ResponseFunctionComponent(), 
                 free_vars = FreeVariablesComponent(),
-                adaptor = ModelAdaptorComponent(),
+                adaptor =ModelAdaptorComponent(), 
                 )
+                
+        Object Attributes:
+        ------------------
+
+                - | core_model:Optional[CoreModelComponent] = None := 
+                    The core model component. Should subclass
+                    `CoreModelComponent`
+    
+                - | likelihoods:Optional[list[LikelihoodComponent]] =
+                    None := The likelihood component object, defining
+                    the likelihood for the model
+
+                - | model:Optional[pymc.Model] = field(init=False)
+                    model_variables:dict = field(default_factory = dict,
+                    init=False) -
+                    free_vars:Optional[FreeVariablesComponent] = None -
+                    adaptor:Optional[ModelAdaptorComponent] = None :=
+                    The `pymc.Model` object. Set by the builder at
+                    runtime
+                
+                - | coords:dict[str,Any] = field(default_factory=dict) :=
+                    Coordinates for the model object itself. Passed as a
+                    dict to the `pymc` allowing for label coordinates
+                    after inference. Collected from the data object
+                    itself
+                
+                - | response:Optional[ResponseFunctionComponent] = None := The
+                    ResponseFunction component, defining functions that
+                    transform variables in the model
+                  
+        Object Methods:
+        ---------------
+        
+            - __post_init__()->None := Validate that minimal components are
+              present in the model
+              
+            - _validate_likelihoods()->None := Validate that all shape
+              parameters of the specified likelihoods are defined in the model
+              stack. Implementation and validation is incomplete
+              
+            - build()->None := Build the model by sequentially  calling
+              separate components to add their variables to the context stack. Will also update the builders' internal catalogue of all variables present in the model
+              
+            - __call__()->None := Build the model updating or create the
+              underlying `pymc.Model` object
+        
+
     '''
     
     core_model:Optional[CoreModelComponent] = None
@@ -753,8 +804,8 @@ class CoreModelBuilder(ModelBuilder):
     
     
     def __post_init__(self)->None:
-        '''
-            Validate that miniman model components are present
+        r'''
+            Validate that minimal model components are present
         '''
         if any([
             self.core_model is None,
@@ -769,9 +820,9 @@ class CoreModelBuilder(ModelBuilder):
         self.model = None
             
     def _validate_likelihoods(self, user_spec:dict[str,str])->None:
-        '''
-            Perform self validation, ensuring all likelihoods have all of
-            their shape parameters linked to a model variable
+        r'''
+            Perform self validation, ensuring all likelihoods have all
+            of their shape parameters linked to a model variable
         '''
         for i, likelihood in enumerate(self.likelihoods):
             spec = sorted(list(likelihood.var_mapping.keys()))
@@ -793,10 +844,12 @@ class CoreModelBuilder(ModelBuilder):
             
     
     def build(self)->None:
-        '''
+        r'''
+            Construct the model according to the specified components.
+            
             Call specified components, in order, to add the variables of
-            each to the model. Maintains an internal catalogue of variable
-            names maped to refs to the objects
+            each to the model. Maintains an internal catalogue of
+            variable names mapped to refs to the objects
         '''
         self.core_model()
         self.model_variables = self.model_variables|self.core_model.variables
@@ -849,14 +902,17 @@ class CoreModelBuilder(ModelBuilder):
     
 
 class ModelDirector:
-    '''
-        Model construction object. Delegates model construction to a
-        specified model builder. Example usage:
+    r'''
+        Model construction object.
+        
+        Delegates model construction to a specified model builder.
+        
+        Example usage:
         
         .. code-block::
         
             # Will not work with empty objects. All except the first
-            # two arguements are optional and can be ignored
+            # two arguments are optional and can be ignored
             d = ModelDirector(
                 CoreModelComponent(),
                 LikelihoodComponent(),
@@ -864,6 +920,25 @@ class ModelDirector:
                 free_vars_component = FreeVariablesComponent(),
                 adaptor_component = ModelAdaptorComponent(),
             )
+        Object Attributes:
+        -------------------
+        
+            - builder:Type[ModelBuilder] := The model builder object.
+              Should be left to the default as only a single Builder is
+              implemented
+              
+        Object Properties:
+        ------------------
+
+            - model:pymc.Model := The underlying `pymc.Model` object,
+              exposed to the user. Is not an actual object property, but
+              exposes the one of the underlying builder object
+              
+        Object Methods:
+        ---------------
+        
+            - __call__()->None := Calls the underlying model builder
+              object to construct the actual model object
     '''
     builder:Type[ModelBuilder] = CoreModelBuilder
     
@@ -887,6 +962,9 @@ class ModelDirector:
         
     
     def __call__(self)->pymc.Model:
+        r'''
+            Build the model according the specified components
+        '''
         return self.builder()
     
     @property
