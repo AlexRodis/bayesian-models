@@ -812,8 +812,7 @@ class DataFrameStructure(DataStructure, UtilityMixin):
                 used, else defaults are used (as enumerated
                 integers)
             
-            - rank:int := The structures' rank i.e. the number of
-                axes
+            - | rank:int := The structures' rank i.e. the number of axes
             
             - dtype:np.dtype := The data type of the structure
             
