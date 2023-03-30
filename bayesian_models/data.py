@@ -775,6 +775,111 @@ class NDArrayStructure(DataStructure, UtilityMixin):
 
 class DataFrameStructure(DataStructure, UtilityMixin):
     
+    r'''
+        Wrapper class around `pandas.DataFrame` implementing the
+        common interface.
+        
+        Like all implementations this class implements a common,
+        standardized interface for acceptable tensor data
+        structures, as defined by the `DataStructure` abstract base
+        class.
+        
+        Class Attributes:
+        -----------------
+        
+            - | accepted_inputs:set := Valid inputs the constructor.
+                Structures which can be converted are Series, DataFrames
+                and numpy ndarrays
+        
+        Object Properties:
+        ------------------
+        
+            - | obj:pandas.DataFrame := The underlying
+                `pandas.DataFrame` object
+            
+            - shape:tuple[int,...] := The shape of the object
+            
+            - | dims:DIMS := Dimensions of the object. A `numpy` vector
+                of labels of the dimensions / axes of the object.The
+                default names are 'dim_{i}' where i the integer indexer
+                of the axis
+            
+            - | coords:COORDS := The coordinates of the object. Is a
+                dictionary of strings, which are axes names (the
+                same as those of `dims`) mapped to numpy vectors of
+                labels. These are the labels of the 'steps' in each
+                axis. If the object has index and columns, these will be
+                used, else defaults are used (as enumerated
+                integers)
+            
+            - rank:int := The structures' rank i.e. the number of
+                axes
+            
+            - dtype:np.dtype := The data type of the structure
+            
+            - | missing_nan_flag:Optional[bool] = None := Flag for
+                existence of missing values. Should be set by the
+                public interface class
+            
+        Object Methods:
+        ---------------
+        
+            - | isna()->DataFrameStructure := Return a boolean
+                structure, of the same class and shape as the
+                original, whose elements are booleans indicating if
+                the corresponding element is nan or not.
+            
+            - | any(axis:Optional[int]=None)-> Union[bool,
+                DataFrameStructure] := If axis is `None` reduce via
+                element wise or the entire array. Else reduce over
+                the axis specified
+            
+            - | all(axis:Optional[int]=None)-> Union[bool,
+                DataFrameStructure] := If axis is `None` reduce via
+                element wise and the entire array. Else reduce over
+                the axis specified
+            
+            - | transpose(axis:Optional[tuple[int,...]]
+                )->DataFrameStructure := Return a transposed
+                structure. If axes is `None` reverses the
+                dimensions. If provided, `axis` should be a
+                permutation of the objects' axes (as a tuple),
+                defining the transposition
+            
+            - | iterrows()->(str, DataFrameStructure) := Returns an
+                iterator over the zeroth axis of the structure.
+                Yields tuples of coordinates to substructures.
+                Loosely equivalent to:
+                
+                .. code-block::
+                
+                    def iterrows(X:pandas.DataFrame):
+                        for i in range(X.shape[0]):
+                            yield (X.index[i], X.iloc[i,...])
+            
+            - | itercolumns()->(str, DataFrameStructure) := Returns
+                an iterator over the first axis of the structure.
+                Yields tuples of coordinates to substructures.
+                Loosely equivalent to:
+                
+                .. code-block::
+                
+                    def iterrows(X:pandas.DataFrame):
+                        for i in range(X.shape[1]):
+                            yield (X.columns[i], X.iloc[:,i,...])
+            
+            - | cast(dtype:numpy.dtype)->DataArrayStructure := Casts
+                the structure to the specified data type. Returns a
+                fresh DataStrcture object
+            
+            - | unique(axis:Optional[int]=None)->DataFrameStructure
+                := Return a unique values in the structure. If axis is provided, unique values will over the specified axis are returned. Else unique values over the entire structure are returned
+            
+            - | mean(axis:Optional[int]=None)->DataFrameStructure :=
+                Return the mean along the specified axis, or over
+                the entire structure (if `axis=None`)
+        '''
+    
     accepted_inputs:set=[pd.DataFrame, pd.Series, np.ndarray]
     
     def __init__(self, obj:pd.DataFrame, dims:Optional[DIMS] = None
@@ -1118,6 +1223,113 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             
 
 class DataArrayStructure(DataStructure, UtilityMixin):
+    r'''
+            Wrapper class around xarray.DataArray implementing the
+            common interface.
+            
+            Like all implementations this class implements a common,
+            standardized interface for acceptable tensor data
+            structures, as defined by the `DataStructure` abstract base
+            class.
+            
+            Class Properties:
+            -----------------
+            
+                - | accepted_inputs:set := Set of input structured that
+                    can be converted into `xarray.DataArray`. Acceptable
+                    classes for the `obj` attribute
+            
+            Object Properties:
+            ------------------
+            
+                - | obj:xarray.DataArray := The underlying
+                    `xarray.DataArray` object
+                
+                - shape:tuple[int,...] := The shape of the object
+                
+                - | dims:DIMS := Dimensions of the object. A `numpy`
+                    vector of labels of the dimensions / axes of the
+                    object. If the object has dimentions these will be
+                    used else defaults are generated automatically. The
+                    default names are 'dim_{i}' where i the integer
+                    indexer of the axis
+                
+                - | coords:COORDS := The coordinates of the object. Is a
+                    dictionary of strings, which are axes names (the
+                    same as those of `dims`) mapped to numpy vectors of
+                    labels. These are the labels of the 'steps' in each
+                    axis. If the object has coordinates, these will be
+                    used, else defaults are used (as enumerated
+                    integers)
+                
+                - rank:int := The structures' rank i.e. the number of
+                  axes
+                
+                - dtype:np.dtype := The data type of the structure
+                
+                - | missing_nan_flag:Optional[bool] = None := Flag for
+                    existence of missing values. Should be set by the
+                    public interface class
+                
+            Object Methods:
+            ---------------
+            
+                - | isna()->DataArrayStructure := Return a boolean
+                    structure, of the same class and shape as the
+                    original, whose elements are booleans indicating if
+                    the corresponding element is nan or not. Unlike
+                    `numpy.isnan` will work on objects but not strings
+                
+                - | any(axis:Optional[int]=None)-> Union[bool,
+                    DataArrayStructure] := If axis is `None` reduce via
+                    element wise or the entire array. Else reduce over
+                    the axis specified
+                
+                - | all(axis:Optional[int]=None)-> Union[bool,
+                    DataArrayStructure] := If axis is `None` reduce via
+                    element wise and the entire array. Else reduce over
+                    the axis specified
+                
+                - | transpose(axis:Optional[tuple[int,...]]
+                    )->DataArrayStructure := Return a transposed
+                    structure. If axes is `None` reverses the
+                    dimentions. If provided, `axis` should be a
+                    permutation of the objects' axes (as a tuple),
+                    defining the transposition
+                
+                - | iterrows()->(str, DataArrayStructure) := Returns an
+                    iterator over the zeroth axis of the structure.
+                    Yields tuples of coordinates to substructures.
+                    Loosely equivalent to:
+                    
+                    .. code-block::
+                    
+                        def iterrows(X:xarray.DataArray):
+                            for i in range(X.shape[0]):
+                                yield (X.coords[i], X[i,...])
+                
+                - | itercolumns()->(str, DataArrayStructure) := Returns
+                    an iterator over the first axis of the structure.
+                    Yields tuples of coordinates to substructures.
+                    Loosely equivalent to:
+                    
+                    .. code-block::
+                    
+                        def iterrows(X:xarray.DataArray):
+                            for i in range(X.shape[1]):
+                                yield (X.coords[i], X[:,i,...])
+                
+                - | cast(dtype:numpy.dtype)->DataArrayStructure := Casts
+                    the structure to the specified data type. Returns a
+                    fresh DataStrcture object
+                
+                - | unique(axis:Optional[int]=None)->DataArrayStrcture
+                    := Return a unique values in the structure. If axis is provided, unique values will over the specified axis are returned. Else unique values over the entire structure are returned
+                
+                - | mean(axis:Optional[int]=None)->DataArrayStructure :=
+                    Return the mean along the specified axis, or over
+                    the entire structure (if `axis=None`)
+        '''
     
     accepted_inputs:set = set([np.ndarray, pd.DataFrame, pd.Series,
                                xr.DataArray])
@@ -1435,11 +1647,9 @@ class DataArrayStructure(DataStructure, UtilityMixin):
     def unique(self, axis:Optional[int]=None):
         r''' 
             Return unique values of the NDArrayStructure as Generator
-            of length 2 tuples. When axis is None, the generator yields
-            a single tuple of (None, vals) where vals are all the unique
-            values in the array. When axis is specified, the Generator
-            iterates over the specified axis, yielding tuples of label,
-            unique_values
+            of length 2 tuples. 
+            
+            When axis is None, the generator yields a single tuple of (None, vals) where vals are all the unique values in the array. When axis is specified, the Generator iterates over the specified axis yielding tuples of (label, unique_values)
         '''
         if axis is not None and axis not in list(range(len(self.shape))):
             raise ValueError((
@@ -1642,87 +1852,128 @@ class DataStructureInterface(ABC):
 class CommonDataStructureInterface(DataStructureInterface):
     r'''
         Core interface for supported data structures. Should be the only
-        'refined abstraction' provided
+        interface provided
         
-        Properties:
-        ------------
-        
-            - data_structure:DataStructure := The core data structure
-            implementation
+        Object Attributes:
+        ------------------
             
-        Methods:
-        ---------
-        
-            Methods exposed by the tensor
-        
-            - transpose(axis:Optional[AXES_PERMUTATION] = None) := 
-            Return a tranposed version of the object. Signature is the
-            same as numpy and must return the same default. Should
-            always return the same type of object. The T attribute is
-            an alias for this methods
-            
-            - isna(axis:Optional[int] = None) := Elementwise `isnan`.
-            Should default to returning the a boolean tensor of the same
-            shape as the original tensor. When `axis` is provided should
-            this is equivalent to an `any` operation over this axis. The
-            axis should be preseved in the return
-            
-            - any(axis:Optional[int] = None) := When `axis=None` perform
-            `any` over the entire array and return a boolean. Otherwise
-            perform the operation over the specified axis, preserving
-            the axis
-            
-            - all(axis:Optional[int] = None) := When `axis=None` perform
-            `all` over the entire array and return a boolean. Otherwise
-            perform the operation over the specified axis, preserving
-            the axis
-            
-            - iterrows() := Iterate over the first axis of the structure
-            Similar to `pandas.DataFrame.iterrows()`
-            
-            - itercolumns() := Iterate over the second axis of the 
-            structure. Similar to `pandas.DataFrame.itercolumns`
-            
-            - unique(axis:Optional[int] = None) := Return unique values
-            of the structure. Returns a Generator object that yields 
-            length 2 tuple of the general form (Optional[label:str], 
-            array). The first element of the tuple is either None or an
-            array of unique elements. When axis is None, (default) the
-            Generator yields only a single element, whose first element is
-            None, and whose other element is an array of all unique values
-            in the array. When axis is provided an integer, the resulting
-            Generator, loops over the specified axis, yielding tuples
-            of the label in the current iteration (coordinate of the 
-            specified axis) and numpy arrays of all unique values in the
-            subtensor (as a vector)
-            
-            - __getitem__(obj) := DataStructure indexing. All conventional
-            indexing options are supported, including slicing with labels
-            and mixed label/index based indexing and selecting. The `step`
-            argument must be an integer (or None) all others can be any mix
-            of label and index based indexers. For example:
-            .. code-block::
-            
-                obj[0,0,0]
-                obj[:5:2, "var1",0]
-                obj['sample_0':'sample_10':2, 5,...]
-                obj['sample_5',...]
-                # Illegal - step must be an integer
-                obj[0:15:"sample",...]
+            - | implementor:Type[DataStructure] := Class reference to the type
+                of implementor
                 
-            - mean(axis=None, keepdims=True, skipna=True) := Compute the
-            arithmetic mean along the specified axis (or the entire structure
-            if `None` - default). If `keepdims=True` the specified dimention
-            is kept in the result with a single coordinate named 'sum', making
-            the result correctly broadcastable to the original. Else the 
-            dimention is reduced. If `skipna=True` `NaN` values are ignored
-            else, all coordinates with at least one `NaN` will return `NaN`
+                .. caution::
+                    This attribute is deprecated and scheduled for removal
+            
+        
+        Object Properties:
+        ------------------
+            - | data_structure:DataStructure := The core data structure
+                implementation
+            
+            - rank:int := The structures' rank (number of axes)
+            
+            - shape:tuple[int] := The shape of the structure
+            
+            - dims:numpy.ndarray := Labels for the axes of the structure
+            
+            - | coords:dict[str, numpy.ndarray] := Labels for the coordinates
+                of the structure. Stored as dictionary mapping axes labels to
+                numpy arrays of labels in that axes. Keys should match
+                elements of the `dims` property
+            
+            - | values:numpy.ndarray := The underlying numpy array structure.
+                Usefull for unpacking the structure for other software (like
+                `pymc`)
+         
+        Object Methods:
+        ----------------
+        
+            Methods exposed by the tensor. Except where methods reduce
+            the entire structure to 0D, all should return another
+            `CommonDataStructureInterface` permitting method chaining.
+            Whenever a structure would be reduced to 1D, a 2D row-vector
+            structure will be returned instead
+        
+            - | transpose(axis:Optional[AXES_PERMUTATION] = None) :=
+                Return a tranposed version of the object. Signature is
+                the same as numpy and must return the same default.
+                Should always return the same type of object. The T
+                attribute is an alias for this method
+            
+            - | isna(axis:Optional[int] = None) := Elementwise `isnan`.
+                Should default to returning the a boolean tensor of the
+                same shape as the original tensor. When `axis` is
+                provided this is equivalent to an `any` operation over
+                this axis. The axis is preseved in the return.
                 
-            - ops := Basic operators are supported and generally delegated
-            to the underlying library '==', '>=', '!=', '>', '<', '<='
+                .. note::
+                
+                    This does not actually use `numpy.isnan` internally.
+                    It extends its functionaly by allowing nan checks on
+                    `object` type arrays.
+                    
+                .. danger::
+                
+                    Will not work with strings as missing nan values
+                    automatically converted into strings
+            
+            - | any(axis:Optional[int] = None) := When `axis=None`
+                perform `any` over the entire array and return a
+                boolean. Otherwise perform the operation over the
+                specified axis, preserving the axis
+            
+            - | all(axis:Optional[int] = None) := When `axis=None`
+                perform `all` over the entire array and return a
+                boolean. Otherwise perform the operation over the
+                specified axis, preserving the axis
+            
+            - | iterrows() := Iterate over the first axis of the
+                structure Similar to `pandas.DataFrame.iterrows()`
+            
+            - | itercolumns() := Iterate over the second axis of the
+                structure. Similar to `pandas.DataFrame.itercolumns`
+            
+            - | unique(axis:Optional[int] = None) := Return unique
+                values of the structure. Returns a Generator object that
+                yields  length 2 tuple of the general form
+                (Optional[label:str],  array). The first element of the
+                tuple is either None or an array of unique elements.
+                When axis is None, (default) the Generator yields only a
+                single element, whose first element is None, and whose
+                other element is an array of all unique values in the
+                array. When axis is provided an integer, the resulting
+                Generator, loops over the specified axis, yielding
+                tuples of the label in the current iteration (coordinate
+                of the  specified axis) and numpy arrays of all unique
+                values in the subtensor (as a vector)
+            
+            - | __getitem__(obj) := DataStructure indexing. All
+                conventional indexing options are supported, including
+                slicing with labels and mixed label/index based indexing
+                and selecting. The `step` argument must be an integer
+                (or None) all others can be any mix of label and index
+                based indexers. For example:
+            
+                    .. code-block::
+                    
+                        obj[0,0,0] obj[:5:2, "var1",0]
+                        obj['sample_0':'sample_10':2, 5,...]
+                        obj['sample_5',...] # Illegal - step must be an
+                        integer obj[0:15:"sample",...]
+                
+            - | mean(axis=None, keepdims=True, skipna=True) := Compute
+                the arithmetic mean along the specified axis (or the
+                entire structure if `None` - default). If
+                `keepdims=True` the specified dimention is kept in the
+                result with a single coordinate named 'sum', making the
+                result correctly broadcastable to the original. Else the
+                dimention is reduced. If `skipna=True` `NaN` values are
+                ignored else, all coordinates with at least one `NaN`
+                will return `NaN`
+                
+            - | ops := Basic operators are supported and generally
+                delegated to the underlying library '==', '>=', '!=',
+                '>', '<', '<='
     '''
-    
-    
     _data_structure:Optional[DataStructure] = None
     _implementor:Optional[Type[DataStructure]] = None
     
@@ -1877,30 +2128,33 @@ class CommonDataStructureInterface(DataStructureInterface):
                 Args:
                 ------
                 
-                    - axis:Optional[int]=None := The axis along which to
-                    compute the mean. If `None` (default) returns the mean
-                    along the entire structure
+                    - | axis:Optional[int]=None := The axis along which
+                        to compute the mean. If `None` (default) returns
+                        the mean along the entire structure
                     
-                    - skipna:bool=True := If `True` (default) `NaN` values
-                    will be ignored, else every coordinate along the specified
-                    axis with at least one `NaN` will return `NaN`.
+                    - | skipna:bool=True := If `True` (default) `NaN`
+                        values will be ignored, else every coordinate
+                        along the specified axis with at least one `NaN`
+                        will return `NaN`.
                     
-                    - keepdims:bool=True := If `True` (default), the axis along
-                    which the mean is computed is kept in the result with a 
-                    single coordinate named 'sum', making the result correctly
-                    broadcastable agaist the original. Else reduce the
-                    dimention in the result. This argument is ignored if axis
-                    is `None`
+                    - | keepdims:bool=True := If `True` (default), the
+                        axis along which the mean is computed is kept in
+                        the result with a single coordinate named 'sum',
+                        making the result correctly broadcastable agaist
+                        the original. Else reduce the dimension in the
+                        result. This argument is ignored if axis is
+                        `None`
                     
-                Return:
-                -------
+                Returns:
+                --------
                 
-                    - mean:float := The mean of the entire structure
+                    - | mean:float := The mean of the entire structure
+                        (if `axis=None`)
                     
-                    - means:CommonDataStructureInterface := A new structure
-                    of means. If `keepdims=False` would reduce the structure
-                    below 2D, a 2D structure is returned instead (equivalent
-                    to `keepdims=True`)
+                    - | means:CommonDataStructureInterface := A new
+                        structure of means. If `keepdims=False` would
+                        reduce the structure below 2D, a 2D structure is
+                        returned instead (equivalent to `keepdims=True`)
             '''
             if axis is None:
                 return self._data_structure.mean(axis=axis, skipna=skipna,
@@ -2062,44 +2316,57 @@ class DataProcessor(ABC):
 @dataclass(kw_only = True)
 class CommonDataProcessor(DataProcessor):
     r'''
-        Common use-case data pre processor. Will handle:
+        Common use-case data pre processor.
         
-            - converting the data structure to a common internal interface
-            
+        Will handle the following data preprocessing tasks:
+        
+            - | converting the data structure to a common internal
+                interface
+
             - handling of missing values
             
-            - casting to data type
+            - casting to data type (Optional)
             
-            - validate data types
+            - validate data types (Incomplete)
         
         Can be subclassed for extended functionality or overriden.
+        
         
         Object Attributes:
         --------------------
         
-            - nan_handler:NANHandlerContext := The missing values handler.
-            Optional. Defaults to ExcludeMissingNAN. Initially a ref to the 
-            context class, will be replaced by a instance of that class.
+            - | nan_handler:NANHandlerContext := The missing values
+                handler. Optional. Defaults to ExcludeMissingNAN.
+                Initially a ref to the context class, will be replaced
+                by a instance of that class.
             
-            - cast:Optional[np.dtype]=None := Attempt to forcefully cast all
-            inputs to the specified type. Optional. Defaults to `np.float32`.
-            Set to `None` will disable typecasting
+            - | cast:Optional[np.dtype]=None := Attempt to forcefully
+                cast all inputs to the specified type. Optional.
+                Defaults to `np.float32`. Setting this to `None` will
+                disable typecasting
             
-            - type_spec := Schema to validate. Not implemented and will be 
-            ignored
+            - | type_spec := Schema to validate. Not implemented and
+                will be ignored
             
-            - casting_kwargs:dict={} := Keyword arguements to be forwarded to
-            the underlying typecaster. See numpy for details. Defaults to an
-            empty dict. Warning! Poorly tested!
+            - | casting_kwargs:dict={} := Keyword arguements to be
+                forwarded to the underlying typecaster. See numpy for
+                details. Defaults to an empty dict.
+                
+            .. danger::
+            
+                Typecasting is not fully implemented due to the
+                limitations of numpy arrays (they are homogenuous
+                structures, whereas pandas DataFrames are not). Use this
+                option only to cast the entire structure to a certain
+                dtype
             
         Object Methods:
         ----------------
         
-            - __call__(data:InputData)->CommonDataStructureInterface :=
-            Preprocess the data according the set options and return the
-            result.
+            - | __call__(data:InputData)->CommonDataStructureInterface
+                := Preprocess the data according the set options and
+                return the result.
             
-                   
     '''
     
     nan_handler_context:NANHandlingContext = NANHandlingContext(
@@ -2112,8 +2379,8 @@ class CommonDataProcessor(DataProcessor):
     def _convert_structure(self, data: InputData
                            )->DataStructureInterface:
         r'''
-            Convert the input structure to a common interface by wrapping
-            it in the appropriate implementation class
+            Convert the input structure to a common interface by
+            wrapping it in the appropriate implementation class
             
             Args:
             -----
@@ -2123,13 +2390,15 @@ class CommonDataProcessor(DataProcessor):
             Returns:
             --------
             
-                - common:CommonDataStructureInterface := The object, converted
+                - common:CommonDataStructureInterface := The object,
+                  converted
                 to a common interface
                 
             Raises:
             -------
             
-                - RuntimeError := When unable to identify the data type. This
+                - RuntimeError := When unable to identify the data type.
+                  This
                 is a last-resort exception. Should be handled elsewhere
         '''
         core_type:str = str(type(data)).split(".")[-1][:-2]
@@ -2169,8 +2438,8 @@ class CommonDataProcessor(DataProcessor):
     
     def __call__(self, data: InputData)->DataStructureInterface:
         r'''
-            Preprocess the object according to set options and return the
-            results
+            Preprocess the object according to set options and return
+            the results
             
             Args:
             -----
@@ -2180,7 +2449,8 @@ class CommonDataProcessor(DataProcessor):
             Returns:
             ---------
             
-                - processed:CommonDataStructureInterface := The processed data
+                - | processed:CommonDataStructureInterface := The
+                    processed data structure
         '''
         from warnings import warn
         _data = self._convert_structure(data)
@@ -2249,50 +2519,50 @@ class Data:
         Class Attributes:
         ------------------
         
-            - nan_handlers:set[str]=['exlude', 'impute', 'ignore'] := 
-            Valid strategies for missing value handling
+            - | nan_handlers:set[str]=['exlude', 'impute', 'ignore'] := Valid
+                strategies for missing value handling
             
-            - input_types:set[str]=['ndarray', 'DataFrame', 'DataArray'] := 
-            Supported input data structures
+            - | input_types:set[str]=['ndarray', 'DataFrame', 'DataArray'] :=
+                Supported input data structures
             
         Object Attributes:
         -------------------
             
-            - nan_handling:str='exclude' := The missing data handling 
-            strategy. Has to be one of Data.nan_handlers. Optional. Defaults
-            to 'exclude' and discards all axis=0 coordinates with missing
-            values (i.e rows).
+            - | nan_handling:str='exclude' := The missing data handling
+                strategy. Has to be one of Data.nan_handlers. Optional.
+                Defaults to 'exclude' and discards all axis=0 coordinates with
+                missing values (i.e rows).
             
-            - cast:Any := A data type to force-cast the data to. Optional.
-            Defaults to `numpy.float32`. Set to `None` to disable casting
+            - | cast:Any := A data type to force-cast the data to. Optional.
+                Defaults to `numpy.float32`. Set to `None` to disable casting
             
-            - type_spec:dict={} := Dictionary specification data validation
-            across the second dimention. Keys should be coordinates (labels)
-            along the second axis(=1) and values should be valid numpy dtypes.
-            Currently ignored
+            - | type_spec:dict={} := Dictionary specification data validation
+                across the second dimention. Keys should be coordinates
+                (labels) along the second axis(=1) and values should be valid
+                numpy dtypes. Currently ignored
             
-            - casting_kwargs:dict={} := Optional keyword arguments to be
-            forwarded to the type caster. Optional. Defaults to an empty dict.
-            See the `numpy` documentation for further details. Ignored if
-            `cast=None`
+            - | casting_kwargs:dict={} := Optional keyword arguments to be
+                forwarded to the type caster. Optional. Defaults to an empty
+                dict. See the `numpy` documentation for further details.
+                Ignored if `cast=None`
             
-            - processor:Type[DataProcessor]=CommonDataProcessor := The 
-            processor to be used for data processing. Optional and defaults to
-            the generic data processor. Can be overriden to customized
-            with a user specified processor that subclasses `DataProcessor` or
-            `CommonDataProcessor`
+            - | processor:Type[DataProcessor]=CommonDataProcessor := The
+                processor to be used for data processing. Optional and
+                defaults to the generic data processor. Can be overriden to
+                customized with a user specified processor that subclasses
+                `DataProcessor` or `CommonDataProcessor`
             
-            - process_director:Optional[DataProcessDirector] := The 
-            director for data processing. Optional
+            - | process_director:Optional[DataProcessDirector] := The director
+                for data processing. Optional
             
-            - nan_handler:Optional[NANHandler]=None := The class that
-            handles missing values. None only when unset
+            - | nan_handler:Optional[NANHandler]=None := The class that
+                handles missing values. None only when unset
                 
         Object Methods:
         ----------------
         
-            - __call__(data:InputData) := Process the data and return
-            the result
+            - | __call__(data:InputData) := Process the data and return the
+                result
     
     '''
 
