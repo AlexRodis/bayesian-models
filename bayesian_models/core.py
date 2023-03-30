@@ -10,39 +10,95 @@ from bayesian_models.utilities import extract_dist_shape, invert_dict
 
 
 Response = namedtuple("Response", ["name", "func", "target", "record"])
+Response.__doc__ = r"""
+Container object response functions
+
+Response functions are model components that transform model variables
+into other model variables. This is a `collections.namedtuple` container
+and has no methods
+
+Object Attributes:
+------------------
+
+    - | name:str := An internal name for the transformation and its
+        result
+    
+    - | func:Callable := The `Callable` object that handles the actual
+        transformation
+    
+    - | target:str := Internal name for the variable that is to be
+        transformed. The result of a lookup for this variable becomes
+        the input to the `Callable` in the `func` field. This should be
+        the only argument to the Callable
+    
+    - | record:bool := If `True` the result of the transformation will
+        be wrapped in a deterministic variable and preserved in the
+        posterior trace. Else they will be accessible only internally,
+        via the `variables` property
+
+"""
 ModelVars = defaultdict(default_factory = lambda : None)
 Real = Union[float, int]
 
 @dataclass(slots=True, kw_only = True)
 class Distribution:
-    '''
-        Data container class for user-specified distributions. Supply a
-        distribution `dist` along with any desired arguments `dist_args` and
-        `dist_kwargs`. If the distribution needs to be modified, for example
-        by shifting it by some amount, supply a `dist_transform:Callable`
-        Optionally  a `name` can be provided.
-        NOTE: For data nodes, the `dist` argument should by the function 
+    r'''
+        Data container class for user-specified distributions. 
+        
+        Supply a distribution `dist` along with any desired arguments
+        `dist_args` and `dist_kwargs`. If the distribution needs to be
+        modified, for example by shifting it by some amount, supply a
+        `dist_transform:Callable`. Optionally  a `name` can be provided.
+        As a data container class, it has no methods.
+        
+        NOTE: For data nodes, the `dist` argument should by the function
         `pymc.Data`
+        
         Example usage:
         
         .. code-block::
         
-            In [2]: dist = Distribution(
-                ...:     dist = pymc.Normal, name = 'some_name', 
-                ...:     dist_args = (0, dist_kwargs = dict(sigma=1)
-                ...:     ) # Basic usage. Internaly equivalent  to 
-                ...:     #`some_name=pymc.Normal('some_name', 0, sigma=1)`
+            dist = Distribution(
+                dist = pymc.Normal, name = 'some_name', dist_args = (0,
+                dist_kwargs = dict(sigma=1) ) # Basic usage. Internally
+                equivalent  to #`some_name=pymc.Normal('some_name', 0,
+                sigma=1)`
 
-            In [3]: dist = Distribution(
-                ...:     dist = pymc.Exponential, name='exp', dist_args = (1/29.0,),
-                ...:     dist_transform = lambda d:d+1
-                ...: ) # Modify a base distribution
+            dist = Distribution(
+                dist = pymc.Exponential, name='exp', dist_args =
+                (1/29.0,), dist_transform = lambda d:d+1 ) # Modify a
+                base distribution
 
-            In [4]: dist = Distribution( name='inputs', dist=pymc.Data,
-                ...:     dist_args = (np.random.rand(50,5), ),# Numpy ndarray,
-                ...:     dist_kwargs = dict(mutable=True)
-                ...:     )
+            dist = Distribution( name='inputs', dist=pymc.Data,
+                dist_args = (np.random.rand(50,5), ),# Numpy ndarray,
+                dist_kwargs = dict(mutable=True) )
+            
+        Object Attributes:
+        ------------------
+        
+            - | name:str='' := A name for the distribution / random
+                variable. Technically optional but should be provided
+            
+            - | dist := For random variables the distribution to be
+                used as a prior. Initially  a reference to the
+                class, will be latter swapped to an instance of the
+                class. For data nodes, the function `pymc.Data` can
+                be passed instead
+            
+            - | dist_args:tuple := Positional arguments to the
+                distribution
+        
+            - | dist_kwargs:dict := Keyword arguments to the
+                distribution
+
+            - | dist_transform:Optional[Callable]=None := A Callable
+                that is used to perform a numerical transform to the
+                variable. Will not be explicitly tracked by the model
+                (its result will). Used to offset, and manipulate core distributions. Optional. Defaults to `None`
+    
     '''
+    
+    
     name:str = ''
     dist:Union[Type[
         pymc.Distribution], Type[Callable]
@@ -52,6 +108,9 @@ class Distribution:
     dist_transform:Optional[Callable] = None
 
     def __post_init__(self)->None:
+        r'''
+            Check for invalid inputs
+         '''
         if any([
             any([
                 not isinstance(self.name,str),
@@ -69,9 +128,13 @@ def distribution(dist:pymc.Distribution,name:str,
                  **kwargs)->Distribution:
     '''
         Convenience method for fresh `Distribution` instance creation.
+        
+        
         Accepts a a distribution and a name, along with optional args
         and kwargs and returns a `Distribution` object matching those
-        parameters. Example usage:
+        parameters.
+        
+        Example usage:
         
         .. code-block::
         
@@ -93,32 +156,53 @@ def distribution(dist:pymc.Distribution,name:str,
 
 @dataclass(slots=True)
 class FreeVariablesComponent:
-    '''
-        Component representing additional variables to be inserted to the
-        model not explicitly involved in the core model itself, i.e. the
-        equations describing the model. For example the noise parameter in
-        linear regression:
+    r'''
+        Component representing additional variables to be inserted to
+        the model. 
+        
+        Used for variables not explicitly involved in the core model
+        itself, i.e. the equations describing the model. For example
+        the noise parameter in linear regression:
         
         .. math::
+
+            \begin{array}{c}
+                w0 \thicksim \mathcal{N}(0,1)\\
+                w1 \thicksim \mathcal{N}(0,1)\\
+                μ = X*w0+w1\\
+                σ \thicksim \mathcal{N}(0,1)\\
+                y \thicksim \mathcal{N}(μ, σ)\\
+            \end{array}
         
-            w0 \thicksim \mathcal{N}(0,1)
-            w1 \thicksim \mathcal{N}(0,1)
-            μ = X*w0+w1
-            σ \thicksim \mathcal{N}(0,1)
-            y \thicksim \mathcal{N}(μ, σ)
+        The `dists` argument supplied is a `dict` of names to
+        `Distribution` instances, representing the distributions to be
+        inserted to the model.
         
-        The `dists` argument supplied is a `dict` or name to `Distribution`
-        instances, representing the distributions to be inserted to the model.
         Example usage:
+        
             .. code-block::
             
-                In [21]: fvars = FreeVariablesComponent(
-                    ...:     dict(
-                    ...:         sigma = Distribution(name='sigma',
-                    ....:        dist=pymc.Normal,
-                    ...:         dist_args=(0,1))
-                    ...:         ) # Insert random variable 'sigma' to 
-                    ...:         # the model   
+                fvars = FreeVariablesComponent(
+                        dict( sigma = Distribution(name='sigma',
+                        dist=pymc.Normal, dist_args=(0,1) )
+                    ) # Insert random variable 'sigma' to the model
+                    
+        Object Attributes:
+        ------------------
+        
+            - | variables:dict := A catalogue of variables inserted into
+                the model. Is a dictionary mapping variable names to
+                references to the appropriate object
+              
+            - | dists:dict[str, Distribution] := Distributions to be
+                added to the model
+                
+        Object Methods:
+        ---------------
+        
+            - | __call__()->None := Expects to be executed with a
+                `pymc.Model` context stack open. Adds all distributions
+                to the model and updates the `variables` attribute
     '''
     
     variables:Any = field(init=False, default_factory=dict)
@@ -131,7 +215,7 @@ class FreeVariablesComponent:
         if self.dists  == dict():
             raise ValueError((
                 "Attempting to create an free variables but no "
-                "distributions have passed"
+                "distributions have been passed"
             ))
         if not isinstance(self.dists, dict):
             raise TypeError((
@@ -190,29 +274,64 @@ class ResponseFunctions:
         
         .. code-block::
         
-            # Pass all parameters explicitly (recommended) r =
+            # Pass all parameters explicitly (recommended)
+            
             ResponseFunctions(
                 functions = dict(exp = pymc.math.exp, tanh =
                 pymc.math.tanh), records = dict(exp=True, tanh=False),
                 application_targets = dict(exp="f", tanh="exp")
-            ) # Partially omit application_targets using defaults 'f' r
-            = ResponseFunctions(
+            ) # Partially omit application_targets using defaults 'f'
+            
+            ResponseFunctions(
                 functions = dict(exp = pymc.math.exp, tanh =
                 pymc.math.tanh), records = dict(exp=True, tanh=False),
-                application_targets = dict(tanh="exp")
-            ) # Pass the desired Callables leaving everything to their
-            defaults # In this case two different response functions are
-            applied # to the same input 'f'. Both are recorded with
-            `pymc.Deterministic` # the name is the key provided r =
+                application_targets = dict(tanh="exp") 
+                ) # Pass the
+                # desired Callables leaving everything to their
+                # defaults. In this case two different response functions
+                # are applied to the same input 'f'. Both are recorded
+                # with `pymc.Deterministic` the name is the key provided
+            
             ResponseFunctions( functions = dict(exp = pymc.math.exp,
             tanh = pymc.math.tanh) )
             
-        Public Attributes:
+        This object is an Iterable over response functions
+            
+        Object Attributes:
         ------------------
 
-            - | functions:dict[str, Callable] := A dictionary mapping 
-              | internal variable names to Callable objects defining the
-              | transformation
+            - | functions:dict[str, Callable] := A dictionary mapping
+                internal variable names to Callable objects defining the
+                transformation
+                
+            - | records:dict[str, bool] := A dictionary mapping internal
+                variable names to booleans. If the boolean is `True` the
+                variable is wrapped in a deterministic node and
+                preserved in the posterior trance. Else it accessible
+                only internally. Optional. Anything not explicitly defined here is inferred to be true
+            
+            - | application_targets:dict[str, str] := A dictionary
+                mapping response names to the internal name of the
+                variable to be transformed. Optional. Any keys missing are automatically mapped to 'f', the default name for core model output tensor
+                
+        Private Attributes:
+        ===================
+        
+            - | _sf:set[str] := Set of function names specified
+            
+            - | _st:set[str] := Set of function targets specified
+                (via application_targets keys)
+            
+            - | _missing_records:set[str] := Set of function records
+                (keys) not explicitly specified by the user
+            
+            - | _missing_targets:set[str] := Set of function targets
+                (keys of `application_targets`) not explicitly set
+                by the user
+            
+            - | _iter:Optional[Iterable] := Iterator object over the
+                specified `functions` used internally to make the
+                object an iterable
     
     '''
     
@@ -356,26 +475,57 @@ class ResponseFunctionComponent:
 @dataclass(kw_only=True, slots=True)
 class ModelAdaptorComponent:
     '''
-        Adds an 'output adaptor' to the model, which 'splits' the models
-        output tensor into other variables. The splitting logic is specified
-        by the `var_mapping` argument, which is a dict whose keys are strings
-        representing variable names, and whose items are Callables that
-        accept and return `theano` tensors. The `record` boolean argument
-        decides if the result of all "splits" will be wrapped in a
-        deterministic node. Example usage:
+        Adds an 'output adaptor' component to the model, which 'splits'
+        the models output tensor into other variables. 
+        
+        The splitting logic is specified by the `var_mapping` argument,
+        which is a dict whose keys are strings representing variable
+        names, and whose items are Callables that accept and return
+        `theano` tensors. The `record` boolean argument decides if the
+        result of all "splits" will be wrapped in a deterministic node.
+        
+        Example usage:
         
         .. code-block::
         
-            In [2]: adaptor = ModelAdaptorComponent(
-               ...:           record = True, # Keep the new variables as 
-               ...:           # Deterministic nodes for later access
-               ...:           var_mapping = dict(
-               ...:               mu = lambda tensor: tensor.T[0,...],
-               ...:               sigma = lambda tensor: tensor.T[1,...],
-               ...:           ) # Split model output 'f', a tensor, into two 
-               ...:             # tensors named 'mu' and 'sigma', wrapped as 
-               ...:             # deterministics in the model.
-               ...: 
+            adaptor = ModelAdaptorComponent(
+                record = True, # Keep the new variables as 
+                # Deterministic nodes for later access
+                var_mapping = dict(
+                    mu = lambda tensor: tensor.T[0,...],
+                    sigma = lambda tensor: tensor.T[1,...],
+                ) # Split model output 'f', a tensor, into two 
+                # tensors named 'mu' and 'sigma', wrapped as 
+                # deterministics in the model.
+        
+        Object Attributes:
+        ------------------
+        
+            - | var_mapping:dict[str, Callable] := Mapping of variable
+                names to Callable objects which return the variable. All
+                Callables here receive exactly one argument, the tensor
+                that is the output of the model and the Callable should
+                execute the splitting, returning exactly one subtensor
+        
+            - | record:bool=True := If `True` (default) records the
+                subtensors as deterministic variables, adding them to the models posterior trace. Otherwise, they are treated as nuissance intermediates, accessible via the models' `var_names` catalogue
+        
+            - | variables:dict := Catalogue of new objects added to the
+                model by this component. Keys are names, and items are
+                references to the subtensor objects themselves. Allows
+                'anonymous' non-deterministic subtensors to be accessed
+                by other components without being added to the models'
+                trace
+                
+        Object Methods:
+        ---------------
+        
+            - __call__(output)->None := Creates and adds specified
+                subtensors to the model. Assumes a `pymc.Model`
+                context stack is open. `output` is a reference to the
+                models output. Also updates the `variables` attributed
+                with all the subtensors created. `output` will be
+                passed to all the Callables specified in `var_mapping`
     
     '''
     
@@ -401,38 +551,72 @@ class ModelAdaptorComponent:
 @dataclass(kw_only=True, slots=True)
 class LikelihoodComponent:
     '''
-        Adds a likelihood to the model. `var_mapping` must be supplied
-        defining which model variables map to which likelihood shape
-        parameters. For example `distribution=pymc.Normal` and 
-        `var_mapping=dict(mu = 'f', sigma='sigma')`. The keys of the
-        `var_mapping` dict are strings which must exactly match the shape
-        parameters of the likelihood. Values should be the internal names
-        of model variables, specified during their creation. `name` and
-        `observed` correspond to the name of the likelihood object itself
-        and the name of the observed data node in the model. Should generaly
-        be left to their defaults, except when the model has multiple
-        likelihood/observed nodes. Example usage:
+        Adds a likelihood component to the model. 
+        
+        `var_mapping` must be supplied, defining which model variables
+        map to which likelihood shape parameters. For example
+        `distribution=pymc.Normal` and `var_mapping=dict(mu = 'f',
+        sigma='sigma')`. The keys of the `var_mapping` dict are strings
+        which must exactly match the shape parameters of the likelihood.
+        Values should be the internal names of model variables,
+        specified during their creation. `name` and `observed`
+        correspond to the name of the likelihood object itself and the
+        name of the observed data node in the model. Should generally be
+        left to their defaults, except when the model has multiple
+        likelihood/observed nodes.
+        
+        Example usage:
         
         .. code-block::
         
-            In [37]: like = LikelihoodComponent(
-            ...:     name = 'y_obs', # Default likelihood name
-            ...:     observed = 'observed', # Default name for
-            ...:     # the name of the input data node
-            ...:     distribution = pymc.Dirichlet, # Defaults
-            ...:     # to pymc.Normal
-            ...:     var_mapping = dict(
-            ...:     a = 'f',
-            ...:     ) # Maping of distribution shape parameters
-            ...:     # to model parameter names. 'f' is usually
-            ...:     # the default name for the core model
-            ...:     # output
-            ...:     )
+            like = LikelihoodComponent(
+                name = 'y_obs', # Default likelihood name observed =
+                'observed', # Default name for # the name of the input
+                data node distribution = pymc.Dirichlet, # Defaults # to
+                pymc.Normal var_mapping = dict(
+                    a = 'f', ) # Mapping of distribution shape
+                    parameters # to model parameter names. 'f' is
+                    usually # the default name for the core model #
+                    output
+                )
+        
+        Object Attributes:
+        ------------------
+        
+            - name:str='y_obs' := The name for the likelihood variable
+            
+            - | observed:str='outputs' := The internal name of the data
+                node containing the observations. Should match the
+                `name` attribute of the `Distribution` object that
+                defined the data node
+                
+            - | distribution:Type[pymc.Distribution]=pymc.Normal := The
+                distribution for the likelihood/observations
+                
+            - var_mapping:dict[str, str] := Mapping of the likelihoods'
+              shape parameters to internal names of model variables to
+              be supplied to the respective parameter. The keys are
+              shape arguments to the supplied distribution. The items
+              are strings representing variable names that will be
+              looked up in the variable catalogue
+              
+        Object Methods:
+        ----------------
+        
+            - | __call__(observed, var_mappingLdict)->None := Expects to
+                be called with `pymc.Model` context open and wil add the
+                likelihood to the model. `observed` is the result of a
+                lookup to the models' `variables` catalogue for the
+                `observed` attribute and is a reference the
+                observations. `var_mapping` has the same keys as the
+                original and its items are the result of a lookup on the
+                `var_mapping` item lookup into the models `variables`
+                catalogue
     '''
     name:str = 'y_obs'
     observed:str = 'outputs'
     distribution:Type[pymc.Distribution] = pymc.Normal
-    var_mapping:dict = field(default_factory = dict)
+    var_mapping:dict[str, str] = field(default_factory = dict)
     
     def __post_init__(self)->None:
         if self.var_mapping == dict():
@@ -479,26 +663,53 @@ class ModelBuilder(ABC):
 @dataclass(kw_only=True, slots=True)
 class CoreModelComponent:
     '''
-        Core model object. Inserts basic random variables to the context
-        stack, maintaining an internal catalogue of variables inserted
-        for latter access. Concrete model objects should subclass this
-        component and extend its call method by defining the models' 
-        equations in deterministic nodes. If a concrete model produces some
-        explicit quantity as an output, this should generally  be named
-        'f'. Example usage:
+        Core model component. 
+        
+        Inserts basic random variables to the context stack, maintaining
+        an internal catalogue of variables inserted for latter access.
+        Concrete model objects should subclass this component and extend
+        its call method by defining the models' equations in
+        deterministic nodes. If a concrete model produces some explicit
+        quantity as an output, this should generally  be named 'f'.
+        
+        Example usage:
         
         .. code-block::
         
-            In [8]: core = CoreModelComponent(
-               ...:     distributions = dict(
-               ...:         beta0 = distribution(pymc.Normal,
-               ...:         'beta0', 0,1),
-               ...:         beta1 = distribution(pymc.Normal,
-               ...:         'beta1', mu = 0, sigma=1),
-               ...:     ) # OLS-like example, using convenience
-               ...:       # method `distribution` to access 
-               ...:       # the `Distribution` class
-               ...: )
+            core = CoreModelComponent(
+                        distributions = dict(
+                            beta0 = distribution(pymc.Normal,
+                            'beta0', 0,1),
+                            beta1 = distribution(pymc.Normal,
+                            'beta1', mu = 0, sigma=1),
+                        ) # OLS-like example, using convenience
+                        # method `distribution` to access 
+                        # the `Distribution` class
+                )
+                
+        Object Attributes:
+        ------------------
+        
+            - | distributions:dict[str, Distribution] := A dictionary
+                mapping random variable names to their priors/
+                distributions. The `Distribution` class encapsulates all
+                the information for a prior distribution. Can be
+                accessed via the convenience method `distribution`
+            
+            - | variables[str, Any] := A catalogue of basic random
+                variables added to the model. Child classes extend this
+                by added their deterministics
+              
+            - | model:Optional[pymc.Model] := A reference to
+                `pymc.Model` object itself. Is created or defined by the `ModelBuildDirector` and handed to the builder to construct the model
+                
+        Object Methods:
+        ----------------
+        
+            - __call__()->None := Assumes a `pymc.Model` context stack
+              is open. Adds all specified random variables to the model
+              by calling them from the `distributions` dict and adds
+              them to the `variables` catalogue
     '''
     
     distributions:dict[str, Distribution]= field(default_factory = dict)
@@ -543,10 +754,62 @@ class CoreModelComponent:
             
 class LinearRegressionCoreComponent(CoreModelComponent):
     '''
-        Core model component for linear regression, specified as:
+        Core model component for linear regression
+        
+        Specifies the model as
+        
         .. math::
+            
             f = XW+b
-        Inserts the deterministic variable 'f' to the model
+        
+        Inserts the deterministic variable 'f' to the model. Delegates
+        definition of the random variables to the `CoreModelComponent`
+        parent.
+        
+        NOTE: When all the priors and the likelihood are Normal this is
+        analytically tractable and MCMC is not needed. Included here as
+        a reference example mostly, though one could run a linear
+        regression with an unusual likelihood / response functions etc
+        
+        Class Attributes:
+        -----------------
+        
+            - | var_names:dict[str, str] := Alternate names for the
+                various variables of the model. Allows users to refer to
+                the variables by a different name e.g. "b" instead of
+                'W'
+                
+            - model_vars:set := The models' variable names
+        
+        Object Attributes:
+        ------------------
+        
+            - | variables:dict[str, str] : Catalogue mapping variables
+                names to references to the variables. Created by the
+                parent and extended to include the deterministic 'f'
+                
+            - | var_names:dict[str, str] := Mapping of internal variable
+                names to user-defined names. Optional. Defaults to an
+                empty dict. Any user supplied variables not
+                corresponding to known model variables are ignored. Any
+                variable aliases not supplied by the user are replaced
+                with their defaults. Warns on any mismatch
+                
+        Private Attributes:
+        ====================
+        
+            Variables used internally, mainly for input validation
+            
+            - | s1:set[str] := User-defined/supplied variable names
+            
+            - | s2:set[str] := Model variables (class level attribute)
+            
+        Object Methods:
+        ----------------
+        
+            - | __call__()->None := Add the models' equation to the
+                model as a deterministic node. Assumes a `pymc.Model`
+                context stack is open. Model output is named `var_names['equation']` 'f' by default
     '''
     
     var_names = dict(
@@ -594,6 +857,12 @@ class LinearRegressionCoreComponent(CoreModelComponent):
                     }
         
     def __call__(self)->None:
+        r'''
+            Add the variables to the model.
+            
+            Basic random variables are handled by the parent. Assumes a
+            `pymc.Model` context stack is open
+        '''
         super().__call__()
         W = self.variables[self.var_names['slope']]
         X = self.variables[self.var_names['data']]
