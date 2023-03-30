@@ -605,8 +605,124 @@ class LinearRegressionCoreComponent(CoreModelComponent):
         
 
 class BESTCoreComponent(CoreModelComponent):
-    '''
+    r'''
         Core Model Component for the BEST group comparison model
+        
+        Injecting basic random variables into the model (the
+        `distributions` argument) is delegated to the parent
+        `CoreModelComponent`. This component insert the following
+        deterministics instead:
+        
+        .. math::
+        
+            \begin{array}{c}
+                \Delta\mu_{i,j} =\ \mu_i-\mu_j \\
+                \Delta\sigma_{i, j} = \sigma_i-\sigma_j\\
+                E = \dfrac{\hat{x_i}-\hat{x_j}}{
+                    \sqrt{
+                        \frac{\sigma_i^2+\sigma_j^2}{2}
+                        }
+                }
+            \end{array}
+            
+        By default only the :math:`\Delta\mu` quantity is added. Pass
+        `_std_difference=True` to include :math:`\Delta\sigma` and
+        `_effect_size=False` to add the effect size to the trace (will 
+        also automatically add :math:`\Delta\mu`). Used internally only.
+        The `BEST` class handles the external API.
+        
+        Example Usage:
+        
+        .. code-block::
+        
+            core_dists = dict(
+                            ν = distribution(
+                            pm.Exponential, "ν_minus_one", 1/29.0, 
+                            transform = lambda e: e+1.0
+                            ),
+                            "obs_0" = distribution(
+                                pm.Data, "y0", X0, mutable=False
+                                ),
+                            "obs_1" = distribution(
+                                pm.Data, "y1", X1, mutable=False
+                                ),
+                            μ_0 = distribution(
+                                    pm.Normal, "μ_0", 
+                                        mu = X0.mean(),   
+                                        sigma = 2*X0.std(),
+                                        shape = X0.shape[-1]
+                                    ),
+                            σ_0 = distribution(
+                                pm.Uniform, 'σ_0', 
+                                lower = 1e-1,
+                                upper = 10, 
+                                shape=X0.shape[-1]),
+                            μ_1 = distribution(
+                                    pm.Normal, "μ_1", 
+                                        mu = X1.mean(),   
+                                        sigma = 2*X1.std(),
+                                        shape = X1.shape[-1]
+                                    ),
+                            σ_1 = distribution(
+                                pm.Uniform, 'σ_1', 
+                                lower = 1e-1,
+                                upper = 10, 
+                                shape=X1.shape[-1])
+            }
+            likelihoods = [
+                    LikelihoodComponent(
+                        name = "y_obs_0",
+                        observed = "obs_0",
+                        distribution = pm.StudentT,
+                        var_mapping = dict(
+                            mu = 'μ_,
+                            sigma = 'σ_1',
+                            nu = 'ν',
+                        )
+                    ),
+                    LikelihoodComponent(
+                        name = "y_obs_0",
+                        observed = "obs_0",
+                        distribution = pm.StudentT,
+                        var_mapping = dict(
+                            mu = 'μ_,
+                            sigma = 'σ_1',
+                            nu = 'ν',
+                        )
+                    ),
+                ]
+            # Likelihoods passed to the builder instead
+            BESTCoreComponent(
+                            distributions = core_dists,
+                            group_distributions = ...,
+                            permutations = ..., 
+                            std_difference = False, 
+                            effect_magnitude = False,
+            )
+
+        
+        Object Attributes:
+        ------------------
+        
+            - _group_distributions:tuple := 
+            
+            - | _permutations:tuple := (Technically combinations) all
+              possible unique pairs of levels for the categorical
+              variable defining the groups. Tracks all possible
+              pair-wise comparisons
+            
+            - | _derived_quantities:dict[str, str]=dict(means=[], stds =
+                [], effect_magnitude = []) := 
+                
+            - | _std_difference:bool=False := If `True` computes the
+                :math:`\Delta\sigma` deterministic and adds it to the trace. Optional. Defaults to `False`
+            
+            - | _effect_magnitude:bool=False := If `True` compute the
+              'effect_size' deterministic quantity. Optional and
+              defaults to `False`
+              
+            - | variables:dict[str, Any] := A dictionary mapping internal
+                variable names to a variable reference. Added by the `CoreModelObject` parent class. Enables different components to access variables other than those in their context (i.e. `LikelihoodComponent` can access the variables to be linked to its shape parameters)
     '''
     
     __slots__ = ('_group_distributions', 'variables', '_permutations',
@@ -614,13 +730,14 @@ class BESTCoreComponent(CoreModelComponent):
                  '_effect_magnitude', )
     
     def __init__(self,
-                 distributions:dict[str, Distribution]=dict(),
-                  model:Optional[pymc.Model] = None,
-                  group_distributions = tuple(),
-                  permutations = tuple(),
-                  std_difference:bool = False,  
-                  effect_magnitude:bool = False,
+                    distributions:dict[str, Distribution]=dict(),
+                    model:Optional[pymc.Model] = None,
+                    group_distributions = tuple(),
+                    permutations = tuple(),
+                    std_difference:bool = False,  
+                    effect_magnitude:bool = False,
                   )->None:
+        
         super().__init__(distributions = distributions, 
                          model = model)
         self._group_distributions = group_distributions
@@ -648,7 +765,7 @@ class BESTCoreComponent(CoreModelComponent):
                     f'μ_{permutation[0]}'
                     ] - self.variables[f'μ_{permutation[1]}'
                                                     ],
-                    dims = 'dimentions'
+                    dims = 'dimensions'
             )
             self.variables[ν_name_mu] = diff
             self._derived_quantities['means'].append(ν_name_mu)
@@ -660,7 +777,7 @@ class BESTCoreComponent(CoreModelComponent):
                 std2 = self.variables[f'σ_{permutation[1]}']
                 std_diff = pymc.Deterministic(v_name_std,
                                     std1-std2,
-                                    dims='dimentions')
+                                    dims='dimensions')
                 self._derived_quantities['stds'].append(v_name_std)
                 self.variables[v_name_std] = std_diff
             
@@ -669,7 +786,7 @@ class BESTCoreComponent(CoreModelComponent):
                     ef_size_sym='Effect_Size', pair=pair_id)
                 effect_magnitude = pymc.Deterministic(
                     v_name_magnitude, diff/pymc.math.sqrt(
-                        (std1**2+std2**2)/2), dims='dimentions')
+                        (std1**2+std2**2)/2), dims='dimensions')
                 self.variables[v_name_magnitude].append(
                     effect_magnitude)
                 self._derived_quantities['effect_magnitude'].append(
@@ -700,7 +817,7 @@ class NeuralNetCoreComponent(CoreModelComponent):
 @dataclass(kw_only=True, slots=True)
 class CoreModelBuilder(ModelBuilder):
     
-    '''
+    r'''
         Core model builder object. 
         
         Sequentially composes the model object by inserting it's various

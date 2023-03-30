@@ -33,7 +33,6 @@ __all__ = (
         'ELU',
         'SWISS',
         'SiLU',
-        'FreeAdditionLayer',
         )
 
 
@@ -153,9 +152,10 @@ class BayesianModel(ABC):
 
 class BayesianEstimator(BayesianModel):
     r'''
-        Abstract base class for "predictive" style models. These models
-        take some input information X and return some output predicted
-        quantity Y.
+        Abstract base class for "predictive" style models.
+        
+        These models take some input information X and return some
+        output predicted quantity Y.
     '''
     @property
     @abstractmethod
@@ -173,22 +173,23 @@ class ModelIOHandler:
         ----------------
 
             save(self, save_path:Optional[str], method:str = ['pickle',
-            'netcdf']) -> None := Save the model using one of two protocols.
-            For `method='netcdf'` (default) saves the models' posterior
-            as netcdf file. For `method='pickle'` (experimental) attempts
-            so serialize the entire object using `pickle`.
+            'netcdf']) -> None := Save the model using one of two
+            protocols. For `method='netcdf'` (default) saves the models'
+            posterior as netcdf file. For `method='pickle'`
+            (experimental) attempts so serialize the entire object using
+            `pickle`.
 
-            load(self, save_path:Optional[str]) -> None := Load a pretrained 
-            model from memory, using the selected protocol. Only meaningful
-            for models saved with `method='netcdf'`. For `method='pickle'`
-            unpickle the object directly.
+            load(self, save_path:Optional[str]) -> None := Load a
+            pretrained model from memory, using the selected protocol.
+            Only meaningful for models saved with `method='netcdf'`. For
+            `method='pickle'` unpickle the object directly.
 
         Object Properties:
         -------------------
 
             - save_path:Optional[str] = None := Adds the `save_path`
-            attribute, allowing users to specify a save path during object
-            initialization
+            attribute, allowing users to specify a save path during
+            object initialization
     '''
     _model:Optional[pymc.Model] = field(init=False, default=None)
     _class:Optional[BayesianModel] = field(init=False,  default=None)
@@ -362,9 +363,11 @@ class BESTBase:
 @dataclass(slots=True)
 class BEST(BESTBase):
     r'''
-        Bayesian Group difference estimation with pymc. The implementation
-        is based on the official pymc documentation. The model assumes
-        StudentT likelihood over observations for added robustness.
+        Bayesian Group difference estimation with pymc.
+        
+        The implementation is based on the official pymc documentation. The
+        model assumes StudentT likelihood over observations for added
+        robustness.
         
         Class Attrs:
         ------------
@@ -383,29 +386,30 @@ class BEST(BESTBase):
             
             - μ_mean:Callable[pandas.DataFrame,pandas.Series]=
             lambda df, axis=0: df.mean(axis=axis) := Callable that
-            returns a series of means for prior setting. Must take
-            a `pandas.DataFrame` as input and return a series or
-            numpy vector
+            returns a series of means for prior setting. Must take a
+            `pandas.DataFrame` as input and return a series or numpy
+            vector
             
             - μ_std:Callable[pandas.DataFrame,pandas.Series]=
-            lambda df,ddof=1, axis=0, η=2, ϵ=1e-4:df.std(
-            ddof=ddof, axis=axis).replace({0.0:ϵ})*η:=
-            Callable that returns a series of means for prior
-            setting. Must take a `pandas.DataFrame` as input and return
-            a series or numpy vector or appropriate size
+            lambda df,ddof=1, axis=0, η=2, ϵ=1e-4:df.std( ddof=ddof,
+            axis=axis).replace({0.0:ϵ})*η:= Callable that returns a
+            series of means for prior setting. Must take a
+            `pandas.DataFrame` as input and return a series or numpy
+            vector or appropriate size
             
             - ddof:int=1 := Degrees of freedom parameter for empirical
             pooled standard_deviation estimation. Must be non negative.
             Optional Defaults to 1.
             
-            - std_diffusion_factor:float=2 := A prior diffusion parameter
+            - std_diffusion_factor:float=2 := A prior diffusion
+              parameter
             applied to priors over standard deviations. Means are set to
-            this parameter times the pooled empirical standard deviations.
-            Optional. Defaults to 2.
+            this parameter times the pooled empirical standard
+            deviations. Optional. Defaults to 2.
             
             - jax_device:str='gpu' := Specify which device `numpyro`
-            uses for MCMC sampling. Set to either 'gpu' or 'cpu'. Currently
-            unused.
+            uses for MCMC sampling. Set to either 'gpu' or 'cpu'.
+            Currently unused.
             
             - jax_device_count:int=1 := The number of devices to be used
             by jax during inference. Optional. Defaults to False. Is
@@ -415,98 +419,119 @@ class BEST(BESTBase):
         Object Attrs:
         -------------
         
-            - group_var:`pandas.Index` := An index specifying the        factor column in the provided DataFrame. Must be a valid
+            - group_var:`pandas.Index` := An index specifying the
+              factor column in the provided DataFrame. Must be a valid
             column. Note, if `tidify_data` is not None, it will be
             invoked prior to all calls, hence `group_var` should reflect
             the variables' name after tidification (i.e. ('chemical',
             'antioxidants', 'squalene')->
             'chemical.antioxidants.squalene')
             
-            - effect_magnitude:bool=False := Whether to compute an 'effect size' during inference. This metric is somewhat more             abstract than direct differences and is defined as
+            - effect_magnitude:bool=False := Whether to compute an
+              'effect size' during inference. This metric is somewhat
+              more             abstract than direct differences and is
+              defined as
             
             .. math::
             
                 ES=\dfrac{\Delta\mu_{1,2}}{\sqrt{\dfrac{
                     \sigma_{1}^{2}\sigma_{2}^{2}}{2}}}
             
-            - std_differences:bool=False := Selects whether or not to estimate
-            standard deviation differenes between groups. Optional. Defaults
-            to False. If `effect_magnitude=True` this value is ignored and the
-            difference is computed automatically.
+            - std_differences:bool=False := Selects whether or not to
+              estimate
+            standard deviation differenes between groups. Optional.
+            Defaults to False. If `effect_magnitude=True` this value is
+            ignored and the difference is computed automatically.
             
-            - common_shape:bool=True := If True make the simplfying assumption
+            - common_shape:bool=True := If True make the simplfying
+              assumption
             that all input dimentions have the same shape parameter `ν`.
-            Else, assign distinct shape parameters to all dimentions of the
-            input array. Optional. Defaults to True. If switched off, warns of
-            likely unidentifiable model.
+            Else, assign distinct shape parameters to all dimentions of
+            the input array. Optional. Defaults to True. If switched
+            off, warns of likely unidentifiable model.
 
-            - multivariate_likelihood:bool=True := Flag signaling whether a
-            multivariate likelihood or a univariate one. Optional.Defaults to
-            False.
+            - multivariate_likelihood:bool=True := Flag signaling
+              whether a
+            multivariate likelihood or a univariate one.
+            Optional.Defaults to False.
             
-            - save_name:Optional[str]=None := A string specifying location and
-            filename to save the model's inference results. Optional. If set
-            during objects' construction, the `save` method may be called
-            without a save path.
+            - save_name:Optional[str]=None := A string specifying
+              location and
+            filename to save the model's inference results. Optional. If
+            set during objects' construction, the `save` method may be
+            called without a save path.
             
-            - nan_handling:str='exclude' := Specify how missing values are
-            handled. Either `'exclude'` to remove all rows with missing values
-            or `'impute'` to attempt to impute them. Optional. Defaults to
-            `'exclude'`. `'impute'` not implemented and raises an error if
-            specified. Ignored if no missing values are present.
+            - nan_handling:str='exclude' := Specify how missing values
+              are
+            handled. Either `'exclude'` to remove all rows with missing
+            values or `'impute'` to attempt to impute them. Optional.
+            Defaults to `'exclude'`. `'impute'` not implemented and
+            raises an error if specified. Ignored if no missing values
+            are present.
             
             - tidify_data:Optional[Callable[pandas.DataFrame,pandas.DataFrame
-            ]]=tidy_multiindex := Callable that takes the input DataFrame and
-            squashes MultiLevel indices for ease of display. Defaults to
-            custom `tidy_multiindex` which squashes all levels of the input
-            index, sepperated by '.'. Optional. Defaults to None. Note
-            `tidy_multindex` does not check for the present of multilevel
-            indices and if called with non-multilevel index dataframes, will
-            result in erratic behavior
+            ]]=tidy_multiindex := Callable that takes the input
+            DataFrame and squashes MultiLevel indices for ease of
+            display. Defaults to custom `tidy_multiindex` which squashes
+            all levels of the input index, sepperated by '.'. Optional.
+            Defaults to None. Note `tidy_multindex` does not check for
+            the present of multilevel indices and if called with
+            non-multilevel index dataframes, will result in erratic
+            behavior
             
-            - scaler:Optional[Callable[pandas.DataFrame, pandas.DataFrame]]=
-            std_scale := A Callable that scales the input DataFrame. Use the
-            special wrapper class `SklearnDataFrameScaler` with the `scale`
-            argument being the `sklearn.preprocessing` scaler class, to return
-            `pandas.DataFrames` instead of `numpy` arrays.
+            - scaler:Optional[Callable[pandas.DataFrame,
+              pandas.DataFrame]]=
+            std_scale := A Callable that scales the input DataFrame. Use
+            the special wrapper class `SklearnDataFrameScaler` with the
+            `scale` argument being the `sklearn.preprocessing` scaler
+            class, to return `pandas.DataFrames` instead of `numpy`
+            arrays.
             
             - idata:Optional[arviz.InferenceData]=None := 
-            `arviz.InferenceData` object containing the results of model 
+            `arviz.InferenceData` object containing the results of model
             inference
             
-            - trained:bool=False := Sentinel signaling whether the model has
-            been trained or not. Defaults to False. Should be switched on
-            after calling `fit`.
+            - trained:bool=False := Sentinel signaling whether the model
+              has
+            been trained or not. Defaults to False. Should be switched
+            on after calling `fit`.
 
-            - initialized:bool=False := Sentinel signaling whether the model
-            has been full initialized of not. Optional. Defaults to False.
-            Should be switched on after calling the object.
+            - initialized:bool=False := Sentinel signaling whether the
+              model
+            has been full initialized of not. Optional. Defaults to
+            False. Should be switched on after calling the object.
 
-            - var_names:dict[str:list[str]] := A dictionary with the 'means',
+            - var_names:dict[str:list[str]] := A dictionary with the
+              'means',
             'stds' and 'effect_magnitude' keys, mapped to lists of the
             variables
 
-            - _permutations:Optional[Iterable[tuple[str,str]]]=None := An
-            iterable of groups per `group_var`. Contains all unique pairs
-            of unique values of `group_var`.
+            - _permutations:Optional[Iterable[tuple[str,str]]]=None :=
+              An
+            iterable of groups per `group_var`. Contains all unique
+            pairs of unique values of `group_var`.
 
             - _n_perms:Optional[int]=None := The number of groups.
 
-            _ levels:Optional[Iterable[str]]=None := Group levels, 
+            _ levels:Optional[Iterable[str]]=None := Group levels,
             corresponding to all unique values of `group_var`
 
-            - _ndims:Optional[int]=None := Number of input features. Only
+            - _ndims:Optional[int]=None := Number of input features.
+              Only
             meaningfull if `common_shape` is `False`.
 
-            - num_levels:Optional[int]=None := The number of unique groups/
+            - num_levels:Optional[int]=None := The number of unique
+              groups/
             values of `group_var`.
 
-            - coords := dict-like of dimention labels `xarray` coords. Will be
+            - coords := dict-like of dimention labels `xarray` coords.
+              Will be
             infered from inputs and used to label the posterior
 
-            - _group_distributions:Optional[Dict[str, pymc.Distribution]]=None
-            := A dict used internally to map infered distributions. Defaults
-            to None.
+            - _group_distributions:Optional[Dict[str,
+              pymc.Distribution]]=None
+            := A dict used internally to map infered distributions.
+            Defaults to None.
 
             - _model:Optional[pymc.Model] := The model
 
@@ -723,7 +748,7 @@ class BEST(BESTBase):
                 ] if e != self.group_var
             ]
         self._coords = dict(
-            dimentions =  crds
+            dimensions =  crds
         )
             
         self._fetch_differential_permutations_()
