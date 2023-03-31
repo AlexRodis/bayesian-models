@@ -24,27 +24,29 @@ class DataStructure(ABC):
     r'''
         Abstract Base Class for Data Structure implementations
         
-        Properties:
-        ------------
+        Object Properties:
+        -------------------
+        
             Common properties exposed by the underlying object
         
-            - obj:DataStructure := The wrapped, underlying object
+            - | obj:DataStructure := The wrapped, underlying object
             
-            - shape:SHAPE := The shape property of the wrapped object
+            - | shape:SHAPE := The shape property of the wrapped object
             
-            - | dims:DIMS := Labels for the dimentions of the object - |
-              the axii
+            - | dims:DIMS := Labels for the dimensions of the object -
+                the axes
             
             - | coords:COORDS := Labels for each element in each axis
-              (i.e |) distinct row labels, column labels etc
+                i.e distinct row labels, column labels etc
             
             - rank:int := The tensors rank
             
             - | dtype := The datatype for the elements. For consistency
-              |all `DataStructure` are coerced into homogenous types
+                all `DataStructure` are coerced into homogenous types
             
-        Methods:
-        ---------
+        Object Methods:
+        ----------------
+        
             Methods exposed by the tensor
         
             - | transpose(axis:Optional[AXES_PERMUTATION] = None) :=
@@ -470,7 +472,30 @@ class DataStructure(ABC):
 
 class UtilityMixin:
     
+    r'''
+        Convenience mixin class to to disseminate common functionality.
+        Used for inheritance only
+        
+        Object Methods:
+        ---------------
+        
+            - | _cut_dims_(axis:Optional[int]=None)->tuple[DIMS, COORDS]
+                := In cases where an axis is reduced (eliminated) in the
+                result, this returns the updated `dims` and `coords` as
+                a tuple
+                
+            - | _dimshuffle_(axes_permutation:AXES_PERMUTATION)->tuple
+                := Given an axes permutation (for transposing
+                structures) permute the dims an coords and return them
+                as tuple
+    '''
+    
     def _cut_dims_(self, axis:Optional[int])->tuple[DIMS, COORDS]:
+        r'''
+            Given an axis, returns dims and coords of the structure with
+            the axis removed. Used for operations that reduce axes
+            (remove them)
+        '''
         from copy import copy
         if axis is None:
             return self.dims, self.coords
@@ -492,6 +517,10 @@ class UtilityMixin:
     
     def _dimshuffle_(self,
                     axes:AXIS_PERMUTATION=None):
+        r'''
+            Given an axes permutation, return the permuted dims and
+            coords of the structure. Generally used from transpositions
+        '''
         perm = axes if axes is not None else reversed(range(
             len((self.dims))))
         permuted_dims = [self.dims[i] for i in perm]
@@ -512,15 +541,18 @@ class NDArrayStructure(DataStructure, UtilityMixin):
         Object Properties:
         ------------------
         
-            - obj:numpy.typing.NDArray := The underlying `numpy.ndarray`
-              object
+            - | obj:numpy.typing.NDArray := The underlying
+                `numpy.ndarray` object
             
             - shape:tuple[int,...] := The shape of the object
             
-            - dims:DIMS := Dimensions of the object. A `numpy` vector of
-              labels of the dimensions / axes of the object. For numpy arrays defaults are typically used (since numpy arrays have no labels). The default names are 'dim_{i}' where i the integer indexer of the axis
+            - | dims:DIMS := Dimensions of the object. A `numpy` vector
+                of labels of the dimensions / axes of the object. For
+                numpy arrays defaults are typically used (since numpy
+                arrays have no labels). The default names are 'dim_{i}'
+                where i the integer indexer of the axis
             
-            - coords:COORDS := The coordinates of the object. Is a
+            - | coords:COORDS := The coordinates of the object. Is a
                 dictionary of strings, which are axes names (the same as
                 those of `dims`) mapped to numpy vectors of labels.
                 These are the labels of the 'steps' in each axis
@@ -529,30 +561,79 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             
             - dtype:np.dtype := The data type of the structure
             
-            - missing_nan_flag:Optional[bool] = None := Flag for
-              existence of   missing values. Should be set by the public
-              interface class
+            - | missing_nan_flag:Optional[bool] = None := Flag for the
+                existence of   missing values. Should be set by the
+                public interface class
               
         Object Methods:
         ---------------
         
-            - isna()
+            - | isna()->NDArrayStructure := Return a boolean
+                structure, of the same class and shape as the
+                original, whose elements are booleans indicating if
+                the corresponding element is nan or not. Unlike
+                `numpy.isnan` will work on objects but not strings
             
-            - any()
+            - | any(axis:Optional[int]=None)-> Union[bool,
+                NDArrayStructure] := If axis is `None` reduce via
+                element wise or the entire array. Else reduce over
+                the axis specified
             
-            - all()
+            - | all(axis:Optional[int]=None)-> Union[bool,
+                NDArrayStructure] := If axis is `None` reduce via
+                element wise and the entire array. Else reduce over
+                the axis specified
             
-            - transpose()
+            - | transpose(axis:Optional[tuple[int,...]]
+                )->NDArrayStructure := Return a transposed
+                structure. If axes is `None` reverses the
+                dimensions. If provided, `axis` should be a
+                permutation of the objects' axes (as a tuple),
+                defining the transposition
             
-            - iterrows()
+            - | iterrows()->(str, NDArrayStructure) := Returns an
+                iterator over the zeroth axis of the structure.
+                Yields tuples of coordinates to substructures.
+                Loosely equivalent to:
+                
+                .. code-block::
+                
+                    def iterrows(X:NDArrayStructure):
+                        for i in range(X.shape[0]):
+                            yield (X.coords[i], X[i,...])
             
-            - itercolumns()
+            - | itercolumns()->(str, NDArrayStructure) := Returns
+                an iterator over the first axis of the structure.
+                Yields tuples of coordinates to substructures.
+                Loosely equivalent to:
+                
+                .. code-block::
+                
+                    def iterrows(X:NDArrayStructure):
+                        for i in range(X.shape[1]):
+                            yield (X.coords[i], X[:,i,...])
             
-            - cast()
+            - | cast(dtype:numpy.dtype)->NDArrayStructure := Casts
+                the structure to the specified data type. Returns a
+                fresh DataStrcture object
             
-            - unique()
+            - | unique(axis:Optional[int]=None)->NDArrayStructure
+                := Return a unique values in the structure. If axis is provided, unique values will over the specified axis are returned. Else unique values over the entire structure are returned.  Is a Generator that yields unique values. If `axis=None` the Generator yields a single tuple of the form `(None, vals)` where `vals` is numpy vector of unique elements in the entire structure. If axis is provided, iterates over the specified axis yielding tuples of the form `(coordinate_label, vals)` where `coordinate_label` is the label coordinate of the current iteration. `vals` is a numpy vector of unique values in the resulting sub structure. Loosely equivalent to:
             
-            - mean()
+                .. code-block::
+                
+                    def unique(struct):
+                        i=0
+                        while True:
+                            try:
+                                crd = struct.coords[axis][i]
+                                vals = numpy.unique(struct.transpose(axis)[i,...])
+                                yield crd, vals
+                            except KeyError:
+                                raise StopIteration
+            
+            - | mean(axis:Optional[int]=None)->Union[
+                float,   NDArrayStructure] := Return the mean along the specified axis, or over the entire structure (if `axis=None`)
     '''
     
     def __init__(self, obj:Union[ndarray, DataStructure],
@@ -829,18 +910,18 @@ class DataFrameStructure(DataStructure, UtilityMixin):
                 the corresponding element is nan or not.
             
             - | any(axis:Optional[int]=None)-> Union[bool,
-                DataFrameStructure] := If axis is `None` reduce via
-                element wise or the entire array. Else reduce over
-                the axis specified
+                DataFrameStructure] := If axis is `None` reduce the
+                entire array via element wise or . Else reduce over the
+                axis specified
             
             - | all(axis:Optional[int]=None)-> Union[bool,
-                DataFrameStructure] := If axis is `None` reduce via
-                element wise and the entire array. Else reduce over
-                the axis specified
+                DataFrameStructure] := If axis is `None` reduce the
+                entire array via element wise and. Else reduce over the
+                axis specified
             
             - | transpose(axis:Optional[tuple[int,...]]
                 )->DataFrameStructure := Return a transposed
-                structure. If axes is `None` reverses the
+                structure. If axis is `None` reverses the
                 dimensions. If provided, `axis` should be a
                 permutation of the objects' axes (as a tuple),
                 defining the transposition
@@ -872,7 +953,20 @@ class DataFrameStructure(DataStructure, UtilityMixin):
                 fresh DataStrcture object
             
             - | unique(axis:Optional[int]=None)->DataFrameStructure
-                := Return a unique values in the structure. If axis is provided, unique values will over the specified axis are returned. Else unique values over the entire structure are returned
+                := Return a unique values in the structure. If axis is provided, unique values will over the specified axis are returned. Else unique values over the entire structure are returned. Is a Generator that yields unique values. If `axis=None` the Generator yields a single tuple of the form `(None, vals)` where `vals` is numpy vector of unique elements in the entire structure. If axis is provided, iterates over the specified axis yielding tuples of the form `(coordinate_label, vals)` where `coordinate_label` is the label coordinate of the current iteration. `vals` is a numpy vector of unique values in the resulting sub structure. Loosely equivalent to:
+                
+                    .. code-block::
+                    
+                        def unique(struct):
+                            i=0
+                            while True:
+                                try:
+                                    crd = struct.coords[axis][i]
+                                    vals = numpy.unique(struct.transpose(axis)[i,...])
+                                    yield crd, vals
+                                except KeyError:
+                                    raise StopIteration
+                                    
             
             - | mean(axis:Optional[int]=None)->DataFrameStructure :=
                 Return the mean along the specified axis, or over
@@ -909,12 +1003,16 @@ class DataFrameStructure(DataStructure, UtilityMixin):
     def __getitem__(self, obj:Union[str, int, Iterable]
                     )->Union[DataFrameStructure, np.ndarray]:
         r'''
-            Index slicing for CommonDataStructure objects. Index or 
-            label based slicing is supported in arbitary combinations.
-            DataStructure objects can be sliced with (nearly) any
-            combination of int, str, slice, list, None, Ellipsis.
-            Note label slicing is supported, however the `step` argument
-            must be blank or an integer, not a label. Example usage:
+            Index slicing for CommonDataStructure objects. 
+            
+            Index or label based slicing is supported in arbitary
+            combinations. DataStructure objects can be sliced with
+            (nearly) any combination of int, str, slice, list, None,
+            Ellipsis. Note label slicing is supported, however the
+            `step` argument must be blank or an integer, not a label. 
+            
+            Example usage:
+            
             .. code-block::
                 # Pseudo-code
                 obj = DataStructure()
@@ -928,13 +1026,25 @@ class DataFrameStructure(DataStructure, UtilityMixin):
                 obj["sample_0":"sample_10":"group"]
                 
             Returns:
-                - numpy.NDArray := If boolean indexing or an exact element
-                is selected i.e. `obj[1,0,1]` or `obj[obj.values>5]`
+            --------
+            
+                - | numpy.NDArray := If boolean indexing or an exact
+                  element is selected i.e. `obj[1,0,1]` or
+                  `obj[obj.values>5]`
                 
-                - DataStructure := Of the same type as the original. Note
-                is all cases where the resulting structure would have been
-                1-D or 0-D, a 2-D array is returned i.e. instead of
-                (9,) (1, 9) is returned
+                - | DataStructure := Of the same type as the original.
+                  Note is all cases where the resulting structure would
+                  have been 1-D or 0-D, a 2-D array is returned i.e.
+                  instead of (9,) (1, 9) is returned
+                  
+            Raises:
+            -------
+            
+                - | IndexError := If slicing is attempted with a
+                    non-integer step arguement.
+                    
+                - | Other errors bubbling up from numpy/pandas/xarray if
+                    specified label(s) were not found in the axis
         '''
         lookup = lambda dim ,e: int(np.where(
                         self.coords[dim]== e
@@ -1167,29 +1277,33 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             Args:
             -----
             
-                - axis:Optional[int]=None := The axis to compute the mean
-                over. If `None` (default), computes the mean over the entire
-                `DataFrame`. Values are `0` (mean over the rows), `1` (mean
-                over the columns) and `None` (mean of the entire array)
+                - | axis:Optional[int]=None := The axis to compute the
+                    mean over. If `None` (default), computes the mean
+                    over the entire `DataFrame`. Values are `0` (mean
+                    over the rows), `1` (mean over the columns) and
+                    `None` (mean of the entire array)
                 
-                - skipna:bool=True := If `True` ignores `NaN` values in the
-                dataframe. Else returns `NaN` for coordinates with at least one
-                `NaN`
+                - | skipna:bool=True := If `True` ignores `NaN` values
+                    in the dataframe. Else returns `NaN` for coordinates
+                    with at least one `NaN`
                 
-                - keepdims:bool=True := If `True` the axis over which the mean
-                is computed, is kept in the result with a single coordinate
-                named 'sum' (default), making the result correctly broadcastable
-                against the original. Otherwise, the result axis is reduced. Since
-                `ArrayStructure` object cannot be reduced past 2D the arguement
-                if effectively ignored and always `True` for DataFrames
+                - | keepdims:bool=True := If `True` the axis over which
+                    the mean is computed, is kept in the result with a
+                    single coordinate named 'sum' (default), making the
+                    result correctly broadcastable against the original.
+                    Otherwise, the result axis is reduced. Since
+                    `ArrayStructure` object cannot be reduced past 2D
+                    the arguement if effectively ignored and always
+                    `True` for DataFrames
                 
             Returns:
             ---------
             
-                - mean:float := The mean of the entire dataframe (`axis=None`)
+                - | mean:float := The mean of the entire dataframe
+                    (`axis=None`)
                 
-                - means:DataFrameStructure := A DataFrame with a single row
-                of means along the specified axis
+                - | means:DataFrameStructure := A DataFrame with a
+                    single row of means along the specified axis
                 
             Raises:
             -------
@@ -1323,7 +1437,19 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                     fresh DataStrcture object
                 
                 - | unique(axis:Optional[int]=None)->DataArrayStrcture
-                    := Return a unique values in the structure. If axis is provided, unique values will over the specified axis are returned. Else unique values over the entire structure are returned
+                    := Return a unique values in the structure. If axis is provided, unique values will over the specified axis are returned. Else unique values over the entire structure are returned.  Is a Generator that yields unique values. If `axis=None` the Generator yields a single tuple of the form `(None, vals)` where `vals` is numpy vector of unique elements in the entire structure. If axis is provided, iterates over the specified axis yielding tuples of the form `(coordinate_label, vals)` where `coordinate_label` is the label coordinate of the current iteration. `vals` is a numpy vector of unique values in the resulting sub structure. Loosely equivalent to:
+                
+                    .. code-block::
+                    
+                        def unique(struct):
+                            i=0
+                            while True:
+                                try:
+                                    crd = struct.coords[axis][i]
+                                    vals = numpy.unique(struct.transpose(axis)[i,...])
+                                    yield crd, vals
+                                except KeyError:
+                                    raise StopIteration
                 
                 - | mean(axis:Optional[int]=None)->DataArrayStructure :=
                     Return the mean along the specified axis, or over
@@ -1689,71 +1815,75 @@ class DataStructureInterface(ABC):
         Abstract Base Class for the external interface (The bridge 
         Abstraction)
         
-        Properties:
-        ------------
+        Object Properties:
+        ------------------
         
-            - data_structure:DataStructure := The core data structure
-            implementation
+            - | data_structure:DataStructure := The core data structure
+                implementation
             
-        Methods:
-        ---------
+        Object Methods:
+        ---------------
         
             Methods exposed by the tensor
         
-            - transpose(axis:Optional[AXES_PERMUTATION] = None) := 
-            Return a tranposed version of the object. Signature is the
-            same as numpy and must return the same default. Should
-            always return the same type of object. The T attribute is
-            an alias for this methods
+            - | transpose(axis:Optional[AXES_PERMUTATION] = None) :=
+                Return a tranposed version of the object. Signature is
+                the same as numpy and must return the same default.
+                Should always return the same type of object. The T
+                attribute is an alias for this methods
             
-            - isna(axis:Optional[int] = None) := Elementwise `isnan`.
-            Should default to returning the a boolean tensor of the same
-            shape as the original tensor. When `axis` is provided should
-            this is equivalent to an `any` operation over this axis. The
-            axis should be preseved in the return
+            - | isna(axis:Optional[int] = None) := Elementwise `isnan`.
+                Should default to returning the a boolean tensor of the
+                same shape as the original tensor. When `axis` is
+                provided should this is equivalent to an `any` operation
+                over this axis. The axis should be preseved in the
+                return
             
-            - any(axis:Optional[int] = None) := When `axis=None` perform
-            `any` over the entire array and return a boolean. Otherwise
-            perform the operation over the specified axis, preserving
-            the axis
+            - | any(axis:Optional[int] = None) := When `axis=None`
+                perform `any` over the entire array and return a
+                boolean. Otherwise perform the operation over the
+                specified axis, preserving the axis
             
-            - all(axis:Optional[int] = None) := When `axis=None` perform
-            `all` over the entire array and return a boolean. Otherwise
-            perform the operation over the specified axis, preserving
-            the axis
+            - | all(axis:Optional[int] = None) := When `axis=None`
+                perform `all` over the entire array and return a
+                boolean. Otherwise perform the operation over the
+                specified axis, preserving the axis
             
-            - iterrows() := Iterate over the first axis of the structure
-            Similar to `pandas.DataFrame.iterrows()`
+            - | iterrows() := Iterate over the first axis of the
+                structure. Similar to `pandas.DataFrame.iterrows()`
             
-            - itercolumns() := Iterate over the second axis of the 
-            structure. Similar to `pandas.DataFrame.itercolumns`
+            - | itercolumns() := Iterate over the second axis of the
+                structure. Similar to `pandas.DataFrame.itercolumns`
             
-            - __gettitem__(indexer) := Return the values specified by
-            the `indexer`. Mix and matching label and integer based
-            indexing is supported. If a slice is provided, the start and
-            stop arguments can be labels, but the step argument must be
-            an integer
+            - | __gettitem__(indexer) := Return the values specified by
+                the `indexer`. Mix and matching label and integer based
+                indexing is supported. If a slice is provided, the start
+                and stop arguments can be labels, but the step argument
+                must be an integer
             
-            - unique(axis=None) := Return all the unique values in the
-            tensor as a Generator that yields length 2 tuples. If 
-            axis is None the Generator yields a single tuple of the form
-            (None, values), where values is a vector of unique values.
-            If axis is provided, the generator iterates over the specified
-            dimention, yielding tuples of the form (label, values) where
-            values is a vector of unique values for the flattened subtensor.
+            - | unique(axis=None) := Return all the unique values in the
+                tensor as a Generator that yields length 2 tuples. If
+                axis is None the Generator yields a single tuple of the
+                form (None, values), where values is a vector of unique
+                values. If axis is provided, the generator iterates over
+                the specified dimention, yielding tuples of the form
+                (label, values) where values is a vector of unique
+                values for the flattened subtensor.
             
-            - mean(axis=None, keepdims=True, skipna=True) := Compute the
-            arithmetic mean along the specified axis (or the entire structure
-            if `None` - default). If `keepdims=True` the specified dimention
-            is kept in the result with a single coordinate named 'sum', making
-            the result correctly broadcastable to the original. Else the 
-            dimention is reduced. If `skipna=True` `NaN` values are ignored
-            else, all coordinates with at least one `NaN` will return `NaN`
+            - | mean(axis=None, keepdims=True, skipna=True) := Compute
+                the arithmetic mean along the specified axis (or the
+                entire structure if `None` - default). If
+                `keepdims=True` the specified dimention is kept in the
+                result with a single coordinate named 'sum', making the
+                result correctly broadcastable to the original. Else the
+                dimention is reduced. If `skipna=True` `NaN` values are
+                ignored else, all coordinates with at least one `NaN`
+                will return `NaN`
     
-            - ops := Elementwise operations '>', '<', '>=', '<=', '==', 
-            '!=' are delegated to the underlying library but a wrapped
-            object is returned for 'pointwise' operations, i.e. obj==5,
-            otherwise a boolean is returned
+            - | ops := Elementwise operations '>', '<', '>=', '<=',
+                '==',  '!=' are delegated to the underlying library but
+                a wrapped object is returned for 'pointwise' operations,
+                i.e. obj==5, otherwise a boolean is returned
     '''
     
     @property
@@ -2178,8 +2308,11 @@ class NANHandler(ABC):
 @dataclass
 class ImputeMissingNAN(NANHandler):
     r'''
-        Core class from missing data imputation strategy. Currently not
-        implemented and will raise
+        Imputation missing data handler
+        
+        Performs imputation, replacing missing `nan` values with dummy
+        ones that do not distort the underlying distribution.
+        NotImplemented and will raise
     '''
     
     def __call__(self, data: DataStructureInterface
@@ -2190,29 +2323,35 @@ class ImputeMissingNAN(NANHandler):
 @dataclass
 class ExcludeMissingNAN(NANHandler):
     r'''
-        Common use-case for missing value handling. Discards all coordinates
-        on the first dimention (i.e. rows) along which there are any missing 
-        values - updating the objects' metadata
+        Exclude missing values
+        
+        
+        Common use-case for missing value handling. Discards all
+        coordinates on the first dimention (i.e. rows) along which there
+        are any missing values - updating the objects' metadata
         
         Object Attributes:
-        --------------------
+        ------------------
         
-            - new_coords:Optional[COORDS]=None := Updated object coordinates
+            - | new_coords:Optional[COORDS]=None := Updated object
+                coordinates
             
-            - new_dims:Optional[DIMS]=None := Updated object dimentions
+            - | new_dims:Optional[DIMS]=None := Updated object
+                dimentions
             
-            - axis:int=0 := The dimention along which to exclude. Optional.
-            Defaults to 0 ('rows'). Currently no other options are implemeted
-            and other values are ignored.
+            - | axis:int=0 := The dimention along which to exclude.
+                Optional. Defaults to 0 ('rows'). Currently no other
+                options are implemeted and other values are ignored.
             
-            - constructor:Optional[DataStructure]=None := The DataStructure of
-            the object to convert after processing
+            - | constructor:Optional[DataStructure]=None := The
+                DataStructure of the object to convert after processing
             
             
         Object Methods:
         ----------------
-             - __call__(data:DataStructureInterface)->DataStructureInterface
-             := Handle missing values and return the updated object
+        
+             - | __call__(data:DataStructureInterface)->DataStructureInterface
+                 := Handle missing values and return the updated object
     
     '''
     
@@ -2221,9 +2360,13 @@ class ExcludeMissingNAN(NANHandler):
     axis:int = 0 # Unused
     constructor:Optional[DataStructure] = None
     
-    
     def __call__(self, data: DataStructureInterface
                  )->DataStructureInterface:
+        '''
+            Process the data and discard all coordinates along the first
+            axis whose subtensors have at least one missing value
+        '''
+        
         from copy import copy
         
         self.constructor = type(data._data_structure)
@@ -2257,14 +2400,14 @@ class IgnoreMissingNAN(NANHandler):
     r'''
         Identity strategy for nan handling the does nothing. 
         
-        Only included for completeness' sake. Returns the object 
+        Only included for completeness' sake. Returns the object
         unmodified
         
         Object Methods:
         ---------------
         
-            - __call__(data:DataStructureInterface)->DataStructureInterface :=
-            Returns the data unchanged
+            - | __call__(data:DataStructureInterface)->DataStructureInterface
+                := Returns the data unchanged
     '''
     
     def __call__(self, data: DataStructureInterface
@@ -2275,21 +2418,21 @@ class IgnoreMissingNAN(NANHandler):
 @dataclass(kw_only = True)
 class NANHandlingContext:
     r'''
-        Composite for missing values handling. Defines the external interface
+        Composite for missing values handling. Defines the external
+        interface
         
         Object Properties:
         --------------------
         
-            - nan_handler:NANHandler := The nan handling strategy to
-              apply
+            - | nan_handler:NANHandler := The nan handling strategy to
+                apply
             
         Object Methods:
         ------------------
         
-            - __call__(data:DataStructureInterface))->DataStructureInterace
-              :=
-                Delegate missing value handling to the handler and return
-                the results
+            - | __call__(data:DataStructureInterface))->DataStructureInterace
+              := Delegate missing value handling to the handler and
+              return the results
     '''
     _nan_strategy:Type[NANHandler] = ExcludeMissingNAN
     nan_handler:Optional[NANHandler] = None
@@ -2476,21 +2619,23 @@ class DataProcessingDirector:
         Object Attributes:
         ------------------
         
-            - processor:CommonDataProcessor := A reference to the class
-            that represents the data processor. Converted to an instance
-            on said class. Optional. Defaults to `CommonDataProcessor`
+            - | processor:CommonDataProcessor := A reference to the
+                class that represents the data processor. Converted to
+                an instance on said class. Optional. Defaults to
+                `CommonDataProcessor`
             
-            - nan_handler_context:NANHanderContext := The missing nan handler
+            - | nan_handler_context:NANHanderContext := The missing nan
+                handler
             
             
-            - processor_kwargs:dict = Keyword arguments to be forwarded to
-            the processor instance
+            - | processor_kwargs:dict = Keyword arguments to be
+                forwarded to the processor instance
             
         Object Methods:
         ----------------
         
-            - __call__(data:InputeData)->CommonDataStructureInterface := Call
-            the processor and return the pre processed data
+            - | __call__(data:InputeData)->CommonDataStructureInterface
+                := Call the processor and return the pre processed data
     '''
     
     processor:Union[Type[DataProcessor],
