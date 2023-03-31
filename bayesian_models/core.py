@@ -424,21 +424,48 @@ class ResponseFunctions:
 @dataclass(slots=True)
 class ResponseFunctionComponent:
     '''
-        Model component representing Response functions. Accepts response
-        functions specified via the `ResponseFunctions` class. Adds them
-        to the model and maintains an internal catalogue for variables added
-        as `variables`. Example usage:
+        Model component representing Response functions. 
+        
+        Accepts response functions specified via the `ResponseFunctions`
+        class. Adds them to the model and maintains an internal
+        catalogue for variables added as `variables`. 
+        
+        Example usage:
         
         .. code-block::
         
-            In [2]: res_comp = ResponseFunctionComponent(
-                ...:            ResponseFunctions(
-                ...:            functions = dict(exp = pymc.math.exp, 
-                ....:           tanh = pymc.math.tanh),
-                ...:            records = dict(exp=True, tanh=False),
-                ...:            application_targets = dict(exp="f", 
-                ....:           tanh="exp")
-                ...:            ))
+            res_comp = ResponseFunctionComponent(
+                ResponseFunctions(
+                    functions = dict(
+                        exp = pymc.math.exp, 
+                        tanh = pymc.math.tanh
+                    ),
+                    records = dict(exp=True, tanh=False),
+                    application_targets = dict(exp="f", 
+                    tanh="exp")
+                )
+            )
+        
+        Object Attributes:
+        ------------------
+        
+            - | responses:ResponseFunctions := A `ResponseFunctions`
+                object encapsulating all the response functions to be
+                added to the model
+            
+            - | variables:dict[str, Any] := A catalogue of variables
+                added to the model, stored as mappings of strings
+                (names) to references to the underlying object
+                
+        Object Methods:
+        ---------------
+        
+            - | __call__(modelvars:dict[str, Any])->None := Add
+                specified response functions to the model. Assumes a
+                `pymc.Model` context is open. Updates the `variables`
+                attribute. `modelvars` is the general catalogue of
+                variables present in the model as name:str to object
+                mappings (supplied by the builder)
     '''
     responses:ResponseFunctions
     variables:dict=field(init=False, default_factory=dict)
@@ -446,9 +473,33 @@ class ResponseFunctionComponent:
     def __call__(self, modelvars:dict[str,Any]):
         '''
             Add specified response functions to the model stack. 
+            
             `modelvars` is a general index of all the variables present
             in the model as a 'var_name':var_ref mapping. Supplied by
             the builder
+            
+            Args:
+            -----
+            
+                - | modelvars:dict[str, Any] := The catalogue of all
+                    variables present in the model. Contained as
+                    var_name:str = var_obj pairs. Should be supplied by
+                    the builder (who holds the master variable
+                    catalogue)
+                    
+            Returns:
+            --------
+            
+                - None
+                
+            Raises:
+            -------
+            
+                - | ValueError := If `modelvars` is not a valid
+                    dictionary
+                    
+                - | RuntimeError := If a specified target variable is
+                    not found in the model
         '''
         if modelvars is None or not isinstance( modelvars, dict):
             raise ValueError((
