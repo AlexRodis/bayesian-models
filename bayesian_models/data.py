@@ -618,7 +618,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 fresh DataStrcture object
             
             - | unique(axis:Optional[int]=None)->NDArrayStructure
-                := Return a unique values in the structure. If axis is provided, unique values will over the specified axis are returned. Else unique values over the entire structure are returned.  Is a Generator that yields unique values. If `axis=None` the Generator yields a single tuple of the form `(None, vals)` where `vals` is numpy vector of unique elements in the entire structure. If axis is provided, iterates over the specified axis yielding tuples of the form `(coordinate_label, vals)` where `coordinate_label` is the label coordinate of the current iteration. `vals` is a numpy vector of unique values in the resulting sub structure. Loosely equivalent to:
+                := Return unique values in the structure. If axis is provided, unique values over the specified axis are returned. Else unique values over the entire structure are returned.  Is a Generator that yields unique values. If `axis=None` the Generator yields a single tuple of the form `(None, vals)` where `vals` is numpy vector of unique elements in the entire structure. If axis is provided, iterates over the specified axis yielding tuples of the form `(coordinate_label, vals)` where `coordinate_label` is the label coordinate of the current iteration. `vals` is a numpy vector of unique values in the resulting sub structure. Loosely equivalent to:
             
                 .. code-block::
                 
@@ -656,6 +656,9 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     
     @property
     def values(self)->ndarray:
+        '''
+            Return the underlying structure as a `numpy.ndarray`
+        '''
         return self.obj
     
     def __eq__(self, obj):
@@ -738,6 +741,31 @@ class NDArrayStructure(DataStructure, UtilityMixin):
         
         
     def any(self, axis:Optional[int] = None, **kwargs):
+        r'''
+            Elementwise or across the structure.
+            
+            If `axis=None` return a single boolean across the entire
+            structure equivalent to `or` across the entire structure. If
+            `axis` is provided reduce the axis equivalent to elementwise
+            `or` across the axis
+            
+            Args:
+            ------
+            
+                - | axis:Optional[int]=None := The axis across which to
+                    operate. If  `None` operate across the entire
+                    structure
+                    
+            Returns:
+            --------
+            
+                - | any:bool := If `axis=None` a single boolean across
+                    the entire structure
+                    
+                - | anys:NDArrayStructure := If `axis` is an integer,
+                    return a structure with the axis reduced, operating
+                    along the axis
+        '''
 
         if axis is None:
             return self.obj.any(axis=axis, **kwargs)
@@ -749,7 +777,30 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                                     coords = ncoords)
 
     def all(self, axis: Optional[int] = None, **kwargs):
-        
+        r'''
+            Elementwise and across the structure.
+            
+            If `axis=None` return a single boolean across the entire
+            structure equivalent to `and` across the entire structure. If
+            `axis` is provided, operate across the axis, reducing it
+            
+            Args:
+            ------
+            
+                - | axis:Optional[int]=None := The axis across which to
+                    operate. If  `None` operate across the entire
+                    structure
+                    
+            Returns:
+            --------
+            
+                - | any:bool := If `axis=None` a single boolean across
+                    the entire structure
+                    
+                - | anys:NDArrayStructure := If `axis` is an integer,
+                    return a structure with the axis reduced, operating
+                    along the axis
+        '''
         if axis is None:
             return self.obj.all(**kwargs)
         else:
@@ -759,7 +810,28 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                                     coords = ncoords)
     
     def transpose(self, 
-                  axes:AXIS_PERMUTATION = None):
+                  axes:AXIS_PERMUTATION = None)->NDArrayStructure:
+        r'''
+            Transpose the tensor structure
+            
+            If `axes` is not provided, reverse the order of the axes. If
+            provided it should be a valid permutation of the structures'
+            axes, defining how the transposition should be performed
+            
+            Args:
+            -----
+            
+                - | axes:Optional[AXIS_PERMUTATION]=None := Define how
+                    the transposition operation should be performed. If
+                    `None` (default) reverse the order of the axes. If
+                    provided, it should be a valid permutation of the
+                    structures' axes, defining the transposition
+                    
+            Returns:
+            --------
+            
+                - | nobj:NDArrayStructure := The transposed object
+        '''
         tobj = self.obj.transpose(axes)
         permuted_dims, permuted_coords = self._dimshuffle_(axes)
         return NDArrayStructure(tobj,
@@ -769,6 +841,10 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     T = transpose
     
     def _warn_multidim_iter(self):
+        r'''
+            Warn if attempting to iterate over multidimentional
+            structure
+        '''
         from warnings import warn
         if self.rank >2:
             warn(("Warning! Attempting to iterate over multidimentional"
@@ -776,6 +852,15 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                   "warning"))
     
     def iterrows(self):
+        r'''
+            Iterate over the zeroth dimention of the structure
+            
+            Is a Generator that yields coordinates of the zeroth axis as
+            a tuple (coordinate:str, substructure). Coordinate is label
+            of the coordinate of the current iteration. `substructure`
+            are the values of the iteration, loosely equivalent to
+            `X[i,...]`.
+        '''
         self._warn_multidim_iter()
         ndims, ncoords = self._cut_dims_(0)
         for idx, row in enumerate(self.obj):
@@ -784,6 +869,15 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             )       
     
     def itercolumns(self):
+        r'''
+            Iterate over the zeroth dimention of the structure
+            
+            Is a Generator the yields coordinates of the first axis as
+            a tuple (coordinate:str, substructure). Coordinate is label
+            of the coordinate of the current iteration. `substructure`
+            are the values of the iteration, loosely equivalent to
+            `X[:,i,...]`.
+        '''
         self._warn_multidim_iter()
         ndims, ncoords = self._cut_dims_(1)
         swap = [1,0]+[i for i in range(2,self.rank)]
@@ -794,20 +888,61 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             )
             
             
-    def cast(self, dtype, **kwargs):
+    def cast(self, dtype:np.dtype, **kwargs):
+        r'''
+            Change the data type of the structure
+            
+            Args:
+            -----
+            
+                - | dtype:numpy.dtype := The `dtype` to convert the
+                    structure to
+                    
+                - | **kwargs:dict[str, Any] := Keyword arguements to be
+                    forwarded to `.astype`. See the `numpy` docs for more information
+                    
+            Returns:
+            --------
+            
+                - | nstruct:NDArrayStructure := The structure converted
+                    to the specified `dtype`
+        '''
         return NDArrayStructure(
             self.obj.astype(dtype, **kwargs),
             dims = self.dims, coords = self.coords, dtype=dtype
         )
         
-    def unique(self, axis:Optional[int]=None):
+    def unique(self, axis:Optional[int]=None)->tuple[
+        Optional[np.ndarray[str]], ndarray ]:
         r'''
+            Return the unique element in the structure.
+        
             Return unique values of the NDArrayStructure as Generator
             of length 2 tuples. When axis is None, the generator yields
             a single tuple of (None, vals) where vals are all the unique
             values in the array. When axis is specified, the Generator
             iterates over the specified axis, yielding tuples of label,
-            unique_values
+            unique_values.
+            
+            Args:
+            -----
+            
+                - | axis:Optional[int]=None := The axis along which to
+                    return unique values. If `None`, return unique elements along the entire structure
+                    
+            Yields:
+            --------
+            
+                - | unique:tuple[None, np.ndarray] := If `axis=None`
+                    yield a single typle of (None, val_array), where
+                    `val_array` a `numpy` vector of all unique elements
+                    in the structure
+                    
+                - | unique:tuple[np.ndarray[str], np.ndarray] := If
+                    `axis` is provided yield tuples of (coordinate,
+                    values). `coordinate` is the current value of the
+                    coordinate. `values` is a `numpy` vector of unique
+                    values along the coordinate
         '''
         if axis is None:
             yield (None, np.unique(self._obj))
@@ -826,25 +961,29 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             Args:
             ------
             
-                - axis:Optional[int]=None : = When `axis=None` return the scalar 
-                mean of the entire structure (default). Otherwise computes 
-                the mean along the specified axis.
+                - | axis:Optional[int]=None : = When `axis=None` return
+                    the scalar mean of the entire structure (default).
+                    Otherwise computes the mean along the specified
+                    axis.
                 
-                - keepdims:bool=True := If `keepdims=True` the dimention is maintained 
-                in the resulting structure with a single coordinate named 
-                'sum' (default). Otherwise, the dimention is reduced and 
-                removed from the resulting structure. 
+                - | keepdims:bool=True := If `keepdims=True` the
+                    dimention is maintained in the resulting structure
+                    with a single coordinate named 'sum' (default).
+                    Otherwise, the dimention is reduced and removed from
+                    the resulting structure. 
                 
-                - skipna:bool=True :=  If `skipna=True` `NaN` values will be 
-                ignored in the result, otherwise `NaN` is returned for 
-                coordinates with at least one `NaN`
+                - | skipna:bool=True :=  If `skipna=True` `NaN` values
+                    will be ignored in the result, otherwise `NaN` is
+                    returned for coordinates with at least one `NaN`
                 
             Returns:
             ---------
             
-                - nstruct:NDArray := Returns a new NDArrayStructure of means
+                - | nstruct:NDArray := Returns a new NDArrayStructure of
+                    means
                 
-                - mean:float := If `axis=None` the mean of the entire structure
+                - | mean:float := If `axis=None` the mean of the entire
+                    structure
         '''
         results:Union[NamedTuple, float] = super().__mean__(
             self._obj, axis=axis, keepdims=keepdims, skipna=skipna
