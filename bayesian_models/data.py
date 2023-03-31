@@ -728,8 +728,11 @@ class NDArrayStructure(DataStructure, UtilityMixin):
         r'''
             Check if the structure has missing or `nan` values
             
+            This implementation works with `object` dtypes but not
+            strings. Returns a structure of booleans showing if the
+            respective element is `nan` or not
         '''
-        return NDArrayStructure(np.isnan(self.obj),
+        return NDArrayStructure(super().__isna__(self._obj),
                                 coords = self.coords,
                                 dims = self.dims)
         
