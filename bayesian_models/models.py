@@ -176,7 +176,7 @@ class ModelIOHandler:
         
         Example usage:
         
-            .. code-block::
+            .. code-block:: python
             
                 # Create and train a model
                 

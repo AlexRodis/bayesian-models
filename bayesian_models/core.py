@@ -56,7 +56,7 @@ class Distribution:
         
         Example usage:
         
-        .. code-block::
+        .. code-block:: python
         
             dist = Distribution(
                 dist = pymc.Normal, name = 'some_name', dist_args = (0,
@@ -136,7 +136,7 @@ def distribution(dist:pymc.Distribution,name:str,
         
         Example usage:
         
-        .. code-block::
+        .. code-block:: python
         
             distribution(pymc.Normal, 'W', 0,1)
             # Equivalent to Distribution(dist = pymc.Normal, 
@@ -180,7 +180,7 @@ class FreeVariablesComponent:
         
         Example usage:
         
-            .. code-block::
+            .. code-block:: python
             
                 fvars = FreeVariablesComponent(
                         dict( sigma = Distribution(name='sigma',
@@ -272,7 +272,7 @@ class ResponseFunctions:
         reasonable inference can be made for the transform function
         instead. Example usage:
         
-        .. code-block::
+        .. code-block:: python
         
             # Pass all parameters explicitly (recommended)
             
@@ -432,7 +432,7 @@ class ResponseFunctionComponent:
         
         Example usage:
         
-        .. code-block::
+        .. code-block:: python
         
             res_comp = ResponseFunctionComponent(
                 ResponseFunctions(
@@ -537,7 +537,7 @@ class ModelAdaptorComponent:
         
         Example usage:
         
-        .. code-block::
+        .. code-block:: python
         
             adaptor = ModelAdaptorComponent(
                 record = True, # Keep the new variables as 
@@ -618,7 +618,7 @@ class LikelihoodComponent:
         
         Example usage:
         
-        .. code-block::
+        .. code-block:: python
         
             like = LikelihoodComponent(
                 name = 'y_obs', # Default likelihood name observed =
@@ -725,7 +725,7 @@ class CoreModelComponent:
         
         Example usage:
         
-        .. code-block::
+        .. code-block:: python
         
             core = CoreModelComponent(
                         distributions = dict(
@@ -953,7 +953,7 @@ class BESTCoreComponent(CoreModelComponent):
         
         Example Usage:
         
-        .. code-block::
+        .. code-block:: python
         
             core_dists = dict(
                             ν = distribution(
@@ -1346,7 +1346,7 @@ class ModelDirector:
         
         Example usage:
         
-        .. code-block::
+        .. code-block:: python
         
             # Will not work with empty objects. All except the first
             # two arguments are optional and can be ignored

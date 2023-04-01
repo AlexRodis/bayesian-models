@@ -93,7 +93,7 @@ class DataStructure(ABC):
                 step argument only accept integers and raise otherwise.
                 All of the following should be valid:
                 
-                .. code-block::
+                .. code-block:: python
                 
                    obj[5,6] obj["sample_0", 7] obj["sample_7":10:1, ...]
                    obj[[6,9], "var1":10:2,...]
@@ -383,7 +383,7 @@ class DataStructure(ABC):
             `step` argument must be blank or an integer, not a label.
             Example usage:
             
-            .. code-block::
+            .. code-block:: python
             
                 # Pseudo-code
                 obj = DataStructure()
@@ -596,7 +596,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 Yields tuples of coordinates to substructures.
                 Loosely equivalent to:
                 
-                .. code-block::
+                .. code-block:: python
                 
                     def iterrows(X:NDArrayStructure):
                         for i in range(X.shape[0]):
@@ -607,7 +607,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 Yields tuples of coordinates to substructures.
                 Loosely equivalent to:
                 
-                .. code-block::
+                .. code-block:: python
                 
                     def iterrows(X:NDArrayStructure):
                         for i in range(X.shape[1]):
@@ -661,7 +661,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             
             Example usage:
             
-            .. code-block::
+            .. code-block:: python
 
                 import numpy as np
                 from bayesian_models.data import NDArrayStructure
@@ -770,7 +770,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             
             Example usage:
             
-            .. code-block::
+            .. code-block:: python
             
                 import numpy as np
                 from bayesian_models.data import NDArrayStructure
@@ -812,7 +812,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             
             Example usage:
             
-            .. code-block::
+            .. code-block:: python
             
                 import numpy as np
                 from bayesian_models.data import NDArrayStructure
@@ -875,7 +875,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             
             Example usage:
             
-                .. code-block::
+                .. code-block:: python
                 
                     import numpy as np
                     from bayesian_models.data import NDArrayStructure
@@ -936,7 +936,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             
             Example usage
             
-            .. code-block::
+            .. code-block:: python
 
                 import numpy as np
                 from bayesian_models.data import NDArrayStructure
@@ -1079,7 +1079,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             
             Example usage:
             
-            .. code-block::
+            .. code-block:: python
 
                 import numpy as np
                 from bayesian_models.data import NDArrayStructure
@@ -1124,7 +1124,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             
             Example usage:
             
-            .. code-block::
+            .. code-block:: python
 
                 import numpy as np
                 from bayesian_models.data import NDArrayStructure
@@ -1291,7 +1291,7 @@ class DataFrameStructure(DataStructure, UtilityMixin):
                 Yields tuples of coordinates to substructures.
                 Loosely equivalent to:
                 
-                .. code-block::
+                .. code-block:: python
                 
                     def iterrows(X:pandas.DataFrame):
                         for i in range(X.shape[0]):
@@ -1302,7 +1302,7 @@ class DataFrameStructure(DataStructure, UtilityMixin):
                 Yields tuples of coordinates to substructures.
                 Loosely equivalent to:
                 
-                .. code-block::
+                .. code-block:: python
                 
                     def iterrows(X:pandas.DataFrame):
                         for i in range(X.shape[1]):
@@ -1315,7 +1315,7 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             - | unique(axis:Optional[int]=None)->DataFrameStructure
                 := Return a unique values in the structure. If axis is provided, unique values will over the specified axis are returned. Else unique values over the entire structure are returned. Is a Generator that yields unique values. If `axis=None` the Generator yields a single tuple of the form `(None, vals)` where `vals` is numpy vector of unique elements in the entire structure. If axis is provided, iterates over the specified axis yielding tuples of the form `(coordinate_label, vals)` where `coordinate_label` is the label coordinate of the current iteration. `vals` is a numpy vector of unique values in the resulting sub structure. Loosely equivalent to:
                 
-                    .. code-block::
+                    .. code-block:: python
                     
                         def unique(struct):
                             i=0
@@ -1373,7 +1373,7 @@ class DataFrameStructure(DataStructure, UtilityMixin):
             
             Example usage:
             
-            .. code-block::
+            .. code-block:: python
                 # Pseudo-code
                 obj = DataStructure()
                 obj[5]
@@ -1775,7 +1775,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                     Yields tuples of coordinates to substructures.
                     Loosely equivalent to:
                     
-                    .. code-block::
+                    .. code-block:: python
                     
                         def iterrows(X:xarray.DataArray):
                             for i in range(X.shape[0]):
@@ -1786,7 +1786,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                     Yields tuples of coordinates to substructures.
                     Loosely equivalent to:
                     
-                    .. code-block::
+                    .. code-block:: python
                     
                         def iterrows(X:xarray.DataArray):
                             for i in range(X.shape[1]):
@@ -1799,7 +1799,7 @@ class DataArrayStructure(DataStructure, UtilityMixin):
                 - | unique(axis:Optional[int]=None)->DataArrayStrcture
                     := Return a unique values in the structure. If axis is provided, unique values will over the specified axis are returned. Else unique values over the entire structure are returned.  Is a Generator that yields unique values. If `axis=None` the Generator yields a single tuple of the form `(None, vals)` where `vals` is numpy vector of unique elements in the entire structure. If axis is provided, iterates over the specified axis yielding tuples of the form `(coordinate_label, vals)` where `coordinate_label` is the label coordinate of the current iteration. `vals` is a numpy vector of unique values in the resulting sub structure. Loosely equivalent to:
                 
-                    .. code-block::
+                    .. code-block:: python
                     
                         def unique(struct):
                             i=0
@@ -2046,7 +2046,9 @@ class DataArrayStructure(DataStructure, UtilityMixin):
             combination of int, str, slice, list, None, Ellipsis.
             Note label slicing is supported, however the `step` argument
             must be blank or an integer, not a label. Example usage:
-            .. code-block::
+            
+            .. code-block:: python 
+                
                 # Pseudo-code
                 obj = DataStructure()
                 obj[5]
@@ -2346,8 +2348,8 @@ class CommonDataStructureInterface(DataStructureInterface):
         Object Attributes:
         ------------------
             
-            - | implementor:Type[DataStructure] := Class reference to the type
-                of implementor
+            - | implementor:Type[DataStructure] := Class reference to
+                the type of implementor
                 
                 .. caution::
                     This attribute is deprecated and scheduled for removal
@@ -2355,6 +2357,7 @@ class CommonDataStructureInterface(DataStructureInterface):
         
         Object Properties:
         ------------------
+        
             - | data_structure:DataStructure := The core data structure
                 implementation
             
@@ -2364,14 +2367,14 @@ class CommonDataStructureInterface(DataStructureInterface):
             
             - dims:numpy.ndarray := Labels for the axes of the structure
             
-            - | coords:dict[str, numpy.ndarray] := Labels for the coordinates
-                of the structure. Stored as dictionary mapping axes labels to
-                numpy arrays of labels in that axes. Keys should match
-                elements of the `dims` property
+            - | coords:dict[str, numpy.ndarray] := Labels for the
+                coordinates of the structure. Stored as dictionary
+                mapping axes labels to numpy arrays of labels in that
+                axes. Keys should match elements of the `dims` property
             
-            - | values:numpy.ndarray := The underlying numpy array structure.
-                Usefull for unpacking the structure for other software (like
-                `pymc`)
+            - | values:numpy.ndarray := The underlying numpy array
+                structure. Usefull for unpacking the structure for other
+                software (like `pymc`)
          
         Object Methods:
         ----------------
@@ -2442,7 +2445,7 @@ class CommonDataStructureInterface(DataStructureInterface):
                 (or None) all others can be any mix of label and index
                 based indexers. For example:
             
-                    .. code-block::
+                    .. code-block:: python
                     
                         obj[0,0,0] obj[:5:2, "var1",0]
                         obj['sample_0':'sample_10':2, 5,...]
@@ -3023,41 +3026,42 @@ class Data:
         Class Attributes:
         ------------------
         
-            - | nan_handlers:set[str]=['exlude', 'impute', 'ignore'] := Valid
-                strategies for missing value handling
+            - | nan_handlers:set[str]=['exlude', 'impute', 'ignore'] :=
+                Valid strategies for missing value handling
             
-            - | input_types:set[str]=['ndarray', 'DataFrame', 'DataArray'] :=
-                Supported input data structures
+            - | input_types:set[str]=['ndarray', 'DataFrame',
+                'DataArray'] := Supported input data structures
             
         Object Attributes:
         -------------------
             
             - | nan_handling:str='exclude' := The missing data handling
                 strategy. Has to be one of Data.nan_handlers. Optional.
-                Defaults to 'exclude' and discards all axis=0 coordinates with
-                missing values (i.e rows).
+                Defaults to 'exclude' and discards all axis=0
+                coordinates with missing values (i.e rows).
             
-            - | cast:Any := A data type to force-cast the data to. Optional.
-                Defaults to `numpy.float32`. Set to `None` to disable casting
+            - | cast:Any := A data type to force-cast the data to.
+                Optional. Defaults to `numpy.float32`. Set to `None` to
+                disable casting
             
-            - | type_spec:dict={} := Dictionary specification data validation
-                across the second dimention. Keys should be coordinates
-                (labels) along the second axis(=1) and values should be valid
-                numpy dtypes. Currently ignored
+            - | type_spec:dict={} := Dictionary specification data
+                validation across the second dimention. Keys should be
+                coordinates (labels) along the second axis(=1) and
+                values should be valid numpy dtypes. Currently ignored
             
-            - | casting_kwargs:dict={} := Optional keyword arguments to be
-                forwarded to the type caster. Optional. Defaults to an empty
-                dict. See the `numpy` documentation for further details.
-                Ignored if `cast=None`
+            - | casting_kwargs:dict={} := Optional keyword arguments to
+                be forwarded to the type caster. Optional. Defaults to
+                an empty dict. See the `numpy` documentation for further
+                details. Ignored if `cast=None`
             
             - | processor:Type[DataProcessor]=CommonDataProcessor := The
                 processor to be used for data processing. Optional and
-                defaults to the generic data processor. Can be overriden to
-                customized with a user specified processor that subclasses
-                `DataProcessor` or `CommonDataProcessor`
+                defaults to the generic data processor. Can be overriden
+                to customized with a user specified processor that
+                subclasses `DataProcessor` or `CommonDataProcessor`
             
-            - | process_director:Optional[DataProcessDirector] := The director
-                for data processing. Optional
+            - | process_director:Optional[DataProcessDirector] := The
+                director for data processing. Optional
             
             - | nan_handler:Optional[NANHandler]=None := The class that
                 handles missing values. None only when unset
@@ -3065,8 +3069,8 @@ class Data:
         Object Methods:
         ----------------
         
-            - | __call__(data:InputData) := Process the data and return the
-                result
+            - | __call__(data:InputData) := Process the data and return
+                the result
     
     '''
 
@@ -3105,15 +3109,15 @@ class Data:
             Returns:
             -------
             
-                - processed:DataStructureInterface := Container for the
-                processed and harmonized data
+                - | processed:DataStructureInterface := Container for
+                    the processed and harmonized data
                 
             Raises:
             -------
             
-                - ValueError := (1) If the objects' type is not included
-                as one of the valid options, (2) if `nan_handling` is not a
-                valid option
+                - | ValueError := (1) If the objects' type is not
+                    included as one of the valid options, (2) if
+                    `nan_handling` is not a valid option
         '''
         inpt_type:str = str(type(data)).split(".")[-1].strip(">`'")    
         if inpt_type not in Data.input_types:
