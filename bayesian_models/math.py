@@ -17,7 +17,7 @@ def ReLU(x, leak:float=.0):
 
         .. math::
 
-            f(x)= max(leak, x)
+            f(x)\triangleq max(leak, x)
 
         NOTE: With leak=0 this is the standard ReLU function. With
         leak a small number i.e. 1e-2 this is Leaky ReLU. Otherwise this
@@ -48,7 +48,7 @@ def ELU(x, alpha:float=1.0):
 
         .. math::
 
-            f(x) = \begin{cases}
+            f(x) \triangleq \begin{cases}
                     x & x \gt 0 \\
                     \alpha (e^x-1) &\text{if } b \\
                     \end{cases}
@@ -77,7 +77,7 @@ def SWISS(x, beta:float=1):
 
         .. math::
 
-            f(x)=x sigmoid(\beta x)
+            f(x) \triangleq x sigmoid(\beta x)
 
         NOTE: This implementation is equivalent to the 'Swiss-1' activation
         function, where :math:`\beta` is **not** learned. The original
@@ -119,7 +119,7 @@ def SiLU(x):
 
         .. math::
 
-            f(x)\triangleq x \sigma (x)
+            f(x) \triangleq x \sigma (x)
         
         Args:
         -----

@@ -1,3 +1,4 @@
+.. _BEST Theory:
 Bayesian Estimation Superceeds The t Test (BEST) 
 *************************************************
 

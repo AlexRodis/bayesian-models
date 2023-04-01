@@ -412,30 +412,33 @@ class BESTBase:
                 These defaults are not sensible for most applications.
                 [0.1-10] boundaries are implemented as defaults instead
                 
-            - | ν_λ:float = 1/29.0 := Exponential decay parameter for the `ν`
-                prior
+            - | ν_λ:float = 1/29.0 := Exponential decay parameter for
+                the `ν` prior
             
-            - | ν_offset:float = 1 := Offset parameter for the `ν` prior.
-                Since :math:`ν\in \[1,+\infty\)` this should be left unchanged
+            - | ν_offset:float = 1 := Offset parameter for the `ν`
+                prior. Since :math:`\nu \in [1,+ \infty])` this should
+                be left unchanged
                 
-            - | ddof:int = 1 := Degrees of freedom parameter for empirical
-                pooled standard deviations
+            - | ddof:int = 1 := Degrees of freedom parameter for
+                empirical pooled standard deviations
             
             - | std_diffusion_factor:int = 2 := Scalar multiplier for
                 empirical pooled standard deviations on the `μ` prior.
                 Controls how diffuse the prior is
             
-            - | zero_offset:float = 1e-4 := Small offset parameter to avoid
-                numerical errors with pooled standard deviations
+            - | zero_offset:float = 1e-4 := Small offset parameter to
+                avoid numerical errors with pooled standard deviations
             
-            - | jax_device:str = 'gpu' := `numpyro` parameter for alternate
-                sampling. Controls which device `numpyro` will use
+            - | jax_device:str = 'gpu' := `numpyro` parameter for
+                alternate sampling. Controls which device `numpyro` will
+                use
             
             - | jax_device_count: int =1 := `numpyro` setting. Number of
                 devices to be used for HMC sampling (parallel)
                 
             .. attention::
-                Due to persistent problems with the `numpyro` dependency these parameters are ignored
+                Due to persistent problems with the `numpyro` dependency
+                these parameters are ignored
     '''
     WarperFunction = Callable[[pd.DataFrame], pd.Series]
     std_upper:float = 1e1
@@ -453,9 +456,14 @@ class BEST(BESTBase):
     r'''
         Bayesian Group difference estimation with pymc.
         
-        The implementation is based on the official pymc documentation.
+        Kruschke's `Bayesian Estimation Superceeds the t-Test (BEST)        <https://pubmed.ncbi.nlm.nih.gov/22774788/>`_ model
+        implementation for estimating differences between groups. The
+        implementation is based on the `official pymc documentation
+        <https://www.pymc.io/projects/examples/en/latest/case_studies/BEST.html>`_.
+        
         The model assumes StudentT likelihood over observations for
-        added robustness.
+        added robustness. See the discussions section :ref:`BEST Theory`
+        for a more in depth explanation and motivation for this model
         
         Class Attributes:
         -----------------
@@ -483,8 +491,8 @@ class BEST(BESTBase):
                 the `ν` prior
             
             - | ν_offset:float = 1 := Offset parameter for the `ν`
-                prior. Since :math:`ν\in \[1,+\infty\)` this should be
-                left unchanged
+                prior. Since :math:`\nu \in [1,+ \infty])` this should
+                be left unchanged
                 
             - | ddof:int = 1 := Degrees of freedom parameter for
                 empirical pooled standard deviations
@@ -504,21 +512,23 @@ class BEST(BESTBase):
                 devices to be used for HMC sampling (parallel)
                 
             .. attention::
-                Due to persistent problems with the `numpyro` dependency these parameters are ignored
+                Due to persistent problems with the `numpyro` dependency
+                these parameters are ignored
             
-        Object Attrs:
-        -------------
+        Object Attributes:
+        ------------------
         
-            - | group_var:`pandas.Index` := Coordinate label for the
+            - | group_var:str := Coordinate label for the
                 categorical variable to group by
                 
                 .. danger::
                 
                     Due to issues with the underlying `pymc`
-                    implementation and limitations of `pymc.isnan` the
+                    implementation and limitations of `numpy.isnan` the
                     categorical variables' levels should be recorded as
-                    something castable to a float. It is recommended
-                    that a `pandas.DataFrame` be used instead
+                    something castable to a float, if numpy array is
+                    used to store the data. It is recommended that a
+                    `pandas.DataFrame` be used instead
             
             - | effect_magnitude:bool=False := Whether to compute an
                 'effect size' during inference. This metric is somewhat
@@ -540,7 +550,7 @@ class BEST(BESTBase):
                 assumption that all input dimensions have the same shape
                 parameter `ν`. Else, assign distinct shape parameters to
                 all dimensions of the input array. Optional. Defaults to
-                True. If switched off, warns of likely unidentifiable
+                True. If switched off, warns of likely unidentified
                 model.
 
             - | multivariate_likelihood:bool=True := Flag signaling
@@ -551,55 +561,63 @@ class BEST(BESTBase):
                 .. note::
                     The multivariate likelihood is always assumed to have a diagonal scale matrix. Hence this option is equivalent to independent univariates with the common degrees of freedom assumption, but is more computationally expensive and should be avoided
             
-            - | save_name:Optional[str]=None := A string specifying location
-                and filename to save the model's inference results. Optional.
-                If set during objects' construction, the `save` method may be
-                called without an explicit `save_path` argument.
-            
+            - | save_name:Optional[str]=None := A string specifying
+                location and filename to save the model's inference
+                results. Optional. If set during objects' construction,
+                the `save` method may be called without an explicit
+                `save_path` argument.
             
             
             - | idata:Optional[arviz.InferenceData]=None :=
-                `arviz.InferenceData` object containing the results of model
-                inference. Becomes set after calling the `fit` method
+                `arviz.InferenceData` object containing the results of
+                model inference. Becomes set after calling the `fit`
+                method
             
-            - | trained:bool=False := Sentinel signaling whether the model has
-                been trained or not. Defaults to False. Should be switched on
-                after calling `fit`. Prevents `predict` from being called on an object that has not been trained.
+            - | trained:bool=False := Sentinel signaling whether the
+                model has been trained or not. Defaults to False. Should
+                be switched on after calling `fit`. Prevents `predict`
+                from being called on an object that has not been
+                trained.
 
-            - | initialized:bool=False := Sentinel signaling whether the model
-                has been full initialized. Defaults to False. Should be set
-                after the object is called. Prevents `fit` and `predict` from being called prior to complete initialization.
+            - | initialized:bool=False := Sentinel signaling whether the
+                model has been full initialized. Defaults to False.
+                Should be set after the object is called. Prevents `fit`
+                and `predict` from being called prior to complete
+                initialization.
                 
-            Private Attributes:
-            ===================
+        Private Attributes:
+        ===================
 
-            - | var_names:dict[str:list[str]] := A dictionary with the
-                'means', 'stds' and 'effect_magnitude' keys, mapped to lists
-                of the variables
+            - | var_names:dict[str:list[str]] := A dictionary with
+                the 'means', 'stds' and 'effect_magnitude' keys,
+                mapped to lists of the variables
 
-            - | _permutations:Optional[Iterable[tuple[str,str]]]=None := An
-                iterable of groups per `group_var`. Contains all unique pairs
-                of unique values of `group_var`.
+            - | _permutations:Optional[Iterable[tuple[str,str]]]=None
+                := An iterable of groups per `group_var`. Contains
+                all unique pairs of unique values of `group_var`.
 
             - | _n_perms:Optional[int]=None := The number of groups.
 
-            _ | levels:Optional[Iterable[str]]=None:=Group levels       corresponding to all unique values of `group_var`.
+            - | levels:Optional[Iterable[str]] = None := Grouping
+                variable levels. All unique values of `group_var`.
 
-            - _ndims:Optional[int]=None := Number of input features. Only
-              meaningful if `common_shape` is `False`.
+            - | _ndims:Optional[int]=None := Number of input
+                features. Only meaningful if `common_shape` is
+                `False`.
 
             - | num_levels:Optional[int]=None := The number of unique
                 groups/ values of `group_var`.
 
-            - | coords := dict-like of dimension labels `xarray` coords.
-                Will be inferred from inputs and used to label the
-                posterior
+            - | coords := dict-like of dimension labels `xarray`
+                coords. Will be inferred from inputs and used to
+                label the posterior
 
             - | _group_distributions:Optional[Dict[str,
                 pymc.Distribution]]=None := A dict used internally to
                 map inferred distributions. Defaults to None.
 
-            - | _model:Optional[pymc.Model] := The `pymc.Model` object
+            - | _model:Optional[pymc.Model] := The `pymc.Model`
+                object
 
         Object Methods:
         ---------------
@@ -607,22 +625,30 @@ class BEST(BESTBase):
             - | __init__:= Begin initializing the object by setting all
                 options, parameters and hyperparameters
             
-            - | __call__(data) := Initialize the model by specifying the full
-                probability model accords to options passed to
-                `__init__`. Accepts a data structure and a label indicating the variable that defines the groups
+            - | __call__(data) := Initialize the model by specifying the
+                full probability model according to options passed to
+                `__init__`. Accepts a data structure and a label
+                indicating the variable that defines the groups
 
-            - | fit(sampler, *args, **kwargs) := Perform inferece on the
-                model. `sampler` is valid sampler, i.e. `pymc.sample` or
+            - | fit(sampler, *args, **kwargs) := Perform inference on
+                the model. `sampler` is valid sampler, i.e.
+                `pymc.sample` or
                 `pymc.sampling.jax.sample_numpyro_nuts`. All other
-                arguements are forwarded to the sampler. Returns a
+                arguments are forwarded to the sampler. Returns a
                 `arviz.InferenceData` object containing the results of
                 inference. Sets the `trained` and `idata` attributes
 
-            - | predict(var_names:Iterable[str], ropes:Iterable[tuple[float,
-                float]], hdis=Iterable[float])->dict[str, pandas.DataFrame]
-                := Compute results of group comparisons and return a
+            - | predict(var_names:Iterable[str],
+                ropes:Iterable[tuple[float, float]],
+                hdis=Iterable[float])->dict[str, pandas.DataFrame] :=
+                Compute results of group comparisons and return a
                 dictionary mapping derived metrics to
-                `pandas.DataFrame`s containing inference summary. Decisions are made using the `ROPE+HDI` rule. Returns a dictionary mapping derived variable labelss to pandas DataFrames containing the results. Accepts per variable rope limits and hdis. See the function for more details on these and other options
+                `pandas.DataFrame` objects containing inference summary.
+                Decisions are made using the `ROPE+HDI` rule. Returns a
+                dictionary mapping derived variable labels to pandas
+                DataFrames containing the results. Accepts per variable
+                rope limits and hdis. See the function for more details
+                on these and other options
 
             - | summary := Wrapper for `arviz.summary`. Returns summary
                 results of model inference
@@ -632,6 +658,9 @@ class BEST(BESTBase):
 
             - | plot_trace := Wrapper for `arviz.plot_trace`. Plot
                 inference results
+                
+            Private Methods:
+            ================
 
             - | _consistency_checks_ := Check that model parameters and
                 hyperparameters are consistent and compatible
@@ -646,6 +675,7 @@ class BEST(BESTBase):
         
         Class Methods:
         --------------
+        
             Setters for all class attributes. Named set_attribute
 
             - | set_std_upper(val:float)->None := Update the
@@ -656,6 +686,10 @@ class BEST(BESTBase):
             
             - | set_shape_offset(val:float)->None := Update the
                 `ν_offset` class attribute
+                
+                .. caution::
+                    
+                    Should generally not be modified
             
             - | set_jax_device(device:str)->None := Update the
                 `jax_device` class attribute
@@ -756,6 +790,11 @@ class BEST(BESTBase):
         
         
     def __post_init__(self)->None:
+        r'''
+            Post init actions
+            
+            Initialize handler objects and validate options
+        '''
         self._data_processor = Data(
             nan_handling = self.nan_handling,
             cast = self.cast,
@@ -791,10 +830,11 @@ class BEST(BESTBase):
     
     def _preprocessing_(self, data):
         r'''
-            Handled data preprocessing steps by 1. checking and 
-            handling missing values, 2. collapsing multiindices
-            3. extracting groups, 4. extracting feature labels
-            (coordinates)
+            Handled data preprocessing steps by 
+            
+            1. checking and handling missing values
+            3. extracting groups, 
+            4. extracting feature labels (coordinates)
             
             Args:
             -----
@@ -933,31 +973,31 @@ class BEST(BESTBase):
             Args:
             -----
                 
-                - data:pandas.DataFrame:= The dataframe to process
+                - | data:pandas.DataFrame:= The dataframe to process
                 
-                - row_indexer:pandas.Index:= Indexer for row selection
+                - | row_indexer:pandas.Index:= Indexer for row selection
                 
-                - column_indexer:pandas.Index := Indexer for column
-                selection
+                - | column_indexer:pandas.Index := Indexer for column selection
                 
-                - transform:Callable[pandas.DataFrame, Union[pandas.DataFrame,
-                pandas.Series]]:= A callable that takes a `pandas.DataFrame`
-                and returns a data structure
+                - | transform:Callable[pandas.DataFrame,
+                    Union[pandas.DataFrame, pandas.Series]]:= A callable
+                    that takes a `pandas.DataFrame` and returns a data
+                    structure
                 
-                - unwrap:bool=True := When True unwraps the resulting
-                `pandas.DataFrame` to the underlying `numpy.NDArray`
-                object. Optional. Defaults to True and returns a numpy
-                array object
+                - | unwrap:bool=True := When True unwraps the resulting
+                    `pandas.DataFrame` to the underlying `numpy.NDArray`
+                    object. Optional. Defaults to True and returns a
+                    numpy array object
                 
             Returns:
             --------
             
-                - ndf:pandas.DataFrame := A subset of the original
-                DataFrame
+                - | ndf:pandas.DataFrame := A subset of the original
+                    DataFrame
                 
-                - warped_input:pandas.Series:=
-                The output of `transform`. Generally a `pandas.Series`
-                of empirical means, or standard deviations
+                - warped_input:pandas.Series:= The output of
+                  `transform`. Generally a `pandas.Series` of empirical
+                  means, or standard deviations
         '''
         if isinstance(row_indexer, np.ndarray):
             row_indexer = row_indexer.tolist()
@@ -1004,15 +1044,11 @@ class BEST(BESTBase):
             Args:
             -----
 
-                - data:pandas.DataFrame := Input information. The data is 
-                assumed to have a single categorical column, defining the 
-                variable to group by
+                - | data:pandas.DataFrame := Input information. The data
+                    is assumed to have a single categorical column,
+                    defining the variable to group by
 
-                - group_var:Union[str,tuple[str]] := A valid pandas indexer
-                defining the column specifying the variable to group by.
-                Note if `tidify_data` is set, it will be used before accessing
-                the variable. Thus the indexer here should be the squashed
-                version
+                - | group_var:Union[str,tuple[str]] := 
 
             Returns:
             --------
@@ -1168,14 +1204,14 @@ class BEST(BESTBase):
             Args:
             -----
 
-                - sampler=pymc.sample := The `pymc` sampler to run MCMC
-                with. Optional. Defaults to `pymc.sample`
+                - | sampler=pymc.sample := The `pymc` sampler to run
+                    MCMC with. Optional. Defaults to `pymc.sample`
 
-                - *args:tuple[Any] := Arguements to be forwarded to the 
-                sampler
+                - | *args:tuple[Any] := Arguements to be forwarded to
+                    the  sampler
 
-                - **kwargs:dict[str, Any] := Optional keyword arguments to
-                be forwarded to the sampler
+                - | **kwargs:dict[str, Any] := Optional keyword
+                    arguments to be forwarded to the sampler
 
             Returns:
             --------
@@ -1209,50 +1245,115 @@ class BEST(BESTBase):
             hdis:typing.Sequence[float]=[.95],
             multilevel_on:str='[',  extend_summary:bool=True):
         r'''
-            Calculate inter-group differences according to the ROPE+HDI
-            criterion. Results a DataFrame with a new column labeled
-            'Significance' containing the decision for the variable indicated
-            by the row. Decisions according to the ROPE_HDI criterior are
-            rendered as follows:
+            Render decisions on group differences, according to the
+            `ROPE+HDI` rule:
                 
-                - HDI in ROPE := Not Significant
+                - HDI in ROPE := Not Significant (All plausible values
+                  are equivalent to 0)
 
-                - HDI & ROPE == () := Significant
+                - HDI & ROPE == () := Significant (No plausible value is
+                  equivalent to zero)
 
-                - HDI & ROPE != HDI ^ () := Withold decision ('Indeterminate')
+                - | HDI & ROPE != HDI :math:`\lor` () := Withhold
+                    decision ('Indeterminate') (Some plausible values
+                    are equivalent to zero, other are not)
+
+            Aggregates results in a dictionary, mapping deterministic
+            variable names to results dataframes. ROPE and HDI threshold limits are set on a dataframe wide level
+            
+            Example usage:
+            
+            .. code-block:: python
+            
+                from sklearn.datasets import load_iris
+                from bayesian_models.models import BEST
+                import pandas as pd
+                
+                X, y = load_iris(return_X_y=True, as_frame=True)
+                names = load_iris().target_names
+                Y = y.replace(
+                    {i:name for i, name in enumerate(names)}
+                    )
+                df = pd.concat([X, Y], axis=1)
+                df.columns=df.columns[:-1].tolist()+["species"]
+                # Data
+                #        sepal length (cm)   ...   species
+                #    0                  5.1  ...   setosa
+                #    1                  4.9  ...   setosa
+                #    2                  4.7  ...   setosa
+                #    3                  4.6  ...   setosa
+                #    4                  5.0  ...   setosa
+                #    ...                ...  ...     ...
+                #    145                6.7  ...   virginica
+                #    146                6.3  ...   virginica
+                #    147                6.5  ...   virginica
+                #    148                6.2  ...   virginica
+                #    149                5.9  ...   virginica
+                
+                obj = BEST()(df, "species")
+                obj.fit()
+                results = obj.predict() # Only 'Δμ' by default
+                print(results['Δμ'])
+                # Output
+                #                                            Significance
+                # Δμ(setosa, versicolor)  sepal length (cm) Indeterminate
+                #                        sepal width (cm)   Indeterminate
+                #                        petal length (cm)  Indeterminate
+                #                        petal width (cm)   Indeterminate
+                # Δμ(setosa, virginica)  sepal length (cm)  Indeterminate
+                #                        sepal width (cm)   Indeterminate
+                #                        petal length (cm)  Indeterminate
+                #                        petal width (cm)   Indeterminate
+                # Δμ(versicolor, sepal length (cm)          Indeterminate
+                #                       sepal width (cm)    Indeterminate
+                #                        petal length (cm)  Indeterminate
+                #                        petal width (cm)   Indeterminate
 
             Args:
             -----
 
-                - var_names:Iterable[str]=['Δμ'] := An iterable of derived
-                metrics to return. Optional. Defaults to returning expected
-                difference. Default names are 'Δμ' for the difference of
-                means, 'Δσ' for the difference of standard deviations and
-                'Effect_Size' for Kruschkes effect size.
+                - | var_names:Iterable[str]=['Δμ'] := An iterable of
+                    derived metrics to return. Optional. Defaults to
+                    returning expected difference. Default names are
+                    'Δμ' for the difference of means, 'Δσ' for the
+                    difference of standard deviations and 'Effect_Size'
+                    for Kruschkes effect size.
 
-                - ropes:Iterable[tuple[float, float]] := An Iterable of
-                length-2 tuples of floats, defining the Region Of Practical
-                Equivalence. Each rope is applied to all features for every
-                variable in `var_names`.
+                - | ropes:Iterable[tuple[float, float]] := An Iterable
+                    of length-2 tuples of floats, defining the Region Of
+                    Practical Equivalence. Each rope is applied to all
+                    features for every variable in `var_names`.
 
-                - hdis:Iterable[float] := An iterable of non-negative floats
-                defining the probability threshold for the credible interval.
-                Is applied to all features for each variable in `var_names`
+                - | hdis:Iterable[float] := An iterable of non-negative
+                    floats defining the probability threshold for the
+                    credible interval. Is applied to all features for
+                    each variable in `var_names`
 
-                - multilevel_on:str='[' := A separator defining the multilevel
-                index. `pymc` by default concatinates the label according to
-                the form: {var_name}[{feature_label}]. The argument will
-                reindex them in a multilevel fashion of the form (var_name,
-                feature_label) in the resulting dataframe. Set to None to
-                disable this behavior.
+                - | multilevel_on:str='[' := A separator defining the
+                    multilevel index. `pymc` by default concatinates the
+                    label according to the form:
+                    {var_name}[{feature_label}]. The argument will
+                    reindex them in a multilevel fashion of the form
+                    (var_name, feature_label) in the resulting
+                    dataframe. Set to None to disable this behavior.
 
-                extend_summary:bool=True := If True the new Significance
-                column extends the summary dataframe. Else return a new 
-                dataframe containing only the Significance results. Optional.
-                Defaults to True and returns an extended version of the
-                summary.
+                - | extend_summary:bool=True := If True the new
+                    Significance column extends the summary dataframe.
+                    Else return a new  dataframe containing only the
+                    Significance results. Optional. Defaults to True and
+                    returns an extended version of the summary.
+                    
+            Returns:
+            --------
+            
+                - | results:dict[str,pandas.DataFrame] := Decision
+                    results. Returned in the form of dictionary, whose
+                    keys are the names of deterministic quantities (i.e.
+                    'Δμ' 'Δσ' 'E' 'ν'). Items are `pandas.DataFrame`
+                    object containing summary results (like those
+                    returned by `arviz.summary`) with an additional
+                    column, named `Significance` containing the decision
         '''
-        
         if not self.trained:
             raise RuntimeError(("Cannot make predictions. Model has "
                 "not been trained. Call the objects `fit` method first")
@@ -1319,11 +1420,11 @@ class BEST(BESTBase):
             Args:
             -----
 
-                - *args:tuple[Any] := Arguments to be forwarded to 
-                `arviz.summary`
+                - | *args:tuple[Any] := Arguments to be forwarded to
+                    `arviz.summary`
 
-                - **kwargs:dict[str, Any] := Keyword arguments to be
-                forwarded to `arviz.summary`
+                - | **kwargs:dict[str, Any] := Keyword arguments to be
+                    forwarded to `arviz.summary`
             
             Returns:
             ---------
@@ -1340,14 +1441,22 @@ class BEST(BESTBase):
         r'''
             Wrapper for `arviz.plot_posterior`
             
+            Plot Posterior densities in the style of John K. Kruschke's
+            book.
+            
         Args:
         -----
 
-            - *args:tuple[Any] := Arguments to be forwarded to 
-            `arviz.plot_posterior`
+            - | *args:tuple[Any] := Arguments to be forwarded to
+                `arviz.plot_posterior`
 
-            - **kwargs:dict[str, Any] := Keyword arguments to be
-            forwarded to`arviz.plot_posterior`
+            - | **kwargs:dict[str, Any] := Keyword arguments to be
+                forwarded to`arviz.plot_posterior`
+                
+        Returns:
+        --------
+        
+            - graph:Any := The posterior plot object
         '''
         if not self.trained:
             raise RuntimeError(
@@ -1358,15 +1467,25 @@ class BEST(BESTBase):
     def plot_trace(self, *args, **kwargs):
         r'''
             Wrapper for `arviz.plot_trace`
+        
+        Plot distribution (histogram or kernel density estimates) and
+        sampled values or rank plot. If divergences data is available in
+        sample_stats, will plot the location of divergences as dashed
+        vertical lines.
             
         Args:
         -----
 
-            - *args:tuple[Any] := Arguments to be forwarded to 
-            `arviz.plot_trace`
+            - | *args:tuple[Any] := Arguments to be forwarded to
+                `arviz.plot_trace`
 
-            - **kwargs:dict[str, Any] := Keyword arguments to be
-            forwarded to `arviz.plot_trace`
+            - | **kwargs:dict[str, Any] := Keyword arguments to be
+                forwarded to `arviz.plot_trace`
+                
+        Returns:
+        --------
+        
+            - plot:Any := Trace plot object
         '''
         if not self.trained:
             raise RuntimeError("Cannot plot trace. Model is untrained")
@@ -1374,11 +1493,61 @@ class BEST(BESTBase):
         return az.plot_trace(self.idata, *args, **kwargs)
     
     def save(self, save_path:Optional[str]=None, 
-             method:str='netcdf'):
+             method:str='netcdf')->None:
+        r'''
+            Save the model object for later reuse
+            
+            Available save methods are 'netcdf' and 'pickle'. The latter
+            is discouraged and has known problems. For the 'netcdf'
+            method the posterior trace will be saved.
+            
+            .. caution::
+            
+                At present, no checks are being made to verify that the posterior is compatible with the model object
+                
+            Args:
+            -----
+            
+                - | save_path:Optional[str] := The file path to save the
+                    model to. If `save_path` has been provided at model initialization, need not be provided
+                    
+                - | method:str='netcdf' := Which method to use to save
+                    the model. For the 'netcdf' method, only the
+                    posterior trance is save and consequently reloaded.
+                    For the 'pickle' method, attempts to serialize the
+                    entire model. The latter case should be avoided
+                    
+            Returns:
+            --------
+            
+                - None
+        '''
         spath = save_path if save_path is not None else self.save_path
         self._io_handler.save(spath, method=method)
     
-    def load(self, save_path:Optional[str]=None):
+    def load(self, save_path:Optional[str]=None)->None:
+        r'''
+            Load a pre trained model from the disk
+            
+            Only meaningful for models saved with the 'netcdf' method.
+            Otherwise, use 'pickle' directly instead
+            
+            .. caution::
+            
+                Not checks are being made that the posterior trace is compatible with model object
+            
+            Args:
+            -----
+            
+                - | save_path:Optional[str] := File path to load the
+                    model from. If `save_path` has been provided at
+                    object initialization, it can be ignored
+                    
+            Returns:
+            --------
+            
+                - None
+        '''
         self._io_handler.load(save_path)
 
 class Layer:
@@ -1527,7 +1696,6 @@ class MapLayer:
 class BayesianNeuralNetwork:
 
     r'''
-
         Class representing a dense Bayesian Neural Network (BNN). WIP
 
         Object Attributes:

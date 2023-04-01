@@ -1131,7 +1131,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             
                 struct = NDArrayStructure(
                     np.random.randint(
-                        0, higher=4, size=(10,3)
+                        0, 4, size=(10,3)
                     )
                 )
                 items:tuple[None, np.ndarray] = next(struct.unique()) # Unique # items in the entire structure
@@ -1141,6 +1141,13 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                     print(
                         "Found these unique items {items} in this coordinate {crd}".format(crd= coordinate[0], items=coordinate[1])
                     )
+                    
+                # Output
+                # Found these unique items [0 1 3] in this coordinate 0
+                # Found these unique items [0 1 2 3] in this coordinate
+                # 1
+                # Found these unique items [0 1 2 3] in this
+                # coordinate 2
             
             Args:
             -----
@@ -1174,8 +1181,54 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     def mean(self, axis:Optional[int] = None, keepdims:bool=True,
              skipna:bool=True):
         r'''
-            Compute the arithmetic mean along the specified axis. 
+            Compute the arithmetic mean along the specified axis.
             
+            Example usage:
+            
+            .. code-block:: python
+
+                import numpy as np
+                from bayesian_models.data import NDArrayStructure
+                
+                struct = NDArrayStructure(np.random.rand(10,3))
+                # Mean of the entire structure
+                print(struct.mean().values)
+                # Output
+                # 0.4621622294767996
+                # Mean over some columns
+                print(struct.mean(axis=1).values)
+                # Output
+                # array([[0.54527681],
+                #        [0.35284086],
+                #        [0.25491467],
+                #        [0.41629867],
+                #        [0.47454723],
+                #        [0.5965149 ],
+                #        [0.73069869],
+                #        [0.42783913],
+                #        [0.21808277],
+                #        [0.60460858]])
+                print(struct.mean(axis=1).coords)
+                # Output
+                # {'dim_0': array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                # 'dim_1': #array(['sum'], dtype='<U3')}
+                
+                
+                print(struct1.mean(axis=1, keepdims=False).coords)
+                # Output
+                # {'dim_0': array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                # 'dim_1': #array(['sum'], dtype='<U3')}
+                # DataStructure objects cannot fall below 2D
+                
+                # For higher dimentional tensors `keepdims=False` will
+                # reduce the axis
+                struct1 = NDArrayStructure(np.random.rand(10,3,2))
+                print(struct1.mean(axis=1, keepdims=False).coords)
+                # Output
+                # {'dim_0': array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9]),
+                # 'dim_2': array([0, 1])}
+                
+                
             Args:
             ------
             
