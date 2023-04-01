@@ -13,25 +13,25 @@ __all__ = (
 
 def ReLU(x, leak:float=.0):
     r'''
-        `pytensor` implementation of the Leaky ReLU activation function:
+        `pytensor` implementation of the ReLU activation function:
 
         .. math::
 
             f(x)= max(leak, x)
 
-        NOTE: With leak=0 this is the standard ReLU function
-              With leak a small number i.e. 1e-2 this is Leaky ReLU
-              Otherwise this is Parametric ReLU
+        NOTE: With leak=0 this is the standard ReLU function. With
+        leak a small number i.e. 1e-2 this is Leaky ReLU. Otherwise this
+        is Parametric ReLU
 
         Args:
         ------
 
             - x := The input tensor
 
-            - leak:float=.0 := The leak parameter of the ReLU. When equal
-            to 0, returns the standard ReLU, when equal to a small number
-            i.e. 0.001 this is Leaky ReLU, otherwise it's parametric
-            ReLu
+            - | leak:float=.0 := The leak parameter of the ReLU. When
+                equal to 0, returns the standard ReLU, when equal to a
+                small number i.e. 0.001 this is Leaky ReLU, otherwise
+                it's parametric ReLu
 
         Returns:
         ---------
@@ -58,8 +58,8 @@ def ELU(x, alpha:float=1.0):
 
             - x := The input tensor
 
-            - alpha:float=1.0 := The :math:`\alpha` parameter of the
-            ELU function
+            - | alpha:float=1.0 := The :math:`\alpha` parameter of the
+                ELU function
 
         Returns:
         ---------
@@ -95,7 +95,7 @@ def GELU(x):
         .. math::
         
             X \thicksim \mathcal{N}(0,1)
-            f(x) \triangleq = xP(X\le x) = x\Phi (x)=x \frac 12 
+            f(x) \triangleq xP(X\le x) = x\Phi (x)=x \frac 12 
             [1+erf(\frac {x}{\sqrt{2}})]
 
         Args:
@@ -119,7 +119,7 @@ def SiLU(x):
 
         .. math::
 
-            f(x)\triangeq x \sigma (x)
+            f(x)\triangleq x \sigma (x)
         
         Args:
         -----

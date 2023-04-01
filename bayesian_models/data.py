@@ -658,6 +658,39 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     def values(self)->ndarray:
         '''
             Return the underlying structure as a `numpy.ndarray`
+            
+            Example usage:
+            
+            .. code-block::
+
+                import numpy as np
+                from bayesian_models.data import NDArrayStructure
+                
+                A = np.random.rand(10,3)
+                print(A)
+                # Output
+                # array([[0.92696729, 0.85774767, 0.74036172],
+                #       [0.04296317, 0.65726312, 0.97758067],
+                #       [0.56289662, 0.28891003, 0.62563431],
+                #       [0.55779293, 0.8921344 , 0.07295159],
+                #       [0.63069955, 0.48854109, 0.5674133 ],
+                #       [0.41642828, 0.45982703, 0.22005397],
+                #       [0.75317745, 0.11725162, 0.46697631],
+                #       [0.48607453, 0.30890712, 0.41480661],
+                #       [0.06220708, 0.3917841 , 0.66493793],
+                #       [0.23265062, 0.28742938, 0.06959736]])
+                obj = NDArrayStructure(A)
+                print(obj.values)
+                # array([[0.92696729, 0.85774767, 0.74036172],
+                #       [0.04296317, 0.65726312, 0.97758067],
+                #       [0.56289662, 0.28891003, 0.62563431],
+                #       [0.55779293, 0.8921344 , 0.07295159],
+                #       [0.63069955, 0.48854109, 0.5674133 ],
+                #       [0.41642828, 0.45982703, 0.22005397],
+                #       [0.75317745, 0.11725162, 0.46697631],
+                #       [0.48607453, 0.30890712, 0.41480661],
+                #       [0.06220708, 0.3917841 , 0.66493793],
+                #       [0.23265062, 0.28742938, 0.06959736]])
         '''
         return self.obj
     
@@ -734,6 +767,34 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             This implementation works with `object` dtypes but not
             strings. Returns a structure of booleans showing if the
             respective element is `nan` or not
+            
+            Example usage:
+            
+            .. code-block::
+            
+                import numpy as np
+                from bayesian_models.data import NDArrayStructure
+                
+                X = np.random.rand(10,3)
+                X[0,0] = np.nan
+                obj = NDArrayStructure(X)
+                print(obj.isna().values)
+                # Output
+                #[[ True False False]
+                # [False False False]
+                # [False False False]
+                # [False False False]
+                # [False False False]
+                # [False False False]
+                # [False False False]
+                # [False False False]
+                # [False False False]
+                # [False False False]]
+                # Returns an NDArrayStructure so methods can be chain
+                # called
+                print(obj.isna().any())
+                # Output:
+                # True
         '''
         return NDArrayStructure(super().__isna__(self._obj),
                                 coords = self.coords,
@@ -742,13 +803,40 @@ class NDArrayStructure(DataStructure, UtilityMixin):
         
     def any(self, axis:Optional[int] = None, **kwargs):
         r'''
-            Elementwise or across the structure.
+            Elementwise "or" across the structure.
             
             If `axis=None` return a single boolean across the entire
             structure equivalent to `or` across the entire structure. If
             `axis` is provided reduce the axis equivalent to elementwise
             `or` across the axis
             
+            Example usage:
+            
+            .. code-block::
+            
+                import numpy as np
+                from bayesian_models.data import NDArrayStructure
+                
+                struct = NDArrayStructure(
+                    np.random.randint(0,2, size=(10,3), dtype=bool)
+                    )
+                print(struct.values)
+                # Output
+                # array([[False, False,  True],
+                #        [False, False,  True],
+                #        [ True, False,  True],
+                #        [False,  True,  True],
+                #        [False,  True,  True],
+                #        [ True, False, False],
+                #        [False, False, False],
+                #        [ True,  True, False],
+                #        [ True, False,  True],
+                #        [ True,  True, False]])
+                print(struct.any(axis=1).values)
+                # Output:
+                # array([ True,  True,  True,  True,  True,  True,
+                # True,  True,  True, True])
+                
             Args:
             ------
             
@@ -781,8 +869,36 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             Elementwise and across the structure.
             
             If `axis=None` return a single boolean across the entire
-            structure equivalent to `and` across the entire structure. If
-            `axis` is provided, operate across the axis, reducing it
+            structure equivalent to `and` across the entire structure.
+            If `axis` is provided, operate across the axis, reducing it.
+            
+            
+            Example usage:
+            
+                .. code-block::
+                
+                    import numpy as np
+                    from bayesian_models.data import NDArrayStructure
+                    
+                    struct = NDArrayStructure(
+                        np.random.randint(0,2, size=(10,3), dtype=bool)
+                        )
+                    print(struct.values)
+                    # Output
+                    # array([[False, False,  True],
+                    #        [False, False,  True],
+                    #        [ True, False,  True],
+                    #        [False,  True,  True],
+                    #        [False,  True,  True],
+                    #        [ True, False, False],
+                    #        [False, False, False],
+                    #        [ True,  True, False],
+                    #        [ True, False,  True],
+                    #        [ True,  True, False]])
+                    print(struct.any(axis=1).values)
+                    # Output:
+                    # array([False, False, False, False,  True, False,
+                    # False, False,  True, False])
             
             Args:
             ------
@@ -817,6 +933,30 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             If `axes` is not provided, reverse the order of the axes. If
             provided it should be a valid permutation of the structures'
             axes, defining how the transposition should be performed
+            
+            Example usage
+            
+            .. code-block::
+
+                import numpy as np
+                from bayesian_models.data import NDArrayStructure
+                
+                struct = NDArrayStructure(np.random.rand(20,5,3))
+                print(struct.tranpose().shape)
+                # Output
+                # (3,5,20) By default, reverse the order of the axes
+                print(struct.tranpose().shape)
+                # Output
+                # (3,5,20) By default, reverse the order of the axes
+                print(struct.tranpose((1,0,2)).shape) # Reverse the
+                # first two axes
+                # Output
+                # (5,20,3)
+                # Axes permutations must be explicit
+                struct.tranpose((1,0, ...)
+                # TypeError: 'ellipsis' object cannot be interpreted as
+                # an integer
+
             
             Args:
             -----
@@ -853,13 +993,39 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     
     def iterrows(self):
         r'''
-            Iterate over the zeroth dimention of the structure
+            Iterate over the zeroth dimension of the structure
             
             Is a Generator that yields coordinates of the zeroth axis as
             a tuple (coordinate:str, substructure). Coordinate is label
             of the coordinate of the current iteration. `substructure`
             are the values of the iteration, loosely equivalent to
             `X[i,...]`.
+            
+            Example usage:
+            
+            .. code-block:: python
+
+                import numpy as np
+                from bayesian_models.data import NDArrayStructure
+            
+                for step in struct.iterrows():
+                    print(f"{struct[0]}th iteration")
+                    print(struct[1].values)
+                    
+                # Output
+                # 0th iteration
+                # [[0.87129834 0.28525984 0.8024876  0.22648149
+                #   0.24766219]]
+                # 1th iteration
+                # [[0.52058713 0.64226276 0.54973852 0.02149187
+                #  0.87327094]]
+                # ...
+                # 28th iteration
+                # [[0.09227537 0.72935584 0.36943861 0.72009057
+                #  0.83315441]]
+                # 29th iteration
+                # [[0.58081613 0.51312354 0.9158358  0.93393108
+                # 0.15798941]]
         '''
         self._warn_multidim_iter()
         ndims, ncoords = self._cut_dims_(0)
@@ -870,13 +1036,32 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     
     def itercolumns(self):
         r'''
-            Iterate over the zeroth dimention of the structure
+            Iterate over the zeroth dimension of the structure
             
-            Is a Generator the yields coordinates of the first axis as
+            Is a Generator that yields coordinates of the first axis as
             a tuple (coordinate:str, substructure). Coordinate is label
             of the coordinate of the current iteration. `substructure`
-            are the values of the iteration, loosely equivalent to
+            are the unique values of the iteration, loosely equivalent to
             `X[:,i,...]`.
+            
+            Example usage:
+            
+            .. code-block:: python
+
+                import numpy as np
+                from bayesian_models.data import NDArrayStructure
+            
+                for step in struct.itercolumns():
+                    print(f"{struct[0]}th iteration")
+                    print(struct[1].values)
+                # Output
+                # 0 iteration
+                # [[0.87129834 0.52058713 0.3262019  0.77032967
+                #   0.12151855 0.04655757, ... 0.58081613]]
+                # ... 
+                # 4 iteration
+                # [[0.24766219 0.87327094 0.20295554 0.57563816 0.776743
+                # ... 0.15798941]]
         '''
         self._warn_multidim_iter()
         ndims, ncoords = self._cut_dims_(1)
@@ -891,6 +1076,19 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     def cast(self, dtype:np.dtype, **kwargs):
         r'''
             Change the data type of the structure
+            
+            Example usage:
+            
+            .. code-block::
+
+                import numpy as np
+                from bayesian_models.data import NDArrayStructure
+            
+                obj = NDArrayStructure(
+                    np.random.rand(20,3)
+                )
+                # Change the data type to 32-bit floats
+                obj.cast(np.float32)
             
             Args:
             -----
@@ -915,7 +1113,7 @@ class NDArrayStructure(DataStructure, UtilityMixin):
     def unique(self, axis:Optional[int]=None)->tuple[
         Optional[np.ndarray[str]], ndarray ]:
         r'''
-            Return the unique element in the structure.
+            Return the unique elements in the structure.
         
             Return unique values of the NDArrayStructure as Generator
             of length 2 tuples. When axis is None, the generator yields
@@ -923,6 +1121,26 @@ class NDArrayStructure(DataStructure, UtilityMixin):
             values in the array. When axis is specified, the Generator
             iterates over the specified axis, yielding tuples of label,
             unique_values.
+            
+            Example usage:
+            
+            .. code-block::
+
+                import numpy as np
+                from bayesian_models.data import NDArrayStructure
+            
+                struct = NDArrayStructure(
+                    np.random.randint(
+                        0, higher=4, size=(10,3)
+                    )
+                )
+                items:tuple[None, np.ndarray] = next(struct.unique()) # Unique # items in the entire structure
+                
+                # Unique items across an axis
+                for coordinate in struct.unique(axis=1):
+                    print(
+                        "Found these unique items {items} in this coordinate {crd}".format(crd= coordinate[0], items=coordinate[1])
+                    )
             
             Args:
             -----
