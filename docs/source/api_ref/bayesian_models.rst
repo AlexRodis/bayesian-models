@@ -1,6 +1,15 @@
 bayesian\_models package
 ========================
 
+Module contents
+---------------
+
+.. automodule:: bayesian_models
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+
 Submodules
 ----------
 
@@ -48,14 +57,6 @@ bayesian\_models.utilities module
 ---------------------------------
 
 .. automodule:: bayesian_models.utilities
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-Module contents
----------------
-
-.. automodule:: bayesian_models
    :members:
    :undoc-members:
    :show-inheritance:

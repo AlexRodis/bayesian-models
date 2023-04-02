@@ -48,29 +48,38 @@ class BayesianModel(ABC):
             - | __init__ := Begin initializing the model by setting all
                 of the models parameters and hyperparameters. If a model
                 has multiple variations, these are set here. The
-                subclass should define valid hyperparameters as class
-                attributes, along with their setter methods
+                subclass should define valid hyperparameters as class or
+                object attributes. Object level properties should be
+                preferred where a user is expected to need to change
+                these parameters for a single dataset. Class level
+                parameters are preferred where a user is likely to want
+                to apply the same model to multiple data (with the same
+                parameters)
 
-            - | __call__ := Initialize the object by specifying the
-                full probability model for inference. This method should
-                also receive the training data. These should be set
-                using `pymc.Data` containers. For most simple, and
-                predictive models, that accept some input information
-                and attempt to predict some output quantity, the inputs
-                should be declared as mutable shared tensors
-                `pymc.Data(name, X, mutable=True)` and the `predict`
-                method should invoke `pymc.set_data(inputs)` to replace
-                the input tensor with a new one. For other special cases
-                see the `predict` method. Should return the object
-                itself for easy method chaining. Should set the objects'
-                `initialized` property to signal the fit method can be
-                called.
+            - | __call__ := Initialize the object by specifying the full
+                probability model for inference. This method should also
+                receive the training data. These should be set using
+                :code:`pymc.Data` containers. The data received should
+                be placed in a :code:`Data` container, supplied by the
+                :code:`data` submodule for preprocessing/ For most
+                simple, and predictive models, that accept some input
+                information and attempt to predict some output quantity,
+                the inputs should be declared as mutable shared tensors
+                `pymc.Data(name, X, mutable=True)` and the
+                :code:`predict` method should invoke
+                :code:`pymc.set_data(inputs)` to replace the input
+                tensor with a new one. For other special cases see the
+                :code:`predict` method. Should return the object itself
+                for easy method chaining. Should set the objects'
+                :code:`initialized` property to signal that the fit
+                method can be called.
 
             - | fit := Sample from the posterior according to the
-                `sampler` argument. Forwards all other arguments to the
-                sampler, sets the models' `idata` and `trained` flag,
-                signaling the `predict` and other posterior methods can
-                be called. `infer` is an alias for fit
+                :code:`sampler` argument. Forwards all other arguments
+                to the sampler, sets the models' :code:`idata` and
+                :code:`trained` flag, signaling the :code:`predict` and
+                other posterior methods can be called. :code:`infer` is
+                an alias for fit
 
             - | predict := Produce output from the model. The
                 implementation details of this method, vary depending on
@@ -81,31 +90,64 @@ class BayesianModel(ABC):
                     from the posterior predictive and return an
                     appropriate Y.
 
-                    - For most simple models should call `pymc.set_data(dict(
-                    inputs=X_new))` and sample `y_obs` from the posterior
-                    predictive
+                    - | For most simple models should call
+                        :code:`pymc.set_data(dict(inputs=X_new))` and
+                        sample :code:`y_obs` from the posterior
+                        predictive.
+                        
+                        Example:
+                        
+                        .. code-block:: python
 
-                    - For models with special predictive APIs like Gaussian
-                    Process models, should declare a new variable as a shared
-                    tensor `pymc.Data(X_new, mutable=True)` the first time
-                    predictions are made, additional nodes corresponding to
-                    the special API (i.e. `gp.condintional`) and any further
-                    postprocessing nodes corresponding to data transforms and
-                    response functions. Further calls to this method should
-                    invoke `pymc.set_data` to replace the previous inputs with
-                    the new ones followed by `pymc.sample_posterior_predictive`
+                            def predict(self, Xnew, ...):
+                                with self.model:
+                                    pm.set_data(dict(inputs=Xnew))
+                                    y = pm.sample_posterior()
+                                return y
 
-                    - For non-predictive models (i.e. oversampling models,
-                    statistical comparison models etc), data node(s) are
-                    immutable and `predict` should perform the equivalent
-                    operation for these models (i.e. render importance
-                    decisions), yield augmented or rebalanced datasets etc.
+                    - | For models with special predictive APIs like
+                        Gaussian Process models, should declare a new
+                        variable as a shared tensor `pymc.Data(X_new,
+                        mutable=True)` the first time predictions are
+                        made, additional nodes corresponding to the
+                        special API (i.e. :code:`gp.condintional`) and
+                        any further postprocessing nodes corresponding
+                        to data transforms and response functions.
+                        Further calls to this method should invoke
+                        :code:`pymc.set_data` to replace the previous
+                        inputs with the new ones followed by
+                        :code:`pymc.sample_posterior_predictive`.
+                        
+                        Example:
+                        
+                        .. code-block:: python
+                        
+                            def predict(self, Xnew):
+                                with self.model:
+                                    if not self.predictive_initialized:
+                                        predicted = pm.Data(
+                                            'predicted',
+                                            Xnew, 
+                                            mutable=True
+                                            )
+                                    ...
+                                    ynew = pm.sample_posterior_predictive()
+                                    return ynew
+                                    
+
+
+                    - | For non-predictive models (i.e. oversampling
+                        models, statistical comparison models etc), data
+                        node(s) are immutable and :code:`predict` should
+                        perform the equivalent operation for these
+                        models (i.e. render importance decisions), yield
+                        augmented or rebalanced datasets etc.
             
-            - plot_trace := Wrapper for `arviz.plot_posterior`
+            - plot_trace := Wrapper for :code:`arviz.plot_posterior`
 
-            - plot_posterior := Wrapper for `arviz.plot_posterior`
+            - plot_posterior := Wrapper for :code:`arviz.plot_posterior`
 
-            - summary := Wrapper for `arviz.summary`
+            - summary := Wrapper for :code:`arviz.summary`
     '''
 
 
@@ -194,16 +236,16 @@ class ModelIOHandler:
 
             - | save(save_path:Optional[str], method:str =
                 ['pickle','netcdf']) -> None := Save the model using one
-                of two protocols. For `method='netcdf'` (default) saves
-                the models' posterior as netcdf file. For
-                `method='pickle'` (experimental) attempts to serialize
-                the entire object using `pickle`.
+                of two protocols. For :code:`method='netcdf'` (default)
+                saves the models' posterior as netcdf file. For
+                :code:`method='pickle'` (experimental) attempts to
+                serialize the entire object using :code:`pickle`.
 
             - | load(save_path:Optional[str]) -> None := Load a
                 pretrained model from memory, using the selected
                 protocol. Only meaningful for models saved with
-                `method='netcdf'`. For `method='pickle'` unpickle the
-                object directly.
+                :code:`method='netcdf'`. For :code:`method='pickle'`
+                unpickle the object directly.
                 
             .. danger::
                 
@@ -213,7 +255,8 @@ class ModelIOHandler:
         -------------------
 
             - | accepted_methods:set[str] := Defines acceptable
-                methods/protocols to save with. Possible save methods are 'pickle' and 'netcdf'. 
+                methods/protocols to save with. Possible save methods
+                are 'pickle' and 'netcdf'. 
                 
                 .. caution::
                 
@@ -227,7 +270,8 @@ class ModelIOHandler:
                     the model to. Either accessed from the model
                     attribute or supplied during method call
                     
-                - | _class:Optional[BayesianModel]=None := 
+                - | _class:Optional[BayesianModel]=None := A reference
+                    to the object being saved
     '''
     _model:Optional[pymc.Model] = field(init=False, default=None)
     _class:Optional[BayesianModel] = field(init=False,  default=None)
@@ -255,19 +299,22 @@ class ModelIOHandler:
                 - save_path:Optional[str] = None := A string specifing
                 the save location. Must provided either here, or during
                 the objects' initialization phase. If a save_path is not
-                provided either here or during object initialization, will
-                raise an error.
+                provided either here or during object initialization,
+                will raise an error.
 
-                method:str='netcdf' := The saving method. Valid options are
-                `netcdf` and `pickle`. For `method='netcdf'` (default) saves
-                only the models' posterior trace and requires the
-                initialization and call steps to be repeated after priors to
-                loading. For `method='pickle'` (experimental) attempts to save
-                the entire object be serializing.
+                - | method:str='netcdf' := The saving method. Valid
+                    options are :code:`netcdf` and :code:`pickle`. For
+                    :code:`method='netcdf'` (default) saves only the
+                    models' posterior trace and requires the
+                    initialization and call steps to be repeated after
+                    priors to loading. For :code:`method='pickle'`
+                    (experimental) attempts to save the entire object be
+                    serializing.
 
-                NOTE: No checks are made to verify that the loaded models'
-                structure and the one infered from trace are compatible. Will
-                likely result in unpredictable errors.
+                    NOTE: No checks are made to verify that the loaded
+                    models' structure and the one inferred from trace 
+                    are compatible. Will likely result in unpredictable 
+                    errors.
 
 
             Returns:
@@ -277,14 +324,15 @@ class ModelIOHandler:
             Raises:
             -------
 
-                - RuntimeError := If a `save_path` was not provided during
-                initialization and `save` or `load` are called without a
-                `save_path` argument
+                - | RuntimeError := If a :code:`save_path` was not
+                    provided during initialization and :code:`save` or
+                    :code:`load` are called without a :code:`save_path`
+                    argument
         '''
         spath = save_path if save_path is not None else \
             self.save_path
         if spath is None:
-            raise RuntimeError(("`save_path` not specified"))
+            raise RuntimeError((":code:`save_path` not specified"))
         if not self._class.trained:
             raise RuntimeError((
                     "Cannot save model. Model has not been trained"
@@ -323,7 +371,7 @@ class ModelIOHandler:
                 
                 - BEST := The loaded model
 
-            NOTE: Updates the models' `idata` and `trained` attributes
+            NOTE: Updates the models' :code:`idata` and :code:`trained` attributes
         '''
         warn((
             "Warning! This feature is experimental and poorly tested. "
@@ -413,9 +461,9 @@ class BESTBase:
                 [0.1-10] boundaries are implemented as defaults instead
                 
             - | ν_λ:float = 1/29.0 := Exponential decay parameter for
-                the `ν` prior
+                the :code:`ν` prior
             
-            - | ν_offset:float = 1 := Offset parameter for the `ν`
+            - | ν_offset:float = 1 := Offset parameter for the :code:`ν`
                 prior. Since :math:`\nu \in [1,+ \infty])` this should
                 be left unchanged
                 
@@ -423,22 +471,22 @@ class BESTBase:
                 empirical pooled standard deviations
             
             - | std_diffusion_factor:int = 2 := Scalar multiplier for
-                empirical pooled standard deviations on the `μ` prior.
-                Controls how diffuse the prior is
+                empirical pooled standard deviations on the :code:`μ`
+                prior. Controls how diffuse the prior is
             
             - | zero_offset:float = 1e-4 := Small offset parameter to
                 avoid numerical errors with pooled standard deviations
             
-            - | jax_device:str = 'gpu' := `numpyro` parameter for
-                alternate sampling. Controls which device `numpyro` will
-                use
+            - | jax_device:str = 'gpu' := :code:`numpyro` parameter for
+                alternate sampling. Controls which device
+                :code:`numpyro` will use
             
-            - | jax_device_count: int =1 := `numpyro` setting. Number of
-                devices to be used for HMC sampling (parallel)
+            - | jax_device_count: int =1 := :code:`numpyro` setting.
+                Number of devices to be used for HMC sampling (parallel)
                 
             .. attention::
-                Due to persistent problems with the `numpyro` dependency
-                these parameters are ignored
+                Due to persistent problems with the :code:`numpyro`
+                dependency these parameters are ignored
     '''
     WarperFunction = Callable[[pd.DataFrame], pd.Series]
     std_upper:float = 1e1
@@ -488,9 +536,9 @@ class BEST(BESTBase):
                 [0.1-10] boundaries are implemented as defaults instead
                 
             - | ν_λ:float = 1/29.0 := Exponential decay parameter for
-                the `ν` prior
+                the :code:`ν` prior
             
-            - | ν_offset:float = 1 := Offset parameter for the `ν`
+            - | ν_offset:float = 1 := Offset parameter for the :code:`ν`
                 prior. Since :math:`\nu \in [1,+ \infty])` this should
                 be left unchanged
                 
@@ -498,22 +546,22 @@ class BEST(BESTBase):
                 empirical pooled standard deviations
             
             - | std_diffusion_factor:int = 2 := Scalar multiplier for
-                empirical pooled standard deviations on the `μ` prior.
-                Controls how diffuse the prior is
+                empirical pooled standard deviations on the :code:`μ`
+                prior. Controls how diffuse the prior is
             
             - | zero_offset:float = 1e-4 := Small offset parameter to
                 avoid numerical errors with pooled standard deviations
             
-            - | jax_device:str = 'gpu' := `numpyro` parameter for
-                alternate sampling. Controls which device `numpyro` will
-                use
+            - | jax_device:str = 'gpu' := :code:`numpyro` parameter for
+                alternate sampling. Controls which device
+                :code:`numpyro` will use
             
-            - | jax_device_count: int =1 := `numpyro` setting. Number of
-                devices to be used for HMC sampling (parallel)
+            - | jax_device_count: int =1 := :code:`numpyro` setting.
+                Number of devices to be used for HMC sampling (parallel)
                 
             .. attention::
-                Due to persistent problems with the `numpyro` dependency
-                these parameters are ignored
+                Due to persistent problems with the :code:`numpyro`
+                dependency these parameters are ignored
             
         Object Attributes:
         ------------------
@@ -523,12 +571,13 @@ class BEST(BESTBase):
                 
                 .. danger::
                 
-                    Due to issues with the underlying `pymc`
-                    implementation and limitations of `numpy.isnan` the
-                    categorical variables' levels should be recorded as
-                    something castable to a float, if numpy array is
-                    used to store the data. It is recommended that a
-                    `pandas.DataFrame` be used instead
+                    Due to issues with the underlying :code:`pymc`
+                    implementation and limitations of
+                    :code:`numpy.isnan` the categorical variables'
+                    levels should be recorded as something castable to a
+                    float, if numpy array is used to store the data. It
+                    is recommended that a :code:`pandas.DataFrame` be
+                    used instead
             
             - | effect_magnitude:bool=False := Whether to compute an
                 'effect size' during inference. This metric is somewhat
@@ -542,16 +591,16 @@ class BEST(BESTBase):
             
             - | std_differences:bool=False := Selects whether or not to
                 estimate standard deviation differences between groups.
-                Optional. Defaults to False. If `effect_magnitude=True`
-                this value is ignored and the difference is computed
-                automatically.
+                Optional. Defaults to False. If
+                :code:`effect_magnitude=True` this value is ignored and
+                the difference is computed automatically.
             
             - | common_shape:bool=True := If True make the simplifying
                 assumption that all input dimensions have the same shape
-                parameter `ν`. Else, assign distinct shape parameters to
-                all dimensions of the input array. Optional. Defaults to
-                True. If switched off, warns of likely unidentified
-                model.
+                parameter :code:`ν`. Else, assign distinct shape
+                parameters to all dimensions of the input array.
+                Optional. Defaults to True. If switched off, warns of
+                likely unidentified model.
 
             - | multivariate_likelihood:bool=True := Flag signaling
                 whether to use a multivariate likelihood or a univariate
@@ -564,26 +613,26 @@ class BEST(BESTBase):
             - | save_name:Optional[str]=None := A string specifying
                 location and filename to save the model's inference
                 results. Optional. If set during objects' construction,
-                the `save` method may be called without an explicit
-                `save_path` argument.
+                the :code:`save` method may be called without an
+                explicit :code:`save_path` argument.
             
             
             - | idata:Optional[arviz.InferenceData]=None :=
-                `arviz.InferenceData` object containing the results of
-                model inference. Becomes set after calling the `fit`
-                method
+                :code:`arviz.InferenceData` object containing the
+                results of model inference. Becomes set after calling
+                the :code:`fit` method
             
             - | trained:bool=False := Sentinel signaling whether the
                 model has been trained or not. Defaults to False. Should
-                be switched on after calling `fit`. Prevents `predict`
-                from being called on an object that has not been
-                trained.
+                be switched on after calling :code:`fit`. Prevents
+                :code:`predict` from being called on an object that has
+                not been trained.
 
             - | initialized:bool=False := Sentinel signaling whether the
                 model has been full initialized. Defaults to False.
-                Should be set after the object is called. Prevents `fit`
-                and `predict` from being called prior to complete
-                initialization.
+                Should be set after the object is called. Prevents
+                :code:`fit` and :code:`predict` from being called prior
+                to complete initialization.
                 
         Private Attributes:
         ===================
@@ -593,22 +642,22 @@ class BEST(BESTBase):
                 mapped to lists of the variables
 
             - | _permutations:Optional[Iterable[tuple[str,str]]]=None
-                := An iterable of groups per `group_var`. Contains
-                all unique pairs of unique values of `group_var`.
+                := An iterable of groups per :code:`group_var`. Contains
+                all unique pairs of unique values of :code:`group_var`.
 
             - | _n_perms:Optional[int]=None := The number of groups.
 
             - | levels:Optional[Iterable[str]] = None := Grouping
-                variable levels. All unique values of `group_var`.
+                variable levels. All unique values of :code:`group_var`.
 
             - | _ndims:Optional[int]=None := Number of input
-                features. Only meaningful if `common_shape` is
-                `False`.
+                features. Only meaningful if :code:`common_shape` is
+                :code:`False`.
 
             - | num_levels:Optional[int]=None := The number of unique
-                groups/ values of `group_var`.
+                groups/ values of :code:`group_var`.
 
-            - | coords := dict-like of dimension labels `xarray`
+            - | coords := dict-like of dimension labels :code:`xarray`
                 coords. Will be inferred from inputs and used to
                 label the posterior
 
@@ -616,7 +665,7 @@ class BEST(BESTBase):
                 pymc.Distribution]]=None := A dict used internally to
                 map inferred distributions. Defaults to None.
 
-            - | _model:Optional[pymc.Model] := The `pymc.Model`
+            - | _model:Optional[pymc.Model] := The :code:`pymc.Model`
                 object
 
         Object Methods:
@@ -627,36 +676,38 @@ class BEST(BESTBase):
             
             - | __call__(data) := Initialize the model by specifying the
                 full probability model according to options passed to
-                `__init__`. Accepts a data structure and a label
+                :code:`__init__`. Accepts a data structure and a label
                 indicating the variable that defines the groups
 
             - | fit(sampler, *args, **kwargs) := Perform inference on
-                the model. `sampler` is valid sampler, i.e.
-                `pymc.sample` or
-                `pymc.sampling.jax.sample_numpyro_nuts`. All other
+                the model. :code:`sampler` is valid sampler, i.e.
+                :code:`pymc.sample` or
+                :code:`pymc.sampling.jax.sample_numpyro_nuts`. All other
                 arguments are forwarded to the sampler. Returns a
-                `arviz.InferenceData` object containing the results of
-                inference. Sets the `trained` and `idata` attributes
+                :code:`arviz.InferenceData` object containing the
+                results of inference. Sets the :code:`trained` and
+                :code:`idata` attributes
 
             - | predict(var_names:Iterable[str],
                 ropes:Iterable[tuple[float, float]],
                 hdis=Iterable[float])->dict[str, pandas.DataFrame] :=
                 Compute results of group comparisons and return a
                 dictionary mapping derived metrics to
-                `pandas.DataFrame` objects containing inference summary.
-                Decisions are made using the `ROPE+HDI` rule. Returns a
-                dictionary mapping derived variable labels to pandas
-                DataFrames containing the results. Accepts per variable
-                rope limits and hdis. See the function for more details
-                on these and other options
+                :code:`pandas.DataFrame` objects containing inference
+                summary. Decisions are made using the :code:`ROPE+HDI`
+                rule. Returns a dictionary mapping derived variable
+                labels to pandas DataFrames containing the results.
+                Accepts per variable rope limits and hdis. See the
+                function for more details on these and other options
 
-            - | summary := Wrapper for `arviz.summary`. Returns summary
-                results of model inference
+            - | summary := Wrapper for :code:`arviz.summary`. Returns
+                summary results of model inference
 
-            - | plot_posterior := Wrapper for `arviz.plot_posterior`.
-                Plot the inferred posterior
+            - | plot_posterior := Wrapper for
+                :code:`arviz.plot_posterior`. Plot the inferred
+                posterior
 
-            - | plot_trace := Wrapper for `arviz.plot_trace`. Plot
+            - | plot_trace := Wrapper for :code:`arviz.plot_trace`. Plot
                 inference results
                 
             Private Methods:
@@ -666,7 +717,7 @@ class BEST(BESTBase):
                 hyperparameters are consistent and compatible
 
             - | _preprocessing_ := Preprocess data. Delegates to the
-                `data` module and calls the specified processor to
+                :code:`data` module and calls the specified processor to
                 preprocess the data
 
             - | _fetch_differential_permutations_ := Compute all unique
@@ -679,29 +730,29 @@ class BEST(BESTBase):
             Setters for all class attributes. Named set_attribute
 
             - | set_std_upper(val:float)->None := Update the
-                `std_upper` class attribute
+                :code:`std_upper` class attribute
                 
             - | set_std_lower(val:float)->None :=  Update the
-                `std_lower` class attribute
+                :code:`std_lower` class attribute
             
             - | set_shape_offset(val:float)->None := Update the
-                `ν_offset` class attribute
+                :code:`ν_offset` class attribute
                 
                 .. caution::
                     
                     Should generally not be modified
             
             - | set_jax_device(device:str)->None := Update the
-                `jax_device` class attribute
+                :code:`jax_device` class attribute
             
             - | set_jax_device_count(val:int)->None := Update the
-                `jax_device_count` class attribute
+                :code:`jax_device_count` class attribute
             
             - | set_diffusion_factor(val:float)->None := Update the
-                `std_diffusion_factor` attribute
+                :code:`std_diffusion_factor` attribute
             
             - | set_degrees_of_freedom(val:int)->None := Update the
-                `ddof` class attribute
+                :code:`ddof` class attribute
         
     '''
     
@@ -815,14 +866,14 @@ class BEST(BESTBase):
                 "diagonal covariance matrix. This is equivalent to "
                 "multiple independant univariate distributions, but more "
                 "computationally expensive. It recommended "
-                "that `multivariate_likelihood` be set to `False` instead"
+                "that :code:`multivariate_likelihood` be set to :code:`False` instead"
             ))
         if self.multivariate_likelihood and not self.common_shape:
             warn((
-                "Settings `multivariate_likelihood=True` and "
-                "`common_shape=True` are incompatible. Degrees of freedom "
+                "Settings :code:`multivariate_likelihood=True` and "
+                ":code:`common_shape=True` are incompatible. Degrees of freedom "
                 "parameter for the Multivariate Student T must be a scalar. "
-                "The `common_shape` parameter will be ignored"
+                "The :code:`common_shape` parameter will be ignored"
             ))
             self.common_shape = True
             
@@ -928,7 +979,7 @@ class BEST(BESTBase):
     @classmethod
     def set_jax_device(cls, device:str)->None:
         if not device in ('gpu','cpu'):
-            raise ValueError(('Valid values for `jax.device` are'
+            raise ValueError(('Valid values for :code:`jax.device` are'
                              ' either "gpu" or "cpu". Received '
                              f' {device} instead'))
         else:
@@ -968,36 +1019,37 @@ class BEST(BESTBase):
                   unwrap:bool=True):
         r'''
             Utility method that selects a subset of the data and applies
-            `transform` one it.
+            :code:`transform` one it.
+            
+            Used to supply the data or values extracted form the
+            data(mean, standard deviation) to the computation graph
             
             Args:
             -----
                 
-                - | data:pandas.DataFrame:= The dataframe to process
+                - | data:Any := The data to process
                 
-                - | row_indexer:pandas.Index:= Indexer for row selection
+                - | row_indexer:Any := Indexer for row selection
                 
-                - | column_indexer:pandas.Index := Indexer for column selection
+                - | column_indexer:Any := Indexer for column
+                    selection
                 
-                - | transform:Callable[pandas.DataFrame,
-                    Union[pandas.DataFrame, pandas.Series]]:= A callable
-                    that takes a `pandas.DataFrame` and returns a data
-                    structure
+                - | transform:Callable:= A callable that takes a data
+                    structure and returns a data structure
                 
                 - | unwrap:bool=True := When True unwraps the resulting
-                    `pandas.DataFrame` to the underlying `numpy.NDArray`
-                    object. Optional. Defaults to True and returns a
-                    numpy array object
+                    :code:`pandas.DataFrame` to the underlying
+                    :code:`numpy.NDArray` object. Optional. Defaults to
+                    True and returns a numpy array object
                 
             Returns:
             --------
             
-                - | ndf:pandas.DataFrame := A subset of the original
-                    DataFrame
+                - | ndf:bayesian_models.Data := A group of the original
+                    Data
                 
-                - warped_input:pandas.Series:= The output of
-                  `transform`. Generally a `pandas.Series` of empirical
-                  means, or standard deviations
+                - | warped_input:bayesian_models.Data := The output of
+                    :code:`transform`
         '''
         if isinstance(row_indexer, np.ndarray):
             row_indexer = row_indexer.tolist()
@@ -1013,12 +1065,20 @@ class BEST(BESTBase):
     
     def _check_illegal_std(self, stds:list[np.typing.NDArray])->None:
         r'''
+            Checks that the empirical standard deviations are valid
+        
             Check against edge case where the empirical pooled std is
             invalid (0). This happens if:
-                (1) There is a group in the data, such that at least one
-                variable column has all the same values, i.e.
-                x=[100,100,100,100]
-                (2) A group consists of exactly one observation
+                1. | There is a group in the data, such that at least
+                   | one variable column has all the same values, i.e.
+                   | x=[100,100,100,100]
+                2. A group consists of exactly one observation
+                
+            Args:
+            -----
+
+                - | stds:list[NDArray] := A list of the calculated stds,
+                    exactly as they would be passed to the model
         '''
         gather:list[bool] = [
             (std>.0).all() for std in stds
@@ -1044,11 +1104,12 @@ class BEST(BESTBase):
             Args:
             -----
 
-                - | data:pandas.DataFrame := Input information. The data
-                    is assumed to have a single categorical column,
-                    defining the variable to group by
+                - | data:Any := Input information. The data is assumed
+                    to have a single categorical column, defining the
+                    variable to group by
 
-                - | group_var:Union[str,tuple[str]] := 
+                - | group_var:Union[str,tuple[str]] := The variable that
+                    defines the groups (a label)
 
             Returns:
             --------
@@ -1198,14 +1259,15 @@ class BEST(BESTBase):
 
     def fit(self, *args, sampler=pymc.sample , **kwargs)->az.InferenceData:
         r'''
-            Perform inference by sampling from the posterior. `infer` is
-            an alias for `fit`
+            Perform inference by sampling from the posterior.
+            :code:`infer` is an alias for :code:`fit`
 
             Args:
             -----
 
-                - | sampler=pymc.sample := The `pymc` sampler to run
-                    MCMC with. Optional. Defaults to `pymc.sample`
+                - | sampler=pymc.sample := The :code:`pymc` sampler to
+                    run MCMC with. Optional. Defaults to
+                    :code:`pymc.sample`
 
                 - | *args:tuple[Any] := Arguements to be forwarded to
                     the  sampler
@@ -1222,7 +1284,8 @@ class BEST(BESTBase):
             Raises:
             -------
 
-                - RuntimeError := If called before `fit` has been called
+                - | RuntimeError := If called before :code:`fit` has
+                    been called
 
             Warns:
             ------
@@ -1246,7 +1309,7 @@ class BEST(BESTBase):
             multilevel_on:str='[',  extend_summary:bool=True):
         r'''
             Render decisions on group differences, according to the
-            `ROPE+HDI` rule:
+            :code:`ROPE+HDI` rule:
                 
                 - HDI in ROPE := Not Significant (All plausible values
                   are equivalent to 0)
@@ -1254,7 +1317,7 @@ class BEST(BESTBase):
                 - HDI & ROPE == () := Significant (No plausible value is
                   equivalent to zero)
 
-                - | HDI & ROPE != HDI :math:`\lor` () := Withhold
+                - | HDI & ROPE != HDI :math::code:`\lor` () := Withhold
                     decision ('Indeterminate') (Some plausible values
                     are equivalent to zero, other are not)
 
@@ -1322,16 +1385,16 @@ class BEST(BESTBase):
                 - | ropes:Iterable[tuple[float, float]] := An Iterable
                     of length-2 tuples of floats, defining the Region Of
                     Practical Equivalence. Each rope is applied to all
-                    features for every variable in `var_names`.
+                    features for every variable in :code:`var_names`.
 
                 - | hdis:Iterable[float] := An iterable of non-negative
                     floats defining the probability threshold for the
                     credible interval. Is applied to all features for
-                    each variable in `var_names`
+                    each variable in :code:`var_names`
 
                 - | multilevel_on:str='[' := A separator defining the
-                    multilevel index. `pymc` by default concatinates the
-                    label according to the form:
+                    multilevel index. :code:`pymc` by default
+                    concatinates the label according to the form:
                     {var_name}[{feature_label}]. The argument will
                     reindex them in a multilevel fashion of the form
                     (var_name, feature_label) in the resulting
@@ -1349,27 +1412,28 @@ class BEST(BESTBase):
                 - | results:dict[str,pandas.DataFrame] := Decision
                     results. Returned in the form of dictionary, whose
                     keys are the names of deterministic quantities (i.e.
-                    'Δμ' 'Δσ' 'E' 'ν'). Items are `pandas.DataFrame`
-                    object containing summary results (like those
-                    returned by `arviz.summary`) with an additional
-                    column, named `Significance` containing the decision
+                    'Δμ' 'Δσ' 'E' 'ν'). Items are
+                    :code:`pandas.DataFrame` object containing summary
+                    results (like those returned by
+                    :code:`arviz.summary`) with an additional column,
+                    named :code:`Significance` containing the decision
         '''
         if not self.trained:
             raise RuntimeError(("Cannot make predictions. Model has "
-                "not been trained. Call the objects `fit` method first")
+                "not been trained. Call the objects :code:`fit` method first")
                 )
         if 'Δσ' in var_names and not self.std_difference:
             raise RuntimeError(("var_names contains the variable 'Δσ'"
-                                " but `std_difference` was not set to"
+                                " but :code:`std_difference` was not set to"
                                 " True. Ensure you specify "
-                                "`std_differnce=True` when initializing"
+                                ":code:`std_differnce=True` when initializing"
                                 " if you need to return standard "
                                 "deviations" ))
         if 'Effect_Size' in var_names and not self.effect_magnitude:
             raise RuntimeError(("var_names contains the variable 'Δσ'"
-                                " but `effect_magnitude` was not set to"
+                                " but :code:`effect_magnitude` was not set to"
                                 " True. Ensure you specify "
-                                "`effect_magnitude=True` when "
+                                ":code:`effect_magnitude=True` when "
                                 "initializing"
                                 " if you need to return standard "
                                 "deviations" ))
@@ -1415,16 +1479,16 @@ class BEST(BESTBase):
     def summary(self, *args, **kwargs)->Union[
             xr.DataArray, pd.DataFrame]:
         r'''
-            Wrapper for `arviz.summary(idata)`
+            Wrapper for :code:`arviz.summary(idata)`
 
             Args:
             -----
 
                 - | *args:tuple[Any] := Arguments to be forwarded to
-                    `arviz.summary`
+                    :code:`arviz.summary`
 
                 - | **kwargs:dict[str, Any] := Keyword arguments to be
-                    forwarded to `arviz.summary`
+                    forwarded to :code:`arviz.summary`
             
             Returns:
             ---------
@@ -1433,13 +1497,13 @@ class BEST(BESTBase):
         '''
         if not self.trained:
             raise RuntimeError(("Model has not been trained. Ensure "
-                "you've called the objects `fit` method first"))
+                "you've called the objects :code:`fit` method first"))
         return az.summary(self.idata, *args, **kwargs)
 
 
     def plot_posterior(self, *args, **kwargs):
         r'''
-            Wrapper for `arviz.plot_posterior`
+            Wrapper for :code:`arviz.plot_posterior`
             
             Plot Posterior densities in the style of John K. Kruschke's
             book.
@@ -1448,10 +1512,10 @@ class BEST(BESTBase):
         -----
 
             - | *args:tuple[Any] := Arguments to be forwarded to
-                `arviz.plot_posterior`
+                :code:`arviz.plot_posterior`
 
             - | **kwargs:dict[str, Any] := Keyword arguments to be
-                forwarded to`arviz.plot_posterior`
+                forwarded to:code:`arviz.plot_posterior`
                 
         Returns:
         --------
@@ -1466,7 +1530,7 @@ class BEST(BESTBase):
 
     def plot_trace(self, *args, **kwargs):
         r'''
-            Wrapper for `arviz.plot_trace`
+            Wrapper for :code:`arviz.plot_trace`
         
         Plot distribution (histogram or kernel density estimates) and
         sampled values or rank plot. If divergences data is available in
@@ -1477,10 +1541,10 @@ class BEST(BESTBase):
         -----
 
             - | *args:tuple[Any] := Arguments to be forwarded to
-                `arviz.plot_trace`
+                :code:`arviz.plot_trace`
 
             - | **kwargs:dict[str, Any] := Keyword arguments to be
-                forwarded to `arviz.plot_trace`
+                forwarded to :code:`arviz.plot_trace`
                 
         Returns:
         --------
@@ -1509,7 +1573,8 @@ class BEST(BESTBase):
             -----
             
                 - | save_path:Optional[str] := The file path to save the
-                    model to. If `save_path` has been provided at model initialization, need not be provided
+                    model to. If :code:`save_path` has been provided at
+                    model initialization, need not be provided
                     
                 - | method:str='netcdf' := Which method to use to save
                     the model. For the 'netcdf' method, only the
@@ -1540,8 +1605,8 @@ class BEST(BESTBase):
             -----
             
                 - | save_path:Optional[str] := File path to load the
-                    model from. If `save_path` has been provided at
-                    object initialization, it can be ignored
+                    model from. If :code:`save_path` has been provided
+                    at object initialization, it can be ignored
                     
             Returns:
             --------
@@ -1561,10 +1626,12 @@ class Layer:
 
             - name:Optional[str] := An identifier for this layers
 
-            - weight_priors:pymc.Continuous=pymc.Normal := Prior distribution
+            - weight_priors:pymc.Continuous=pymc.Normal := Prior
+              distribution
             for the weight in the layer
 
-            - bias_priors:pymc.Continuous=pymc.Normal := Prior distribution
+            - bias_priors:pymc.Continuous=pymc.Normal := Prior
+              distribution
             for the layer biases
 
             - weight_prior_args:Optional[tuple[Any]] := Arguments to be be
@@ -1710,19 +1777,19 @@ class BayesianNeuralNetwork:
         -------------------
 
         - trained:bool=False := Sentinel value indicating if the models'
-        `fit` method has been called
+        :code:`fit` method has been called
 
         - initialized:bool=False := Sentinel value indicating if the models'
-        `__init__` and `__call__` methods have been called
+        :code:`__init__` and :code:`__call__` methods have been called
 
         - idata:Optional[arviz.InferenceData]=None := The models' posterior
-        samplers, returned by the `fit` method
+        samplers, returned by the :code:`fit` method
 
-        - model:Optional[pymc.Model] := The `pymc.Model` object representing
+        - model:Optional[pymc.Model] := The :code:`pymc.Model` object representing
         the underlying model
 
         - posterior_predictive:Optional[xarray.Dataset] := Samples from the
-        posterior predictive. The result of calling the models' `predict`
+        posterior predictive. The result of calling the models' :code:`predict`
         method
 
         Object Methods:
@@ -1736,8 +1803,8 @@ class BayesianNeuralNetwork:
 
         - fit(self, sampler=pymc.sample, *args:[tuple[Any]],
             **kwargs:dict[str,Any])->arviz.InferenceData := Perform inference
-            on the model, by using `sampler` to sample from the posterior.
-            `infer` is an alias for this method
+            on the model, by using :code:`sampler` to sample from the posterior.
+            :code:`infer` is an alias for this method
 
         - predict(self, Xnew:xarray.DataArray)->xarray.Dataset := Predict
         using the models' posterior predictive distribution.
@@ -1795,7 +1862,8 @@ class BayesianNeuralNetwork:
 
                 - X_train:xarray.DataArray := Model inputs
 
-                - Y_test:xarray.DataArray := Model outputs (rank-2 tensor
+                - Y_test:xarray.DataArray := Model outputs (rank-2
+                  tensor
                 only)
 
             Returns:
@@ -1832,7 +1900,7 @@ class BayesianNeuralNetwork:
             ------
 
                 - sampler:Callable=pymc.sample := The sampler to use for
-                inference. Optional. Defaults to the default `pymc.sample`
+                inference. Optional. Defaults to the default :code:`pymc.sample`
 
                 - *args:tuple[Any] := Positional arguements to be forwarded
                 for the sampler
@@ -1844,7 +1912,7 @@ class BayesianNeuralNetwork:
             ---------
 
                 - self.idata:arviz.InferenceData := Samples from the
-                posterior. The output of calling `sampler`
+                posterior. The output of calling :code:`sampler`
         '''
         with self.model:
             self.idata = sampler(*args, **kwargs)
@@ -1863,7 +1931,7 @@ class BayesianNeuralNetwork:
             Returns:
             --------
 
-                - trace:xarray.Dataset := The `xarray.Dataset` containing
+                - trace:xarray.Dataset := The :code:`xarray.Dataset` containing
                 the models' prediction. Only samples the output layer
                 by default
         '''
