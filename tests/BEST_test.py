@@ -373,4 +373,5 @@ class TestBESTModel(unittest.TestCase):
         obj.predict()
         self.assertTrue(True)
         
-        
+    def test_68(self):
+        pass
