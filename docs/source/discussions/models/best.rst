@@ -48,12 +48,11 @@ For example if the P-value does not exceed some arbitrarily selected
 threshold (often 95% by tradition) this **does not** mean the null
 hypothesis is upheld - indeed the null hypothesis can only be rejected,
 never upheld. A fundamentally more informative approach is one based on
-**estimation** rather than **testing**, and was proposed by *Kruschke,
-John. (2012) Bayesian estimation  supersedes the t-test. Journal of
-Experimental Psychology:General.* According to this approach complete
-distributions are fit to the data in each group, which enables
-calculation of any Deterministic derived quantity of interest, such as
-difference of means, or difference of standard deviations.
+**estimation** rather than **testing**, and was proposed by Kruschke.
+According to this approach complete distributions are fit to the data in
+each group, which enables calculation of any Deterministic derived
+quantity of interest, such as difference of means, or difference of
+standard deviations.
 
 Historical Context 
 ==========================
@@ -207,8 +206,8 @@ tempting to do so, especially for the non specialist
     the question "is the null hypothesis true based on the data", which
     the above papers alude to, pay close attention to the mathematical
     notation. The general notation :math:`p(A|B)` means, the probability
-    of event :math:`A` occuring **conditioned** or given that event
-    :math:`B` has occured. The null hypothesis is assumed to be correct
+    of event :math:`A` occurring **conditioned** or given that event
+    :math:`B` has occurred. The null hypothesis is assumed to be correct
     when NHSTs are conducted, hence once cannot assign a probability to
     it
 
