@@ -664,8 +664,7 @@ class BESTCoreComponent(CoreModelComponent):
                 effect_magnitude = pymc.Deterministic(
                     v_name_magnitude, diff/pymc.math.sqrt(
                         (std1**2+std2**2)/2), dims='dimentions')
-                self.variables[v_name_magnitude].append(
-                    effect_magnitude)
+                self.variables[v_name_magnitude] = effect_magnitude
                 self._derived_quantities['effect_magnitude'].append(
                     v_name_magnitude
                 )

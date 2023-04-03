@@ -374,4 +374,16 @@ class TestBESTModel(unittest.TestCase):
         self.assertTrue(True)
         
     def test_68(self):
-        pass
+        from sklearn.datasets import load_iris
+        
+        X, y = load_iris(return_X_y=True, as_frame=True)
+        names=load_iris().target_names
+        y=y.replace({i:names[i] for i in range(len(names))})
+        df = pd.concat([X,y], axis=1)
+        BEST.std_upper = 1e3
+        BEST.std_lower = 1e-3
+        obj = BEST()(df, "target")
+        obj = BEST(
+            std_difference=True, effect_magnitude=True
+            )(df, "target")
+        self.assertTrue(True)
