@@ -11,7 +11,7 @@ release = '0.1.0'
 extensions = [
     'sphinxcontrib.katex',
     'sphinx.ext.autodoc',
-]
+    ]
 
 templates_path = ['_templates']
 exclude_patterns = []

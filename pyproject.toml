@@ -44,7 +44,6 @@ dev = [
   'sphinx',
   'sphinxcontrib-katex',
   'sphinx-rtd-theme',
-  'sphinxcontrib-bibtex',
 ]
 
 
