@@ -1,4 +1,3 @@
-
 #   Copyright 2023 Alexander Rodis
 #
 #   Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,6 +11,9 @@
 #   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #   See the License for the specific language governing permissions and
 #   limitations under the License.
+#
+# This module contains additional math functions and definitions, mostly
+# related to neural network activations / transfer functions
 
 import pytensor
 import pymc
