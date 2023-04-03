@@ -1,8 +1,41 @@
 bayesian\_models package
 ========================
 
+Module contents
+---------------
+
+.. automodule:: bayesian_models
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+
 Submodules
 ----------
+
+bayesian\_models.core module
+----------------------------
+
+.. automodule:: bayesian_models.core
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+bayesian\_models.data module
+----------------------------
+
+.. automodule:: bayesian_models.data
+   :members:
+   :undoc-members:
+   :show-inheritance:
+
+bayesian\_models.math module
+----------------------------
+
+.. automodule:: bayesian_models.math
+   :members:
+   :undoc-members:
+   :show-inheritance:
 
 bayesian\_models.models module
 ------------------------------
@@ -12,18 +45,18 @@ bayesian\_models.models module
    :undoc-members:
    :show-inheritance:
 
-bayesian\_models.utilities module
----------------------------------
+bayesian\_models.typing module
+------------------------------
 
-.. automodule:: bayesian_models.utilities
+.. automodule:: bayesian_models.typing
    :members:
    :undoc-members:
    :show-inheritance:
 
-Module contents
----------------
+bayesian\_models.utilities module
+---------------------------------
 
-.. automodule:: bayesian_models
+.. automodule:: bayesian_models.utilities
    :members:
    :undoc-members:
    :show-inheritance:

@@ -1,10 +1,7 @@
 API Reference
 *************
 
-.. toctree::
-    :maxdepth: 2
+.. include:: bayesian_models.rst
 
-    framework/data
-    framework/model_builder
-    models/best
+.. include:: modules.rst
     

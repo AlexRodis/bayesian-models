@@ -18,7 +18,7 @@ std_scale = lambda df: pd.DataFrame(
 
 
 def rowwise_value_counts(df:pd.DataFrame):
-    '''
+    r'''
         Returns row-wise counts of values for
         categorical variables.
 
@@ -42,19 +42,21 @@ def rowwise_value_counts(df:pd.DataFrame):
 invert_dict = lambda e: {v:k for k, v in e.items()}
 
 def flatten(obj:Iterable):
-    '''
-        Recursively flatten arbitary an arbitary input iterable, yielding
-        values iteratively.
+    r'''
+        Flatten a nested iterable
+    
+        Recursively flatten arbitrary an arbitrary input iterable,
+        yielding values iteratively.
 
         Args:
         -----
 
             - obj:Iterable := The nested iterable to flatten
 
-        Returns:
-        --------
+        Yields:
+        -------
 
-            - 
+            - | element:Any := Each non-iterable element in the array
     '''
     PRIMITIVES=(str, bytes)
     for e in obj:
@@ -65,26 +67,30 @@ def flatten(obj:Iterable):
 
 
 def tidy_multiindex(df:pd.DataFrame, sep:str="."):
-    '''
+    r'''
+        Convert a hierarchically indexed :code:`pandas.DataFrame` to
+        tidy formated one
+    
         Compress a hierarchically indexed dataframe to standardized tidy
         format. A unique sepperator `sep` is used to allow reversal. All
-        levels of the index are appended together with a delimeter to allow
-        reversals.
+        levels of the index are appended together with a delimeter to
+        allow reversals.
         
         Args:
         ----
         
-            - df:pandas.DataFrame := A `pandas.DataFrame` hierarchically 
-            indexed
+            - | df:pandas.DataFrame := A `pandas.DataFrame`
+                hierarchically indexed
             
-            - sep:str='_._' := A delimenter delineating the different levels
-            of the index. Ensure it is not present in any column name to avoid
-            a malformed index
+            - | sep:str='_._' := A delimenter delineating the different
+                levels of the index. Ensure it is not present in any
+                column name to avoid a malformed index
             
         Returns:
         --------
         
-            - ndf:pandas.DataFrame := The DataFrame with a single-level index
+            - | ndf:pandas.DataFrame := The DataFrame with a
+                single-level index
     '''
     tidy_cols = df.columns
     tidy_rows = df.index
@@ -102,8 +108,11 @@ def tidy_multiindex(df:pd.DataFrame, sep:str="."):
 
 
 def reverse_tidy_multiindex(df:pd.DataFrame, sep="."):
-    '''
-        Reverses the tidying to a hierachical format. Different
+    r'''
+        Convert a tidy dataframe to hierarchically indexed one based on
+        separator delimiters
+    
+        Reverses the tidying to a hierarchical format. Different
         levels of the index are identified based on "sep"
         
         Args:
@@ -111,8 +120,8 @@ def reverse_tidy_multiindex(df:pd.DataFrame, sep="."):
         
             - df:pandas.DataFrame := The dataframe to process
             
-            - sep:str='_._' := The string delimeter, sepperating
-            values for different levels of the index
+            - | sep:str='_._' := The string delimiter, separating
+                values for different levels of the index
             
         Returns:
         -------
@@ -129,31 +138,34 @@ def undummify(df:pd.DataFrame,cols:list[str, tuple[str]],
     sep:typing.Optional[str]=None,
     rmap:typing.Optional[dict[int, typing.Union[str, tuple[str]]]]=None
              )->pd.DataFrame:
-    '''
-        Reverses hot-encoded variables in the DataFrame. A series of 
-        hot-encoded variable levels $(i_1, i2, \dots, i_k)$ is mapped to a 
-        single new column $(k)$, whose name is specified by `ncol_name`, in 
-        the new dataframe. Previous level columns are dropped.
+    r'''
+        Reverses hot-encoded variables in the DataFrame. 
+        
+        A series of hot-encoded variable levels :math:`(i_1, i2, \dots,
+        i_k)` is mapped to a  single new column :math:`(k)`, whose name
+        is specified by :code:`ncol_name`, in the new dataframe.
+        Previous level columns are dropped.
         
         Args:
         ----
         
             - df:pandas.DataFrame := The DataFrame to operate upon
             
-            - cols:list[str, tuple[str]] := A list of columns, representing 
-            the levels of a categorical variable
+            - | cols:list[str, tuple[str]] := A list of columns,
+                representing  the levels of a categorical variable
             
-            - sep:Optional[str] := sepperator for variable level. Currently 
-            ignored
+            - | sep:Optional[str] := Separator for variable level.
+                Currently ignored
             
-            - ncol_name:Union[str, tuple[str]] := Name of the new categorical 
-            column
+            - | ncol_name:Union[str, tuple[str]] := Name of the new
+                categorical column
             
-            - remap:Optional[dict[int, Union[str, tuple[str]]]] := A 
-            dictionary mapping of categorical levels to values. Keys are the 
-            assumed to be levels, values are assumed to be values 
-            (i.e. strings). When provided, the previous levels will be 
-            replaced by the specified mappings in the new DataFrame
+            - | remap:Optional[dict[int, Union[str, tuple[str]]]] := A
+                dictionary mapping of categorical levels to values. Keys
+                are the  assumed to be levels, values are assumed to be
+                values (i.e. strings). When provided, the previous
+                levels will be  replaced by the specified mappings in
+                the new DataFrame
             
         Returns:
         -------
@@ -179,24 +191,26 @@ list_difference = lambda l1, l2: [e for e  in l1 if e not in set(l2)]
 
 
 class SklearnDataFrameScaler:
-    '''
-        Simple wrapper for `sklearn.preprocessing` scalers.
-        For labeled inputs, these return numpy arrays. This
-        wrapper adds the labels back to the result
+    r'''
+        Extend the functionality of sklearn scalers, allowing for
+        labeled inputs and outputs
+        
+        Adds labels to the result of sklearn scalers
         
         Args:
         -----
         
-            - scaler:Callable[[...], tuple[numpy.ndarray]] := 
-            The scaler Callable. Must use the class based API
+            - | scaler:Callable[[...], tuple[numpy.ndarray]] := The
+                scaler Callable. Must use the class based API
             
-            - backend:str='pandas' := Which label matrix backend
-            to use. Valid options are 'pandas' and 'xarray'
+            - | backend:str='pandas' := Which label matrix backend to
+                use. Valid options are 'pandas' and 'xarray'
             
         Returns:
         --------
-            -scaler_arrays:tuple[pd.DataFrame, xarray.DataArray] := 
-            A tuple of rescaled and relabeled arrays
+        
+            - | scaler_arrays:tuple[pd.DataFrame, xarray.DataArray] := A
+                tuple of rescaled and relabeled arrays
     '''
     
     def __init__(self, scaler:Callable[..., Any], backend:str="pandas",
@@ -213,7 +227,7 @@ class SklearnDataFrameScaler:
             columns = arr.columns) for arr in arrs ])
 
 class DictTable(dict):
-    '''
+    r'''
         Jupyter utility class that overrides the dicts' defaults
         __repr__ rendering the input dictionary to an HTML table
         for convenient jupyter rendering
@@ -229,7 +243,7 @@ class DictTable(dict):
         return ''.join(html)
 
 def count_missing_nan(df:pd.DataFrame, axis:int=0):
-    '''
+    r'''
         Return a new DataFrame with the counts of missing
         and invalid values across specified axis.
         
@@ -238,15 +252,15 @@ def count_missing_nan(df:pd.DataFrame, axis:int=0):
         
             - df:pandas.DataFrame := The data
             
-            - axis:int=0 := The axis across which missing
-            values will be enumerated. Defaults to 0 (show
-            missing values in each column)
+            - | axis:int=0 := The axis across which missing values will
+                be enumerated. Defaults to 0 (show missing values in
+                each column)
             
         Returns:
         -------
         
-            - missing_df:pd.DataFrame := A DataFrame containing
-            counts of missing values
+            - | missing_df:pd.DataFrame := A DataFrame containing counts
+                of missing values
     '''
     ndf = pd.DataFrame(df.isna().sum(axis=axis)).T
     ndf.index = ['']
@@ -283,20 +297,23 @@ def select_subarray(df:pd.DataFrame,
 
 def dataarray_from_pandas(df:pd.DataFrame,dim_names=["dim_0", "dim_1"],
     **kwargs ):
-    '''
-        Convert a `pandas.DataFrame` to an equivalent `xarray.DataArray`
+    r'''
+        Convert a :code:`pandas.DataFrame` to an equivalent
+        :code:`xarray.DataArray`
         
         Args:
         -----
         
-            - df:pandas.DataFrame := The `pandas.DataFrame` to convert
+            - | df:pandas.DataFrame := The :code:`pandas.DataFrame` to
+                convert
             
-            - dim_names:Sequence[Hashable] := A sequence of `Hashable`
-            names to be used for the two axis. Optional. Defaults to
-            the names 'dim_0' and 'dim_1'.
+            - | dim_names:Sequence[Hashable] := A sequence of
+                :code:`Hashable` names to be used for the two axis.
+                Optional. Defaults to the names 'dim_0' and 'dim_1'.
             
-            - **kwargs:dict[Any,Any] := Keyword arguements to be 
-            forwarded to `xarray.DataArray` constructor. Optional
+            - | **kwargs:dict[Any,Any] := Keyword arguments to be
+                forwarded to :code:`xarray.DataArray` constructor.
+                Optional
             
         Returns:
         --------
@@ -308,7 +325,7 @@ def dataarray_from_pandas(df:pd.DataFrame,dim_names=["dim_0", "dim_1"],
 
 def package_dirichlet_predictions(raw_preds,outputs, 
     inputs=None,model=None)->xr.DataArray:
-    '''
+    r'''
         Converts the raw numpy tensor output of an A.N.N
         to a human-readable `xarray.DataArray`, with optional
         post-processing
@@ -316,26 +333,24 @@ def package_dirichlet_predictions(raw_preds,outputs,
         Args:
         -----
         
-            - raw_preds:numpy.ndarray := The output of the
-            `tf.model.predict`
+            - | raw_preds:numpy.ndarray := The output of the
+                :code:`tf.model.predict`
             
-            - outputs:xarray.DataArray := The test set of
-            the N.N., from which names and labels will be
-            infered.
+            - | outputs:xarray.DataArray := The test set of the N.N.,
+                from which names and labels will be inferred.
             
-            - inputs:Optional[xarray.DataArray] := The inputs
-            to the model. Should only be prodived if the
-            inputs were masked, and this should be the
-            unmasked tensor, from which appropriate reshape
-            will be infered. First two dimentions are
-            assumed to be of `permutation x sample`. 
-            Optional. Defaults to None (ignored and no
-            reshaping will be attempted).
+            - | inputs:Optional[xarray.DataArray] := The inputs to the
+                model.. Should only be prodived if the inputs were
+                masked, and this should be the unmasked tensor, from
+                which appropriate reshape will be infered. First two
+                dimentions are assumed to be of `permutation x sample`.
+                Optional. Defaults to None (ignored and no reshaping
+                will be attempted).
             
-            model:Optional[tf.keras.model]=None := The
-            model, whose metadata will be extracted and
-            added to the resulting DataArray's attributes.
-            Optional. Currently not implemented.
+            - | model:Optional[tf.keras.model]=None := The model, whose
+                metadata will be extracted and added to the resulting
+                DataArray's attributes. Optional. Currently not
+                implemented.
     '''
     import datetime
     # Add more model characteristics
@@ -362,38 +377,37 @@ def package_dirichlet_predictions(raw_preds,outputs,
     return predictions
 
 def dirichlet_moments(a:np.ndarray,standardize:bool=True):
-    '''
-        Calculate the Dirichlet distributions'
-        critical moments. A dirichlet is fully
-        specified by it's first two moments,
-        i.e. mean and variance
+    r'''
+        Calculate the Dirichlet distributions' critical moments. 
+        
+        A dirichlet is fully specified by it's first two moments, i.e.
+        mean and variance
         
         Args:
         -----
-            - shape:Sequence:= The shape parameter(α) of the
-            Dirichlet. First dimention is assumed to by
-            sepperate Dirichlets and the last dimention
-            defines the shape
+            - | shape:Sequence:= The shape parameter(α) of the
+                Dirichlet. First dimension is assumed to by separate
+                Dirichlets and the last dimension defines the shape
             
-            - standardize:bool=True := If true standardizes
-            the variance, returning standard deviation. Else
-            returns plain second order central moment i.e. the
-            variance. Optional. Defalts to True.
+            - | standardize:bool=True := If true standardizes the
+                variance, returning standard deviation. Else returns
+                plain second order central moment i.e. the variance.
+                Optional. Defaults to True.
         
         Returns:
         -------
         
-            - dirich_moments:xarray.Dataset := An `xarray.Dataset`
-            containing the calculcate moments. Always has the
-            'variance' and 'mean' data variables, and if
-            `standardize=True` also contains the 'std_dev'
-            data variable
+            - | dir_moments:xarray.Dataset := An :code:`xarray.Dataset`
+                containing the calculate moments. Always has the
+                'variance' and 'mean' data variables, and if
+                :code:`standardize=True` also contains the 'std_dev'
+                data variable
             
         Raises:
         -------
             
-            - ValueError:= If the input a cannot be coerced into
-            an array-like structure, via a.values
+            - | ValueError:= If the input a cannot be coerced into an
+                array-like structure, via a.values
     '''
     α=a
     α0=α.sum(axis=-1,keepdims=True)
@@ -409,56 +423,61 @@ def dirichlet_moments(a:np.ndarray,standardize:bool=True):
 def mean_squared_error(true:np.typing.NDArray, 
     predicted:np.typing.NDArray, sample_weights=None, squared:bool=True, 
     mean:bool=True, average:bool=True, sample_dim:int=0):
-    '''
+    r'''
         Squared Error implementation, based  on 
         `sklearn.metrics.mean_squared_error` with more options.
 
         Args:
         -----
 
-            - true:numpy.typing.NDArray := Array of true values
+            - | true:numpy.typing.NDArray := Array of true values
 
-            - predicted:numpy.typing.NDArray := Array of predicted values
+            - | predicted:numpy.typing.NDArray := Array of predicted values
 
-            - mean:bool=True := Selects whether to calculate the mean of
-            error across all samples or return indevidual errors. Optional
-            Defaults to True (and return Mean Squared Error)
+            - | mean:bool=True := Selects whether to calculate the mean
+                of error across all samples or return individual errors.
+                Optional. Defaults to True (and return Mean Squared
+                Error)
 
-            - average:bool=True := Selects how to handle multidimentional
-            inputs. If True (default) averages over the outputs axis. With
-            The averaging behavior is determined by `sample_weights`. If `None`
-            then performs uniform averaging, otherwise returns a weighted
-            average. If `False` averaging is done, and errors are returned
-            for each output. Optional. Defaults to `True` and returns uniform
-            average `MSE`.
+            - | average:bool=True := Selects how to handle
+                multidimentional inputs. If True (default) averages over
+                the outputs axis. WithThe averaging behavior is
+                determined by `sample_weights`. If `None` then performs
+                uniform averaging, otherwise returns a weighted average.
+                If `False` averaging is done, and errors are returned
+                for each output. Optional. Defaults to `True` and
+                returns uniform average `MSE`.
 
-            - sample_weights:Optional[np.typing.NDArray] := An array of 
-            weights to be used during averaging over the outputs dimention.
-            Must be of appropriate length and is ignored is `average=False`.
-            If `None` the average is uniform. Optional. Defaults to `None` and
-            returns uniform averaging.
+            - | sample_weights:Optional[np.typing.NDArray] := An array
+                of  weights to be used during averaging over the outputs
+                dimension. Must be of appropriate length and is ignored
+                is `average=False`. If `None` the average is uniform.
+                Optional. Defaults to `None` and returns uniform
+                averaging.
 
-            - sample_dim:int=0 := Specifies the sample dimention. Optional.
-            Defaults to 0.
+            - | sample_dim:int=0 := Specifies the sample dimension.
+                Optional. Defaults to 0.
 
         Returns:
         --------
 
-            - errors:numpy.ndarray := An array of errors. Either mse, if
-            `mean=True` and `squared=True`, rmse if `squared=False`, 
-            squared error if `mean=False` and `squared=True` or error
-            if `mean=False` and `squared=False`:
+            - | errors:numpy.ndarray := An array of errors. Either mse,
+                if `mean=True` and `squared=True`, rmse if
+                `squared=False`,  squared error if `mean=False` and
+                `squared=True` or error if `mean=False` and
+                `squared=False`:
 
                 - `mean=True`and `average=True` := Scalar mse
 
-                - `mean=True` and `average=False` := Output-length vector
-                of errors for each output
+                - | `mean=True` and `average=False` := Output-length
+                    vector of errors for each output
 
-                - `mean=False` and `average=True` := observations-length
-                vector of averaged error for each test sample
+                - | `mean=False` and `average=True` :=
+                    observations-length vector of averaged error for
+                    each test sample
 
-                - `mean=False` and `average=False` := 2D array, of the same
-                shape as the inputs
+                - | `mean=False` and `average=False` := 2D array, of the
+                    same shape as the inputs
 
     '''
     averaged = None
@@ -490,54 +509,58 @@ def gen_masked_predictions(model, masked_generator,
                             ]=[functools.partial(mean_squared_error,
                             squared=False)],
                             return_elements:bool=False, **kwargs):
-    '''
+    r'''
         Generate performance metric evaluations on masked
         inputs.
         
         Args:
         -----
-            - model:= The model to generate predictions from
+            - | model:= The model to generate predictions from
         
-            - masked_generator:= Masked inputs generator. Firstmost
-            element must be ground truth, i.e. fully unmasked inputs
+            - | masked_generator:= Masked inputs generator. First most
+                element must be ground truth, i.e. fully unmasked inputs
             
-            - baseline_truth:np.ndarray := Array of values to be used
-            as ground truths. Will be expanded during evaluation
-            process
+            - | baseline_truth:np.ndarray := Array of values to be used
+                as ground truths. Will be expanded during evaluation
+                process
             
-            - metrics:list[Callable[...,Any]] := Metrics to be used in
-            the assessment of the A.N.N. predictions. Currently only a
-            single metric is supported. The metric should be a Callable
-            accepting a `baseline truth` tensor, a `predictions` tensor and
-            a sample_dim arguement. Currently only single rank inputs are
-            supported and the `sample_dim` determines the features axis.
+            - | metrics:list[Callable[...,Any]] := Metrics to be used in
+                the assessment of the A.N.N. predictions. Currently only
+                a single metric is supported. The metric should be a
+                Callable accepting a `baseline truth` tensor, a
+                `predictions` tensor and a sample_dim argument.
+                Currently only single rank inputs are supported and the
+                `sample_dim` determines the features axis.
 
-           - return_inputs:bool=True := Selects whether to return detected 
-            inputs or just the absolute indices of the masks.
+           - | return_inputs:bool=True := Selects whether to return
+               detected  inputs or just the absolute indices of the
+               masks.
             
-            - kwargs:dict[str,Any]:= Keyword arguments to be forwarded
-            to, among other places `model.predict`
+            - | kwargs:dict[str,Any]:= Keyword arguments to be forwarded
+                to, among other places `model.predict`
 
 
         Returns:
         ---------
 
-            - Measures:collections.namedtuple := A namedtupe containing
-            the metric evaluation for the masks and optionally the 
-            corresponding inputs. Has three fields:
+            - |  Measures:collections.namedtuple := A namedtuple
+                 containing the metric evaluation for the masks and
+                 optionally the  corresponding inputs. Has three fields:
 
-                - iteration:int>=1 := Enumerates the current iteration
+                - | iteration:int>=1 := Enumerates the current iteration
 
-                - measures:numpy.ndarray := Array of `metric` evaluations
-                for the masks. For code consistency, is a rank-4 tensor
-                of the form `distribution_moment x permutation x sample x features`
-                of the general form `1 x batch_size x 1 x 1`.
+                - | measures:numpy.ndarray := Array of `metric`
+                    evaluations for the masks. For code consistency, is
+                    a rank-4 tensor of the form `distribution_moment x
+                    permutation x sample x features` of the general form
+                    `1 x batch_size x 1 x 1`.
 
-                - inputs:Optional[xarray.DataArray]=None := If 
-                `return_elements=True` if an `xarray.DataArray` containing
-                the masked inputs, otherwise is None. The array is a rank-3 
-                tensor of `permutations x samples x features`. Defaults to
-                non-empty field.
+                - | inputs:Optional[xarray.DataArray]=None := If
+                    :code:`return_elements=True` if an
+                    :code:`xarray.DataArray` containing the masked
+                    inputs, otherwise is None. The array is a rank-3
+                    tensor of :code:`permutations x samples x features`.
+                    Defaults to non-empty field.
     '''
     import numpy as np
     from collections import namedtuple
@@ -570,67 +593,96 @@ def gen_masked_predictions(model, masked_generator,
         
 def extract_dist_shape(dist:Type[Distribution])->list[str]:
     from inspect import signature
-    '''
+    r'''
         Extracts the names of a distributions' shape parameters,
-        returning them as strings. For example:
-        .. code-block::
+        returning them as strings. 
+        
+        Example:
+        
+        .. code-block:: python
+        
             extract_dist_shape(pymc.StudentT)
             ['mu', 'sigma', 'nu']
+            
+        Args:
+        -----
+        
+            - | dist:Type[pymc.Distribution] := A
+                :code:`pymc.Distribution` object
+                
+        Returns:
+        --------
+        
+            - | shape:list[str] := Symbols for the distributions' shape
+                parameters
     '''
     return [e for e in signature(dist.logp) if e != 'value']
 
 
 def powerset(sequence:Sequence)->Iterable:
-    '''
-        Powerset implementation in pure python. Returns all possible
-        'subsets' of input sequence, including the empty set. Evaluation
-        is lazy, and each element returned is a tuple of the elements
-        of the original iterable. Example:
+    r'''
+        Powerset implementation in pure python. 
         
-        .. code-block::
+        Returns all possible 'subsets' of input sequence, including the empty set. Evaluation is lazy, and each element returned is a tuple of the elements of the original iterable. 
+        
+        Example:
+        
+        .. code-block:: python
+        
             # The input here are the keys
             ittr = dict(one=1, two=2, three=3, four=4)
-            In [7]: list(powerset(ittr))
-            Out[7]: 
-            [(),
-            ('one',),
-            ('two',),
-            ('three',),
-            ('four',),
-            ('one', 'two'),
-            ('one', 'three'),
-            ('one', 'four'),
-            ('two', 'three'),
-            ('two', 'four'),
-            ('three', 'four'),
-            ('one', 'two', 'three'),
-            ('one', 'two', 'four'),
-            ('one', 'three', 'four'),
-            ('two', 'three', 'four'),
-            ('one', 'two', 'three', 'four')]
+            print(list(powerset(ittr)))
+            # Output:
+            # [(),
+            # ('one',),
+            # ('two',),
+            # ('three',),
+            # ('four',),
+            # ('one', 'two'),
+            # ('one', 'three'),
+            # ('one', 'four'),
+            # ('two', 'three'),
+            # ('two', 'four'),
+            # ('three', 'four'),
+            # ('one', 'two', 'three'),
+            # ('one', 'two', 'four'),
+            # ('one', 'three', 'four'),
+            # ('two', 'three', 'four'),
+            # ('one', 'two', 'three', 'four')]
 
             # Another example, with the iterable being tuples of key/value
             # pairs
-            In [8]: list(powerset(ittr.items()))
-            Out[8]: 
-            [(),
-            (('one', 1),),
-            (('two', 2),),
-            (('three', 3),),
-            (('four', 4),),
-            (('one', 1), ('two', 2)),
-            (('one', 1), ('three', 3)),
-            (('one', 1), ('four', 4)),
-            (('two', 2), ('three', 3)),
-            (('two', 2), ('four', 4)),
-            (('three', 3), ('four', 4)),
-            (('one', 1), ('two', 2), ('three', 3)),
-            (('one', 1), ('two', 2), ('four', 4)),
-            (('one', 1), ('three', 3), ('four', 4)),
-            (('two', 2), ('three', 3), ('four', 4)),
-            (('one', 1), ('two', 2), ('three', 3), ('four', 4))]
+            print(list(powerset(ittr.items())))
+            
+            # Output:
+            # [(),
+            # (('one', 1),),
+            # (('two', 2),),
+            # (('three', 3),),
+            # (('four', 4),),
+            # (('one', 1), ('two', 2)),
+            # (('one', 1), ('three', 3)),
+            # (('one', 1), ('four', 4)),
+            # (('two', 2), ('three', 3)),
+            # (('two', 2), ('four', 4)),
+            # (('three', 3), ('four', 4)),
+            # (('one', 1), ('two', 2), ('three', 3)),
+            # (('one', 1), ('two', 2), ('four', 4)),
+            # (('one', 1), ('three', 3), ('four', 4)),
+            # (('two', 2), ('three', 3), ('four', 4)),
+            # (('one', 1), ('two', 2), ('three', 3), ('four', 4))]
 
+    Args:
+    -----
     
+        - | sequence:Sequence := A sequence whose powerset it to be
+            computed
+            
+    Returns:
+    --------
+    
+        - | lazy_poweset:Generator := Generator yielding sub sets of the
+            input iterable as tuples
     '''
     from itertools import chain, combinations
     return chain.from_iterable(
@@ -638,52 +690,74 @@ def powerset(sequence:Sequence)->Iterable:
         )
 
 def dict_powerset(dictionary:dict, keys_only:bool=False)->Iterable:
-    '''
-        Dictionary powerset function. Lazily returns all possible 
-        'sub-dictionaries' from an input dict - including an emtpy
-        dict. Returns entire dicts if `keys_only=True` or tuples of
-        keys otherwise. Examples:
+    r'''
+        Dictionary powerset function. 
         
-        .. code-block::
-            In [1]: ittr = dict(one=1, two=2, three=3, four=4)
-            In [2]: list(dict_powerset(ittr))
-            Out[2]: 
-            [{},
-            {'one': 1},
-            {'two': 2},
-            {'three': 3},
-            {'four': 4},
-            {'one': 1, 'two': 2},
-            {'one': 1, 'three': 3},
-            {'one': 1, 'four': 4},
-            {'two': 2, 'three': 3},
-            {'two': 2, 'four': 4},
-            {'three': 3, 'four': 4},
-            {'one': 1, 'two': 2, 'three': 3},
-            {'one': 1, 'two': 2, 'four': 4},
-            {'one': 1, 'three': 3, 'four': 4},
-            {'two': 2, 'three': 3, 'four': 4},
-            {'one': 1, 'two': 2, 'three': 3, 'four': 4}]
+        Lazily returns all possible  'sub-dictionaries' from an input
+        dict - including an empty dict. Returns entire dicts if
+        :code:`keys_only=True` or tuples of keys otherwise.
+        
+        Examples:
+        
+        .. code-block:: python
+        
+            ittr = dict(one=1, two=2, three=3, four=4)
+            print(list(dict_powerset(ittr)))
+            # Output 
+            # [{},
+            # {'one': 1},
+            # {'two': 2},
+            # {'three': 3},
+            # {'four': 4},
+            # {'one': 1, 'two': 2},
+            # {'one': 1, 'three': 3},
+            # {'one': 1, 'four': 4},
+            # {'two': 2, 'three': 3},
+            # {'two': 2, 'four': 4},
+            # {'three': 3, 'four': 4},
+            # {'one': 1, 'two': 2, 'three': 3},
+            # {'one': 1, 'two': 2, 'four': 4},
+            # {'one': 1, 'three': 3, 'four': 4},
+            # {'two': 2, 'three': 3, 'four': 4},
+            # {'one': 1, 'two': 2, 'three': 3, 'four': 4}]
             
             
-            In [3]: list(dict_powerset(ittr, keys_only=True))
-            Out[3]: 
-            [(),
-            ('one',),
-            ('two',),
-            ('three',),
-            ('four',),
-            ('one', 'two'),
-            ('one', 'three'),
-            ('one', 'four'),
-            ('two', 'three'),
-            ('two', 'four'),
-            ('three', 'four'),
-            ('one', 'two', 'three'),
-            ('one', 'two', 'four'),
-            ('one', 'three', 'four'),
-            ('two', 'three', 'four'),
-            ('one', 'two', 'three', 'four')]
+            print(list(dict_powerset(ittr, keys_only=True)))
+            # Output
+            # [(),
+            # ('one',),
+            # ('two',),
+            # ('three',),
+            # ('four',),
+            # ('one', 'two'),
+            # ('one', 'three'),
+            # ('one', 'four'),
+            # ('two', 'three'),
+            # ('two', 'four'),
+            # ('three', 'four'),
+            # ('one', 'two', 'three'),
+            # ('one', 'two', 'four'),
+            # ('one', 'three', 'four'),
+            # ('two', 'three', 'four'),
+            # ('one', 'two', 'three', 'four')]
+            
+        Args:
+        -----
+        
+            - | dictionary := Dict whose powerset is to be computed
+            
+            - | keys_only:bool=False := If :code:`True` use only the
+                keys for computing the powerset
+                
+        Returns:
+        --------
+        
+            - | kpset:Generator := Lazily yield tuples of subsets of
+                keys
+                
+            - | dpset:map := Map object yielding sub-dictionaries of the
+                original
+        
 
     '''
     expr = dictionary.keys if keys_only else dictionary.items
@@ -691,9 +765,6 @@ def dict_powerset(dictionary:dict, keys_only:bool=False)->Iterable:
         return powerset(expr())
     else:
         return map(dict, powerset(expr()))
-
-
-
 
 # def dirichlet_moments(a,standardize:bool=True):
 #     '''
