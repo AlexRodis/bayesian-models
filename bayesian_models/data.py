@@ -1,3 +1,18 @@
+
+#   Copyright 2023 Alexander Rodis
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+
 from __future__ import annotations
 import xarray as xr
 import  pandas as pd
@@ -8,14 +23,6 @@ from typing import Callable, NamedTuple
 from .typing import ndarray, InputData, SHAPE, DIMS, COORDS
 from .typing import AXIS_PERMUTATION
 from dataclasses import dataclass, field
-
-# TODO: 
-# * Impute missing data. Maybe add slicing to the common data 
-# interface
-# * Much of this code is inefficient. Refactor
-# * Replace long if/else statements with structural pattern matching
-# * xarray constructor needs refactoring
-# * Lots of repetition in both __getitem__ and unique implementations
 
 
 
