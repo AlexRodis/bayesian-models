@@ -19,6 +19,7 @@ from bayesian_models.models import BEST
 import numpy as np
 import pandas as pd
 import warnings
+from os import remove
 from bayesian_models.typing import PREDICATES
 
 warnings.filterwarnings("ignore")

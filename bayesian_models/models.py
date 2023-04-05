@@ -38,6 +38,7 @@ __all__ = (
         'BayesianModel',
         'BayesianEstimator',
         'BEST',
+        'GaussianProcess'
         'ReLU',
         'GELU',
         'ELU',
@@ -1624,3 +1625,21 @@ class BEST(BESTBase):
                 - None
         '''
         self._io_handler.load(save_path)
+
+class GaussianProcess(BayesianEstimator):
+    
+    def __init__(self):
+        pass
+    
+    def __call__(self):
+        pass
+    
+    @property
+    def posterior_trace(self):
+        pass
+    
+    def fit(self):
+        pass
+    
+    def predict(self):
+        pass
