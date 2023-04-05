@@ -51,7 +51,7 @@ jaxlib==0.4.1
 To attempt to install with GPU support run:
 
 ```
-pip install 'bayesian_models[GPU]@ git+ssh://git@github.com/AlexRodis/bayesian-models.git'
+pip install 'bayesian_models[GPU]@git+ssh://git@github.com/AlexRodis/bayesian-models.git'
 ```
 
 Note: the GPU version is unstable
