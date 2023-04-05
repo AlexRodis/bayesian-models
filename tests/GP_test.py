@@ -25,16 +25,17 @@ import warnings
 class TestGaussianProcesses(unittest.TestCase):
     
     @classmethod
-    def setUpTests(cls)->None:
+    def setUpClass(cls)->None:
         r'''
             Set up datasets for testing
         '''
-        X, y = sklearn.datasets.load_iris(return_X_y=True, 
-                                          as_frames=True)
-        names = sklearn.datasets.load_iris().target_names
+        from sklearn.datasets import load_iris, load_diabetes
+        X, y = load_iris(return_X_y=True, 
+                                          as_frame=True)
+        names = load_iris().target_names
         Y = y.replace({i:name for i, name in enumerate(names)})
         df = pd.concat([X,Y], axis=1)
-        df.columns[-1] = "species"
+        df.columns = df.columns.tolist()[:-1]+["species"]
         cls.iris_df = df
         drug = (101,100,102,104,102,97,105,105,98,101,100,123,
             105,103,100,95,102,106, 109,102,82,102,100,102,102,101,
@@ -54,7 +55,7 @@ class TestGaussianProcesses(unittest.TestCase):
         iq_df.columns = ["iq", "treatment_group"]
         cls.iq_df = iq_df
         
-        X, y = sklearn.datasets.load_diabetes(
+        X, y = load_diabetes(
             return_X_y = True, 
             as_frame = True,
             scaled = False,
@@ -67,4 +68,58 @@ class TestGaussianProcesses(unittest.TestCase):
             Convenience test for interactive development
             Remove when ready
         '''
-        pass
+        import pymc as pm
+        import pytensor
+        N_LAYERS:int = 2
+        N_NEURONS:int = 3
+        r = TestGaussianProcesses.diab_df
+        with pm.Model() as DGP_model:
+            inputs = pm.Data(
+                'inputs', 
+                self.diab_df.values[:,:-1], 
+                mutable=False)
+            
+            outputs = pm.Data(
+                'outputs', 
+                self.diab_df.values[:,[-1]]
+                )
+            X = inputs
+        with DGP_model:
+            # Layers
+            for i in range(N_LAYERS):
+                # Sub processes
+                gps = []
+                fs = []
+                for j in range(N_NEURONS):
+                    η = pm.HalfCauchy(f'η_{i,j}', 1)
+                    λ = pm.HalfCauchy(f'λ_{i,j}', 1)
+                    mean_func = pm.gp.mean.Constant(0)
+                    cov = η*pm.gp.cov.Matern52(
+                        input_dim=X.shape[-1].eval(), ls=λ,
+                        )
+                    gp = pm.gp.Latent(
+                        mean_func = mean_func, 
+                        cov_func = cov
+                        )
+                    gps.append(gp)
+                    f = gp.prior(f'f_{i,j}', X)
+                    fs.append(f)
+                f = pytensor.tensor.stack(fs).T
+                X = f
+            
+            print(inputs.shape[-1].eval())
+            nu = pm.Deterministic('nu', pm.math.exp(f[:,[0]]))
+            sigma = pm .Deterministic('sigma', f[:,[1]]**2)
+            mu = pm.Deterministic('mu', f[:,[2]])
+            
+            y_obs = pm.StudentT(
+                'y_obs', 
+                observed = outputs,
+                mu = mu,
+                sigma= sigma,
+                nu = nu,
+                )
+            
+        with DGP_model:
+            idata = pm.sample()
+        print("Hi")
