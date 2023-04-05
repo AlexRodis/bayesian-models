@@ -20,7 +20,7 @@ It is split into four general categories.
     To ensure a high quality documentation is maintained, the docs should
     be updated with every major and minor release. Any major changes, especially
     new features and API changes should not be merged to main until documentation
-    is reviewed, and updated where neeeded
+    is reviewed, and updated where needed
 
 Tutorials
 -----------

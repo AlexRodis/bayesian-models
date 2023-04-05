@@ -29,6 +29,7 @@ MANIFEST
 
 # vscode files
 settings.json
+.vscode
 
 # virtual environments
 *_env

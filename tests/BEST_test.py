@@ -1,3 +1,19 @@
+#   Copyright 2023 Alex Rodis
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+#
+#   This module contains unit tests for the BEST model
+
 import unittest
 from bayesian_models.models import BEST
 import numpy as np
@@ -249,11 +265,15 @@ class TestBESTModel(unittest.TestCase):
                           ropes=[(1.0,2.0)],
                           hdis=[.94,])["Δμ"]
         
-        self.assertTrue(
-            not_sig_results.Significance.values[0] == "Not Significant"\
-            and \
-            sig_results.Significance.values[0] == "Significant" and \
-            ind_results.Significance.values[0] == "Indeterminate"
+        predicates = dict(
+            not_sig_results = not_sig_results.Significance.values[0] == "Not Significant",
+            sig_results = sig_results.Significance.values[0] == "Significant",
+            ind_results = ind_results.Significance.values[0] == "Indeterminate"
+        )
+        
+        self.assertTrue([
+            v for k,v  in  predicates.items()
+        ]
         )
 
     def test_multivariate(self):
@@ -332,3 +352,54 @@ class TestBESTModel(unittest.TestCase):
             UserWarning, BEST, multivariate_likelihood=True,
             common_shape=False
         )
+    
+    def test_57(self):
+        '''
+            `predict` raises `TypeError` even with expected inputs
+        '''
+        from sklearn.datasets import load_iris
+        X, y = load_iris(return_X_y=True, as_frame=True)
+        names = load_iris().target_names
+        df = pd.concat([X, y], axis=1)
+        df_names = df.copy(deep=True)
+        df_names.iloc[:, -1] = df.iloc[:, -1].replace({
+        i:names[i] for i in range(len(names))
+        })
+        obj = BEST()(df, 'target')
+        obj_names = BEST()(df_names, 'target')
+        obj.fit(tune=100, draws=100, chains=2)
+        obj.predict()
+        
+    def test_56(self):
+        '''
+            Partially resolved. `pymc` tries to check with `np.isnan`
+            which will raise for dtype object (even if the underlying
+            elems really are float)
+        '''
+        from sklearn.datasets import load_iris
+        X, y = load_iris(return_X_y=True)
+        y = y.astype(float)
+        y = y[:,None]
+        arr = np.concatenate(
+            [X, y], axis=1
+        )
+        A = np.random.rand(30,9,3)
+        obj = BEST()(arr, 4)
+        obj.fit(tune=10, draws=10, chains=2)
+        obj.predict()
+        self.assertTrue(True)
+        
+    def test_68(self):
+        from sklearn.datasets import load_iris
+        
+        X, y = load_iris(return_X_y=True, as_frame=True)
+        names=load_iris().target_names
+        y=y.replace({i:names[i] for i in range(len(names))})
+        df = pd.concat([X,y], axis=1)
+        BEST.std_upper = 1e3
+        BEST.std_lower = 1e-3
+        obj = BEST()(df, "target")
+        obj = BEST(
+            std_difference=True, effect_magnitude=True
+            )(df, "target")
+        self.assertTrue(True)
