@@ -26,4 +26,4 @@ SHAPE = tuple[int, ...]
 DIMS = tuple[str, ...]
 COORDS = dict[str,ndarray ]
 AXIS_PERMUTATION = Optional[Union[list[int], tuple[int, ...]]]
-
+PREDICATES = dict[str, bool]
