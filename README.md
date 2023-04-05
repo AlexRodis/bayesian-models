@@ -1,21 +1,6 @@
-# bayesian_models
-A small library build on top of  `pymc` that implements many common
-statistical models
-
-## Introduction
-
-Over the course of many projects, I've often had to implement many small
-variations of the same general model, in `pymc`. The `pymc`
-Probabilistic Programming Language (PPM) is powerfull library for
-bayesian inference, allowing the user to specify and perform inference
-on near arbitrary models. It's extremelly frexible and provides the user
-with the basic tools for model construction. Over the course of various
-projects, I've often had to write many different version of the same
-model, for example estimating group differences with the Kruschke's BEST
-model. For large datasets and complex problems, this can easily result
-in messy code, especially with multiple versions of the same model need
-to be accessible. Out of this need for reusability this project was
-born.
+# bayesian-models
+`bayeian-models` is a small library build on top of  `pymc` that
+implements common statistical models
 
 `bayesian_models` aims to implement `sklearn` style classes,
 representing general types of models a user may wish to specify. Since
@@ -27,34 +12,9 @@ models are planned for implementation:
   comparisons' between groups, analoguous to hypothesis testing
   (COMPLETED)
 
-* BayesianNeuralNetworks := While neural networks are a far to
-  heterogenuous category of models to be considered in full, common
-  neural networks will be included (WIP)
-
-* Gaussian Processes := GPs are a powerfull modeling tool, exhibiting
-  very high degree of flexibility, whose unique features make it very
-  appealing for scientific applications (INITIALIZED)
-
-* Bayesian Optimization := Bayesian Optimization is a very powerfull
-  optimization algorithm that seems uniquely well suited for many
-  scientific applications. While several software packages are available
-  in Python, these implementations seem to be written with programmatic
-  applications in mind. Hence they all tightly couple the evalutation of
-  the loss function, which makes their use difficult in cases where the
-  actuall evaluation process is a physical process rather that a piece
-  of code. Python provides a unique, high-level idiom well suited for
-  this task, the Generator. (WIP)
-
-* SEM (Structural Equation Models) := SEM models are exceedingly popular
-  in certain fields like sociology and psychology, where they've been
-  used with great success. Despite their many promising application to
-  other scientific fields, they remain largely unknown (CONSIDERED)
-
-* Other models considered GAMs, Splines
-
 ## Installation
 
-Once a stable release is ready it can be installed from pypi as:
+`bayesian-models` can be installed with pip
 
 ```
 pip install bayesian-models
@@ -91,8 +51,9 @@ jaxlib==0.4.1
 To attempt to install with GPU support run:
 
 ```
-pip install 'bayesian_models[GPU]@ git+ssh://git@github.com/AlexRodis/bayesian-models.git'
+pip install 'bayesian_models[GPU]@git+ssh://git@github.com/AlexRodis/bayesian-models.git'
 ```
+
 Note: the GPU version is unstable
 
 You must also set the following environment variable prior to all other
@@ -106,5 +67,3 @@ These dependencies are only required with
 `pymc.sampling.jax.sample_numpyro_nuts` and if using the default options
 can be ignored
 
-WARNING! The library is still in pre-alpha stage. Expect breaking
-changes and bugs

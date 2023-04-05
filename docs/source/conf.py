@@ -8,6 +8,8 @@ copyright = '2023, Alexander Rodis'
 author = 'Alexander Rodis'
 release = '0.1.0'
 
+master_doc = 'index'
+
 extensions = [
     'sphinxcontrib.katex',
     'sphinx.ext.autodoc',

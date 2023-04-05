@@ -1,5 +1,21 @@
-# Model builder module, containing tools to construct arbitrary
-# models with a common interface
+
+#   Copyright 2023 Alexander Rodis
+#
+#   Licensed under the Apache License, Version 2.0 (the "License");
+#   you may not use this file except in compliance with the License.
+#   You may obtain a copy of the License at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   Unless required by applicable law or agreed to in writing, software
+#   distributed under the License is distributed on an "AS IS" BASIS,
+#   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#   See the License for the specific language governing permissions and
+#   limitations under the License.
+#
+# This module contains basic functionality for model building and basic
+# machinery the library requires
+
 from dataclasses import dataclass, field
 from typing import Any, Type, Callable, Optional, Union, Iterable
 from abc import ABC, abstractmethod
@@ -1148,27 +1164,6 @@ class BESTCoreComponent(CoreModelComponent):
                 self._derived_quantities['effect_magnitude'].append(
                     v_name_magnitude
                 )
-
-class NeuralNetCoreComponent(CoreModelComponent):
-    '''
-        WIP Raw testing only
-    '''
-    def __init__(self, n_layers:int = 3,
-                 distributions:dict[str, Distribution] = dict(),
-                 record:bool = False)->None:
-        super().__init__(distributions = distributions)
-        self.record = record
-        self.n_layers = n_layers
-    
-    def __call__(self)->None:
-        super().__call__()
-        f = self.variables['inputs']
-        for i in range(self.n_layers):
-            f = pymc.math.dot(
-                f,self.variables.get(f'W{i}')) + self.variables.get(
-                    f'b{i}')
-        f = pymc.Deterministic('f', f)
-        self.variables['f'] = f
 
 @dataclass(kw_only=True, slots=True)
 class CoreModelBuilder(ModelBuilder):
