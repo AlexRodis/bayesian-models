@@ -45,6 +45,31 @@ def flatten(obj:Iterable):
         else:
             yield e
 
+def merge_dicts(*args:tuple[dict])->dict:
+    r'''
+        Merge multiple dictionaries into one
+        
+        Backwards compatible version of dict merging, alternative to the
+        3.10 operator
+        
+        .. code-block:: python
+            d1:dict = dict(foo=1)
+            d2:dict = dict(bar=2)
+            d3:dict = dict(baz='hi')
+            
+            print(merge_dicts(d1, d2, d3))
+            # Output
+            # {'foo': 1, 'bar': 2, 'baz': 'hi'}
+            
+            print(merge_dicts(d1, d2, d3) == d1|d2|d3)
+            # Output
+            # True
+    '''
+    from itertools import chain
+    return {k:v for k, v in chain.from_iterable(
+        map(lambda e: e.items(), args)
+    ) }
+    
 
 def tidy_multiindex(df:pd.DataFrame, sep:str="."):
     r'''
