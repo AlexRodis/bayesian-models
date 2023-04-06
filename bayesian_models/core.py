@@ -1489,12 +1489,89 @@ class GPProcessor(ABC):
 class FullProcessor(GPProcessor):
     r'''
         Implementor class for Full gaussian processes
+        
+        Expected types of processes here are Latent and Marginal
+        
+        Object Attributes:
+        -------------------
+
+            - | approximation:str='Full' := Approximation type
+            
+            - | mean_func:pymc.gp.mean.Mean := The processes mean
+                function
+                
+            - | process:pymc.gp := The type of Gaussian Process
+                implementation to use. For Full Processes, accepted
+                values are :code:`pymc.gp.Latent` (most general) and
+                :code:`pymc.gp.Marginal` (for normal likelihoods only)
+                
+            - | cov_func:pymc.gp.cov.Covariance := The processes
+                covariance function, i.e. kernel function
+                
+            - | mean_params:dict[str, Distribution] := Parameters of the
+                mean function. Passed as a dictionary mapping keyword
+                argument names to Distribution objects (or numbers)
+                representing priors for the parameter
+                
+            - | kernel_params:dict[str, Distribution] := Parameters of the
+                kernel function. Passed as a dictionary mapping keyword
+                argument names to Distribution objects (or numbers)
+                representing priors for the parameter
+                
+            - | pname:str := Name for the random variable representing
+                the output of the process. By default it
+                :code:`'f[i,j]'` where i,j are layer/subprocess indexers
+    
+        Object Methods:
+        ---------------
+        
+            - | __call__(data) := Insert the gp random variable to the
+                model and induce a prior on it. Returns the gp object
+                and the random variable representing the output
     '''
     approximation:str = 'Full'
     
-    def __init__(self):
-        pass
-       
+    __slots__ = ('mean_func', "cov_func", "pname", "kernel_params",
+                 "mean_params")
+    
+    def __init__(self, mean_func, cov_func, 
+                 pname, kernel_params, mean_params, process)->None:
+        self.mean_func = mean_func
+        self.cov_func = cov_func
+        self.pname = pname
+        self.kernel_params = kernel_params
+        self.mean_params = mean_params
+        self.process = process
+        
+    
+    
+    def __call__(self, data):
+        r'''
+            Generate the gaussian process and induce a prior on it
+            
+            Args:
+            -----
+            
+                - | data:pytensor.TensorVariable := Observed data for
+                    the process
+                    
+            Return:
+            -------
+            
+                - | process:tuple[process, output_tensor] := A tuple
+                    with a reference to the gaussian process object and
+                    the output (after inducing a prior on it)
+        '''
+        gp = self.process(
+            mean_func = self.mean_func(),
+            cov_func= self.cov_func(
+                data.shape[-1].eval(), 
+                **self.kernel_params
+                ),
+            )
+        f = gp.prior(self.pname, data)
+        
+        return gp, f
 
 class FITCProcess:
     r'''
@@ -1540,7 +1617,7 @@ class GaussianSubprocess:
                 process
                 
             - | kernel_hyperparameters:dict[str,Distributions]={} :=
-                Hyperparameters for he kernel function. Is given as a
+                Hyperparameters for the kernel function. Is given as a
                 dictionary of parameter names to :code:`Distribution`
                 objects. The keys are kernel parameters (as they appear
                 in the :code:`pymc.gp.cov.Covariance` object keywords)
@@ -1562,7 +1639,29 @@ class GaussianSubprocess:
                     exact_params = dict(
                         ls = 5 # Non hierarchical
                     )
+            - | mean_hyperparameters:dict[str,Distributions]={} :=
+                Hyperparameters for the mean function. Is given as a
+                dictionary of parameter names to :code:`Distribution`
+                objects. The keys are kernel parameters (as they appear
+                in the :code:`pymc.gp.cov.mean.Mean` object keywords)
+                and the values are :code:`Distribution` instances
+                defining the prior for the hyperparameter (if
+                hierarchical) or  exact values.
                 
+                Example:
+                
+                .. code-block:: python
+
+                    import pymc
+                    kernel = pymc.gp.mean.Constant
+                    kernel_params = dict(
+                        c = Distribution(
+                            pymc.HalfNormal, l, 1
+                        )
+                    )
+                    exact_params = dict(
+                        ls = 5 # Non hierarchical
+                    )
             - | process:Any=pymc.gp.Latent := The type of process to run
                 (i.e. MarginalSparse, Latent, etc). Optional. Defaults
                 to :code:`pymc.gp.Latent`
@@ -1616,6 +1715,7 @@ class GaussianSubprocess:
     index:tuple[int, int]=field(default_factory=tuple)
     gp:Optional[Any] = None
     func:Optional[Any] = None
+    gaussian_processor:Type[GPProcessor] = FullProcessor
     
     def __post_init__(self):
         r'''
@@ -1695,6 +1795,12 @@ class GaussianSubprocess:
             sym = self.symbol, i=self.index.layer_idx, 
             j = self.index.subprocess_idx
             )
+        self.gaussian_processor(
+            self.mean,
+            self.process,
+            self.kernel,
+            self.
+        )
         f = gp.prior(pname, inputs)
         self.gp = gp
         self.func = f
@@ -1730,7 +1836,8 @@ class GPLayer:
     variables:dict = field(default_factory=dict)
     gps:list = field(default_factory=list)
     functions:list = field(default_factory=list)
-    
+    processor_type:Type[GPProcessor] = FullProcessor
+        
     
     def __call__(self, inpts):
         r'''
