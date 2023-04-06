@@ -14,16 +14,18 @@
 #   limitations under the License.
 #
 # This module contains basic functionality for model building and basic
-# machinery the library requires
+# machinery thst the library requires
 
 from dataclasses import dataclass, field
 from typing import Any, Type, Callable, Optional, Union, Iterable
+from typing import Sequence
 from abc import ABC, abstractmethod
 import pymc
 from collections import defaultdict, namedtuple
 from bayesian_models.data import Data
 from bayesian_models.utilities import extract_dist_shape, invert_dict
-
+from bayesian_models.utilities import merge_dicts
+import pytensor
 
 Response = namedtuple("Response", ["name", "func", "target", "record"])
 Response.__doc__ = r"""
@@ -71,7 +73,7 @@ class Distribution:
         NOTE: For data nodes, the :code:`dist` argument should by the
         function :code:`pymc.Data`
         
-            Example usage:
+        Example usage:
 
         .. code-block:: python
 
@@ -1467,3 +1469,283 @@ class ModelDirector:
     @property
     def model(self)->Optional[pymc.Model]:
         return self.builder.model
+    
+class GPProcessor(ABC):
+    r'''
+        Abstract base class for Gaussian Process inference
+    '''
+    
+    approximations:set[str] = {'FITC', 'Full'}
+    
+    @property
+    @abstractmethod
+    def approximation(self):
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __call__(self):
+        raise NotImplementedError()
+
+class FullProcessor(GPProcessor):
+    r'''
+        Implementor class for Full gaussian processes
+    '''
+    approximation:str = 'Full'
+    
+    def __init__(self):
+        pass
+       
+
+class FITCProcess:
+    r'''
+        Implementor class for FITC approximated gaussian processes
+    '''
+    
+    approximation:str = "FITC"
+    __slots__ = ('inducing_points') 
+    
+    def __init__(self, inducing_points):
+        self.inducing_points = inducing_points
+        
+    def __call__(self):
+        pass
+    
+@dataclass(slots=True)
+class GaussianSubprocess:
+    r'''
+        Object representing a single gaussian process inside a DGP
+        layer. 
+        
+        A single layer is composed of multiple subprocesses, loosely
+        analogous to neurons in a deep neural network. A subprocess
+        corresponds to a single element of the vector output dimensions.
+        For example:
+        
+        .. math::
+        
+            \begin{array}{c}
+                \mathbb{D}\ =\ \{(\mathbf{x}_i, \mathbf{y_i})\ |\ 
+                \mathbf{x_i}\in\mathbb{R}^m, \mathbf{y}_i\in\mathbb{R}^k
+                \}
+                \mathbf{y}\thicksim
+                \begin{pmatrix}
+                    GP_j(m_0,k_0)&\dots GP_j(m_k,k_k)
+                \end{pmatrix}              
+            \end{array}
+        
+        Object Attributes:
+        ------------------
+        
+            - | kernel:pymc.Covariance := The kernel function of the
+                process
+                
+            - | kernel_hyperparameters:dict[str,Distributions]={} :=
+                Hyperparameters for he kernel function. Is given as a
+                dictionary of parameter names to :code:`Distribution`
+                objects. The keys are kernel parameters (as they appear
+                in the :code:`pymc.gp.cov.Covariance` object keywords)
+                and the values are :code:`Distribution` instances
+                defining the prior for the hyperparameter (if
+                hierarchical) or  exact values.
+                
+                Example:
+                
+                .. code-block:: python
+
+                    import pymc
+                    kernel = pymc.gp.cov.ExpQuad
+                    kernel_params = dict(
+                        ls = Distribution(
+                            pymc.HalfNormal, l, 5
+                        )
+                    )
+                    exact_params = dict(
+                        ls = 5 # Non hierarchical
+                    )
+                
+            - | process:Any=pymc.gp.Latent := The type of process to run
+                (i.e. MarginalSparse, Latent, etc). Optional. Defaults
+                to :code:`pymc.gp.Latent`
+                
+                .. danger::
+                    
+                    Mixed subprocess types are not supported. All 
+                    subprocesses for all layers in the model should 
+                    specify the same implementation
+                    
+            - | mean:pymc.gp.mean=pymc.gp.mean.Zero:=The mean function 
+                for the process. Optional. Defaults to 
+                :code:`pymc.gp.mean.Zero`
+                
+            - | alias:Optional[str]=None := An exact name for the subprocess.
+                Must be unique across all layers and all subprocesses
+                
+            - | symbol:str='f' := A symbol for the process. The subprocess
+                will be indexed as 'f[i,j]' for the i-th layer and the j-th
+                subprocess. If 'alias' is specified, this value will be
+                ignored
+                
+            - | variables:dict={} := An internal catalogue of variables added
+                to the model
+                
+            - | index:tuple[int, int] := Indexer for the subprocess of the
+                form :code:`tuple(layer:int, subprocess:int)`
+                
+            - | gp=None := Reference to process object
+                
+        Object Methods:
+        ---------------
+        
+            - | __call__() := 
+    '''
+    
+    kernel:pymc.gp.cov.Covariance
+    kernel_hyperparameters:dict[str, Distribution] = field(
+        default_factory=dict
+        )
+    mean:pymc.gp.mean  = pymc.gp.mean.Zero
+    mean_hyperparameters:dict[str, Distribution] = field(
+        default_factory = dict
+        )
+    process:Any = pymc.gp.Latent
+    alias:Optional[str] =field(default=None)
+    symbol:str = field(default='f')
+    processor = None
+    random_variables:dict = field(default_factory=dict)
+    variables:dict = field(default_factory=dict)
+    index:tuple[int, int]=field(default_factory=tuple)
+    gp:Optional[Any] = None
+    func:Optional[Any] = None
+    
+    def __post_init__(self):
+        r'''
+            Initialization input checks
+        '''
+        from warnings import warn
+        if self.alias is not None and self.symbol=='f':
+            warn((
+                "When specifying alias, the value of symbol will be "
+                "ignored and alias is assumed to be an exact name for "
+                f"the subprocess. Received non-default symbol {self.symbol} "
+                f"and alias {self.alias}"
+            ))
+        subprocess_idx = namedtuple('subprocess_indx',
+                                    ['layer_idx', 'subprocess_idx']
+                                    )
+        self.index = subprocess_idx(
+            layer_idx=self.index[0], subprocess_idx=self.index[1])
+    
+    def __extract_basic_rvs__(self)->dict[str, Distribution]:  
+        r'''
+            Extract and package parameters for ease of access
+            
+            Args:
+            -----
+            
+                - None
+                
+            Returns:
+            --------
+                - | params:dict[dist_name:str, dist:Distribution] := The
+                    packaged hyperparameters. Is a dictionary mapping
+                    variable names in the form
+                    'name[layer_idx,process_idx]' to Distributions which
+                    constitute the prior for the parameter
+
+        '''
+        kparams = {
+            "{name}[{l_idx}, {p_idx}]".format(
+                name = v.name, l_idx = self.index.layer_idx,
+                p_idx = self.index.subprocess_idx
+                ):v for _,v  in self.kernel_hyperparameters.items()
+            }
+        mparams = {
+            "{name}[{l_idx}, {p_idx}]".format(
+                name = v.name, l_idx = self.index.layer_idx,
+                p_idx = self.index.subprocess_idx
+                ):v for _,v  in self.mean_hyperparameters.items()
+            }
+        return merge_dicts(kparams, mparams)
+        
+            
+    def __call__(self, inputs:Any):
+        r'''
+            Initialize the gaussian subprocess
+        '''
+        kparams:dict = dict()
+        for name, ker_hyp in self.kernel_hyperparameters.items():
+            idx_name:str = "{bname}[{i},{j}]".format(
+                i = self.index.layer_idx, j = self.index.subprocess_idx,
+                bname = ker_hyp.name
+            )
+            v = ker_hyp.dist(
+                idx_name, 
+                *ker_hyp.dist_args, 
+                **ker_hyp.dist_kwargs)
+            self.variables[idx_name] =  v
+            kparams[name] = v
+        gp = self.process(
+            mean_func = self.mean(),
+            cov_func= self.kernel(
+                inputs.shape[-1].eval(), 
+                **kparams
+                ),
+            )
+        pname:str = self.alias if self.alias else "{sym}[{i}, {j}]".format(
+            sym = self.symbol, i=self.index.layer_idx, 
+            j = self.index.subprocess_idx
+            )
+        f = gp.prior(pname, inputs)
+        self.gp = gp
+        self.func = f
+        self.variables[pname] = f 
+        self.variables[
+            "gp[{i},{j}]".format(
+                i=self.index.layer_idx, 
+                j = self.index.subprocess_idx
+                )
+            ] = gp       
+        return f
+
+@dataclass(slots=True)
+class GPLayer:
+    r'''
+        A Deep Gaussian Process (DGP) layer object
+        
+        Represents a single layer of a deep gaussian process. Is a
+        composite object, made up of subprocesses
+        (:code:`GaussianSubprocess`). Layers are :code:`Callable`
+        objects that accept the output tensor of the previous layer and
+        return the tensor output of their own layer. Layers are indexed objects and so are their subprocesses.
+        
+        Object Attributes:
+        ------------------
+        
+            - | subprocesses:Sequence[GaussianSubprocesses] := A :code:`Sequence` of subprocesses in the layer (as :code:`GaussianSubprocess` instances)
+            
+            - | 
+    '''
+    subprocesses:Sequence[GaussianSubprocess]
+    layer_idx:int = 0
+    variables:dict = field(default_factory=dict)
+    gps:list = field(default_factory=list)
+    functions:list = field(default_factory=list)
+    
+    
+    def __call__(self, inpts):
+        r'''
+        
+        '''
+        for i, subprocess in enumerate(self.subprocesses):
+            l = subprocess(inpts)
+            self.gps.append(subprocess.gp)
+            self.functions.append(subprocess.func)
+            self.variables = merge_dicts(
+                subprocess.variables, self.variables
+                )
+        f = pytensor.tensor.stack(self.functions).T
+        self.variables[f"f[{self.layer_idx}]"] = f
+        return f       
+    
+    def __iter__(self):
+        return iter(self.subprocesses)

@@ -16,7 +16,7 @@
 
 import pymc as pm, pymc
 import typing
-from typing import Any, Union, Callable, Optional
+from typing import Any, Union, Callable, Optional, Sequence
 from abc import ABC, abstractmethod
 import pandas as pd
 import numpy as np
@@ -25,10 +25,10 @@ import arviz as az
 import pytensor
 from interval import interval
 from bayesian_models.math import ELU, GELU, SiLU, SWISS, ReLU
-from bayesian_models.core import ModelDirector
+from bayesian_models.core import ModelDirector, GPLayer
 from bayesian_models.core import LikelihoodComponent, distribution
 from bayesian_models.core import Distribution, ResponseFunctions
-from bayesian_models.core import BESTCoreComponent
+from bayesian_models.core import BESTCoreComponent, GaussianSubprocess
 from bayesian_models.core import ResponseFunctionComponent
 from bayesian_models.data import Data
 from dataclasses import dataclass, field
@@ -1626,10 +1626,129 @@ class BEST(BESTBase):
         '''
         self._io_handler.load(save_path)
 
+
+@dataclass(slots=True)
 class GaussianProcess(BayesianEstimator):
+    r'''
+        General Gaussian Process model
+        
+        Common types of Gaussian Processes supported are:
+        
+        - Basic Gaussian Processes
+        - Deep Gaussian Processes
+        - Multi Output Gaussian Processes
+        - Gaussian Processes with Separable kernels
+        - Intrinsic Coregionalization Gaussian Processes
+        
+        Example usage:
+        
+        .. code-block:: python
+        
+            obj = GaussianProcess(
+                [
+                    GPLayer()
+                ]
+            )
+        
     
-    def __init__(self):
-        pass
+        Object Attributes:
+        ------------------
+        
+            - | layers:Sequence[GPLayer] := A sequence of
+                :code:`GPLayer` instances representing the layers of the
+                GP model. For non-deep gaussian processes a single layer
+                object can be used
+            
+            - | save_name:Optional[str]=None := A string specifying
+                location and filename to save the model's inference
+                results. Optional. If set during objects' construction,
+                the :code:`save` method may be called without an
+                explicit :code:`save_path` argument.
+            
+            
+            - | idata:Optional[arviz.InferenceData]=None :=
+                :code:`arviz.InferenceData` object containing the
+                results of model inference. Becomes set after calling
+                the :code:`fit` method
+            
+            - | trained:bool=False := Sentinel signaling whether the
+                model has been trained or not. Defaults to False. Should
+                be switched on after calling :code:`fit`. Prevents
+                :code:`predict` from being called on an object that has
+                not been trained.
+
+            - | initialized:bool=False := Sentinel signaling whether the
+                model has been full initialized. Defaults to False.
+                Should be set after the object is called. Prevents
+                :code:`fit` and :code:`predict` from being called prior
+                to complete initialization.
+                
+            - | nan_handling:str='exclude' := Strategy for handling
+                missing values in the data. Options are 'exclude'
+                (default) and 'impute' (not implemented)
+                
+            - | cast:Optional[numpy.dtype]=None := Data type to cast the
+                input data to. Set to :code:`None` to disable casting
+                (default)
+                
+            - | data_processor:Optional[Data]=None := A data
+                preprocessor class which handles data preprocessing.
+                Optional. Defaults to
+                :code:`bayesian_models.data.CommonDataProcessor`
+                
+            - | nan_present_flag:Optional[bool]=None := Flag for the
+                presence of missing values in the input data.
+                :code:`None` means, unset. The data processor updates
+                this value
+                
+        Private Attributes:
+        ===================
+
+            - | coords := dict-like of dimension labels :code:`xarray`
+                coords. Will be inferred from inputs and used to
+                label the posterior
+
+            - | _model:Optional[pymc.Model] := The :code:`pymc.Model`
+                object
+            
+            - | _io_handler:Optional[ModelIOHandler] := Handler for
+                model saving and loading. Defaults to
+                :code:`bayesian_models.core.ModelIOHandler`
+                
+            - | _divergence_handler:Optional[ConvergencesHandler] :=
+                Handler for MCMC convergence validation. Optional.
+                Defaults to :code:`ConvergencesHandler`
+        
+    '''
+    layers:Sequence[GPLayer]
+    likelihood = None
+    var_mapping = None
+    nan_handling:str = field(
+        init=True, default_factory = lambda : 'exclude')
+    cast:Optional[np.dtype] = field(
+        init=True, default_factory = lambda : None)
+    _data_dimentions:Any = field(init=False, default_factory=lambda : None)
+    _ndims:Any = field(init=False, default_factory=lambda : None)
+    _coords:Any = field(init=False, default_factory=lambda : None)
+    _idata:Optional[az.InferenceData] = field(
+        init=False, default_factory=lambda : None)
+    _data_processor:Optional[Data] = field(
+        default_factory = lambda : None
+        )
+    _model:Optional[pymc.Model] = field(init=False, 
+                                        default_factory=lambda : None)
+    _io_handler:Optional[ModelIOHandler] = field(
+        init=False, default=None
+    )
+    _divergence_handler:Optional[ConvergencesHandler] = field(
+        init=False, default=None
+    )
+    _initialized:Optional[bool] = field(default_factory=lambda : False)
+    _trained:Optional[bool] = field(default_factory=lambda : False)
+    save_path:Optional[str] = field(
+        init=True, default = None)
+    nan_present_flag:Optional[bool] = field(
+        init=False, default_factory=lambda :None)
     
     def __call__(self):
         pass

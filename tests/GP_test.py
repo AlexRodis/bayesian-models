@@ -17,6 +17,9 @@
 import unittest
 from bayesian_models.models import GaussianProcess
 from bayesian_models.typing import PREDICATES
+from bayesian_models.core import GPLayer, GaussianSubprocess
+from bayesian_models.core import Distribution, distribution
+from bayesian_models.utilities import merge_dicts
 import sklearn
 import numpy as np
 import pandas as pd
@@ -72,7 +75,7 @@ class TestGaussianProcesses(unittest.TestCase):
         import pytensor
         N_LAYERS:int = 2
         N_NEURONS:int = 3
-        r = TestGaussianProcesses.diab_df
+
         with pm.Model() as DGP_model:
             inputs = pm.Data(
                 'inputs', 
@@ -106,8 +109,6 @@ class TestGaussianProcesses(unittest.TestCase):
                     fs.append(f)
                 f = pytensor.tensor.stack(fs).T
                 X = f
-            
-            print(inputs.shape[-1].eval())
             nu = pm.Deterministic('nu', pm.math.exp(f[:,[0]]))
             sigma = pm .Deterministic('sigma', f[:,[1]]**2)
             mu = pm.Deterministic('mu', f[:,[2]])
@@ -121,5 +122,58 @@ class TestGaussianProcesses(unittest.TestCase):
                 )
             
         with DGP_model:
-            idata = pm.sample()
+            idata = pm.sample(10, tunes=10, chains=2)
         print("Hi")
+        
+    def test_back_layers(self):
+        import pymc as pm
+        import pytensor
+        N_LAYERS:int = 2
+        with pm.Model() as DGP_model:
+            inputs = pm.Data(
+                'inputs', 
+                self.diab_df.values[:100,:-1], 
+                mutable=False)
+            
+            outputs = pm.Data(
+                'outputs', 
+                self.diab_df.values[:100,[-1]]
+                )
+            X = inputs
+            L:list[GPLayer] = []
+            variables:dict = dict()
+            temp_params:list = []
+            for i in range(N_LAYERS):
+                p = [GaussianSubprocess(
+                    kernel = pm.gp.cov.Matern12,
+                    mean = pm.gp.mean.Zero,
+                    kernel_hyperparameters = dict(
+                        ls = distribution(pm.HalfCauchy, 'λ',1 )
+                        ),
+                    index = (i,k)
+                ) for k in range(10)]
+                L.append(GPLayer(
+                    p, layer_idx = i
+                ))
+            for i, layer in enumerate(L):
+                for k, process in enumerate(layer):
+                    temp_params.append(process.__extract_basic_rvs__())
+            variables = merge_dicts(variables,*temp_params)
+        with DGP_model:
+            for l in  L:
+                X = l(X)
+            f = X
+            nu = pm.Deterministic('nu', pm.math.exp(f[:,[0]]))
+            sigma = pm .Deterministic('sigma', f[:,[1]]**2)
+            mu = pm.Deterministic('mu', f[:,[2]])
+            
+            y_obs = pm.StudentT(
+                'y_obs', 
+                observed = outputs,
+                mu = mu,
+                sigma= sigma,
+                nu = nu,
+                )
+            
+        with DGP_model:
+            idata = pm.sample(10, tune=10, chains=2)
