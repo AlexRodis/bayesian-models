@@ -14,7 +14,10 @@
 #   limitations under the License.
 #
 # This module contains basic functionality for model building and basic
-# machinery thst the library requires
+# machinery this the library requires
+#
+# TODO: Move type definitions to the typing submodule. Beware of 
+# circular import
 
 from dataclasses import dataclass, field
 from typing import Any, Type, Callable, Optional, Union, Iterable
@@ -25,6 +28,7 @@ from collections import defaultdict, namedtuple
 from bayesian_models.data import Data
 from bayesian_models.utilities import extract_dist_shape, invert_dict
 from bayesian_models.utilities import merge_dicts
+import numpy as np
 import pytensor
 
 Response = namedtuple("Response", ["name", "func", "target", "record"])
@@ -122,8 +126,6 @@ class Distribution:
                 (its result will). Used to offset, and manipulate core distributions. Optional. Defaults to :code:`None`
     
     '''
-    
-    
     name:str = ''
     dist:Union[Type[
         pymc.Distribution], Type[Callable]
@@ -179,6 +181,9 @@ def distribution(dist:pymc.Distribution,name:str,
     return Distribution(dist = dist, name = name,
                         dist_args = args, dist_kwargs = kwargs,
                         dist_transform = transform)
+
+ScalarModelParameter = Union[float, int]
+ModelParameter = Union[Distribution, ScalarModelParameter]
 
 @dataclass(slots=True)
 class FreeVariablesComponent:
@@ -1473,6 +1478,20 @@ class ModelDirector:
 class GPProcessor(ABC):
     r'''
         Abstract base class for Gaussian Process inference
+        
+        Concrete subclasses should call the appropriate GP API and
+        induce priors on it. For example:
+        
+        .. code-block::
+        
+            import pymc as pm
+            with pm.Model() as model:
+                ...
+                gp = pm.Latent(cov_func=...)
+                f = gp.prior('f', Xnew)
+                # Other implementations pm.gp.Marginal
+                # pm.gp.MarginalSparse pm.gp.HSGP, pm.gp.LatentKron etc
+                
     '''
     
     approximations:set[str] = {'FITC', 'Full'}
@@ -1535,7 +1554,7 @@ class FullProcessor(GPProcessor):
                  "mean_params")
     
     def __init__(self, mean_func, cov_func, 
-                 pname, kernel_params, mean_params, process)->None:
+                    mean_params,kernel_params, process, pname)->None:
         self.mean_func = mean_func
         self.cov_func = cov_func
         self.pname = pname
@@ -1543,11 +1562,11 @@ class FullProcessor(GPProcessor):
         self.mean_params = mean_params
         self.process = process
         
-    
-    
     def __call__(self, data):
         r'''
-            Generate the gaussian process and induce a prior on it
+            Define the gaussian process and induce a prior on it.
+            
+            Assumes a :code:`pymc.Model` stack is open
             
             Args:
             -----
@@ -1563,14 +1582,13 @@ class FullProcessor(GPProcessor):
                     the output (after inducing a prior on it)
         '''
         gp = self.process(
-            mean_func = self.mean_func(),
+            mean_func = self.mean_func(**self.mean_params),
             cov_func= self.cov_func(
                 data.shape[-1].eval(), 
                 **self.kernel_params
                 ),
             )
         f = gp.prior(self.pname, data)
-        
         return gp, f
 
 class FITCProcess:
@@ -1620,10 +1638,10 @@ class GaussianSubprocess:
                 Hyperparameters for the kernel function. Is given as a
                 dictionary of parameter names to :code:`Distribution`
                 objects. The keys are kernel parameters (as they appear
-                in the :code:`pymc.gp.cov.Covariance` object keywords)
+                in the :code:`pymc.gp.cov.Covariance` objects keywords)
                 and the values are :code:`Distribution` instances
                 defining the prior for the hyperparameter (if
-                hierarchical) or  exact values.
+                hierarchical) or exact values.
                 
                 Example:
                 
@@ -1639,14 +1657,19 @@ class GaussianSubprocess:
                     exact_params = dict(
                         ls = 5 # Non hierarchical
                     )
+                    
+            - | mean:pymc.gp.mean=pymc.gp.mean.Zero := The mean function 
+                for the process. Optional. Defaults to 
+                :code:`pymc.gp.mean.Zero`
+                    
             - | mean_hyperparameters:dict[str,Distributions]={} :=
                 Hyperparameters for the mean function. Is given as a
                 dictionary of parameter names to :code:`Distribution`
                 objects. The keys are kernel parameters (as they appear
-                in the :code:`pymc.gp.cov.mean.Mean` object keywords)
+                in the :code:`pymc.gp.cov.mean.Mean` objects keywords)
                 and the values are :code:`Distribution` instances
                 defining the prior for the hyperparameter (if
-                hierarchical) or  exact values.
+                hierarchical) or exact values.
                 
                 Example:
                 
@@ -1660,8 +1683,9 @@ class GaussianSubprocess:
                         )
                     )
                     exact_params = dict(
-                        ls = 5 # Non hierarchical
+                        c = 5 # Non hierarchical
                     )
+                    
             - | process:Any=pymc.gp.Latent := The type of process to run
                 (i.e. MarginalSparse, Latent, etc). Optional. Defaults
                 to :code:`pymc.gp.Latent`
@@ -1671,50 +1695,144 @@ class GaussianSubprocess:
                     Mixed subprocess types are not supported. All 
                     subprocesses for all layers in the model should 
                     specify the same implementation
+                
+            - | alias:Optional[str]=None := An exact name for the
+                subprocess. Must be unique across all layers and all
+                subprocesses
+                
+            - | symbol:str='f' := A symbol for the process. The
+                subprocess will be indexed as 'f[i,j]' for the i-th
+                layer and the j-th subprocess. If 'alias' is specified,
+                this value will be ignored
+                
+            - | variables:dict={} := An internal catalogue of variables
+                added to the model
+                
+            - | index:NamedTuple[int, int] := Indexer for the subprocess
+                of the form :code:`tuple(layer:int, subprocess:int)`
+                
+                .. note::
+                    Supplied as a tuple, this will be redefined as an equivalent namedtuple. Fr example:
                     
-            - | mean:pymc.gp.mean=pymc.gp.mean.Zero:=The mean function 
-                for the process. Optional. Defaults to 
-                :code:`pymc.gp.mean.Zero`
-                
-            - | alias:Optional[str]=None := An exact name for the subprocess.
-                Must be unique across all layers and all subprocesses
-                
-            - | symbol:str='f' := A symbol for the process. The subprocess
-                will be indexed as 'f[i,j]' for the i-th layer and the j-th
-                subprocess. If 'alias' is specified, this value will be
-                ignored
-                
-            - | variables:dict={} := An internal catalogue of variables added
-                to the model
-                
-            - | index:tuple[int, int] := Indexer for the subprocess of the
-                form :code:`tuple(layer:int, subprocess:int)`
-                
+                    .. code-block::
+
+                        from collections import namedtuple
+                        ProcessIndex = namedtuple('ProcessIndex', [
+                            'layer_idx', 'subprocess_idx'
+                        ])
+                        index = (1,2)
+                        nindex = ProcessIndex(
+                            layer_idx = 1,
+                            subprocess_idx = 2
+                        )
+            
+            - | processor = None
+            
+            - | process_name:Optional[str] = The internal name for the
+                process. If :code:`alias` is supplied this will be used.
+                Else the name will be composed as
+                :code:`{symbol}[{index.layer_idx},index.subprocess_idx]`
+                - for example :code:`'f[1,2]'`. This will be the idx
+                name of the output tensor of the subprocess
+            
+            - | random_variables
+            
+            - | variables:dict[str, Any] := A catalogue of variables
+                added to the model. Recorded as a mappings of strings,
+                representing internal variables names to references to
+                the object
+            
+            - | index:Union[tuple[int,int], NamedTuple[int,int]] := An
+                indexer for the subprocess. Supplied as a tuple of
+                :code:`int`, repackaged as a namedtuple with the fields
+                :code:`layer_idx` and :code:`subprocess_idx`.
+            
             - | gp=None := Reference to process object
+            
+            - | func := A reference to the output of the gp (the result
+                of inducing a prior on a gp). Example:
+                
+                .. code-block:: python
+                    gp = pymc.gp.Latent(...)
+                    func = gp.prior('name', Xnew, ...)
+            
+            - | gaussian_process:Type[GPProcess]=FullProcessor := A
+                processor instance for gaussian process implementation.
+                Defaults to :code:`FullProcess` which performs full
+                inference, without approximation
+            
+            Private Attributes:
+            ===================
+                
+                - | _mean_name_mapping:dict[str,str] := An internal
+                    mapping of process variable names to model names.
+                    For example a local hierarchical prior :code:`c` for
+                    a length scale parameter may get mapped to the
+                    general name :code:`c[0,0]`. Used for reverse
+                    lookups
+                
+                - | _kernel_name_mapping:dict[str,str] := An internal
+                    mapping of process variable names to model names.
+                    For example a local hierarchical prior :code:`λ` for
+                    a length scale parameter may get mapped to the
+                    general name :code:`λ[0,0]`. Used for reverse
+                    lookups
+                
+                - | _mean_refs:dict[str,Any] := A mapping of parameters
+                    (as they appear in the mean objects keywords) to
+                    variable references. Essentially the result of
+                    performing a model-wide lookup on the values of
+                    :code:`mean_hyperparameters` and replacing these
+                    :code:`Distributions` with the corresponding random
+                    variables
+                
+                - | _kernel_refs:dict[str,Any] := A mapping of
+                    parameters (as they appear in the mean objects
+                    keywords) to variable references. Essentially the
+                    result of performing a model-wide lookup on the
+                    values of :code:`mean_hyperparameters` and replacing
+                    these :code:`Distributions` with the corresponding
+                    random variables
                 
         Object Methods:
         ---------------
         
-            - | __call__() := 
+            - | __call__(inputs:TensorVariable, var_catalogue:dict) :=
+                Initialize the model by constructing the
+                :code:`pymc.Model` object. Assumes a :code:`pymc.Model`
+                context stack is open
     '''
-    
     kernel:pymc.gp.cov.Covariance
-    kernel_hyperparameters:dict[str, Distribution] = field(
+    kernel_hyperparameters:dict[str, ModelParameter] = field(
         default_factory=dict
         )
     mean:pymc.gp.mean  = pymc.gp.mean.Zero
-    mean_hyperparameters:dict[str, Distribution] = field(
+    mean_hyperparameters:dict[str, ModelParameter] = field(
         default_factory = dict
         )
     process:Any = pymc.gp.Latent
     alias:Optional[str] =field(default=None)
     symbol:str = field(default='f')
     processor = None
+    process_name:Optional[str] = None
     random_variables:dict = field(default_factory=dict)
     variables:dict = field(default_factory=dict)
+    _mean_name_mapping:Optional[dict[str, str]] = field(
+        repr=False,
+        default=None
+        )
+    _kernel_name_mapping:Optional[dict[str, str]] = field(
+        repr=False, default = None
+        )
+    _mean_refs:dict[str, Optional[Any]] = field(
+        repr=False, default_factory=dict
+        )
+    _kernel_refs:dict[str, Optional[Any]] = field(
+        repr=False, default_factory=dict
+    )
     index:tuple[int, int]=field(default_factory=tuple)
-    gp:Optional[Any] = None
-    func:Optional[Any] = None
+    gp:Optional[Any] = field(repr=False, default= None)
+    func:Optional[Any] = field(repr=False, default=None)
     gaussian_processor:Type[GPProcessor] = FullProcessor
     
     def __post_init__(self):
@@ -1734,10 +1852,42 @@ class GaussianSubprocess:
                                     )
         self.index = subprocess_idx(
             layer_idx=self.index[0], subprocess_idx=self.index[1])
+        self._mean_name_mapping = {
+            v.name : "{sym}[{i},{j}]".format(
+                sym = v.name,
+                i = self.index.layer_idx,
+                j = self.index.subprocess_idx
+                ) for _, v in self.mean_hyperparameters.items()
+            }
+        self._kernel_name_mapping = {
+            v.name : "{sym}[{i},{j}]".format(
+                sym = v.name,
+                i = self.index.layer_idx,
+                j = self.index.subprocess_idx
+                ) for _, v in self.kernel_hyperparameters.items()
+            }
+        self._kernel_refs = {
+            k:None for k, _ in self.kernel_hyperparameters.items()
+            }
+        self._mean_refs = {
+            k: None for k,_ in self.mean_hyperparameters.items()
+        }
+        self.process_name = self.alias if self.alias is not None else \
+            "{sym}[{i},{j}]".format(
+                sym = self.symbol,
+                i = self.index.layer_idx,
+                j = self.index.subprocess_idx,
+            )
+    
     
     def __extract_basic_rvs__(self)->dict[str, Distribution]:  
         r'''
             Extract and package parameters for ease of access
+            
+            Extract all random variables from the subprocess and package
+            them into a dict to be forwarded to the
+            :code:`CoreModelComponent` so they can be inserted into the
+            model
             
             Args:
             -----
@@ -1746,72 +1896,85 @@ class GaussianSubprocess:
                 
             Returns:
             --------
+            
                 - | params:dict[dist_name:str, dist:Distribution] := The
                     packaged hyperparameters. Is a dictionary mapping
                     variable names in the form
                     'name[layer_idx,process_idx]' to Distributions which
-                    constitute the prior for the parameter
+                    constitute the prior for the parameter. This format
+                    is required by the builder to insert the random
+                    variables
 
         '''
         kparams = {
-            "{name}[{l_idx}, {p_idx}]".format(
+            "{name}[{l_idx},{p_idx}]".format(
                 name = v.name, l_idx = self.index.layer_idx,
                 p_idx = self.index.subprocess_idx
                 ):v for _,v  in self.kernel_hyperparameters.items()
             }
         mparams = {
-            "{name}[{l_idx}, {p_idx}]".format(
+            "{name}[{l_idx},{p_idx}]".format(
                 name = v.name, l_idx = self.index.layer_idx,
                 p_idx = self.index.subprocess_idx
                 ):v for _,v  in self.mean_hyperparameters.items()
             }
         return merge_dicts(kparams, mparams)
         
+    def __update_var_refs__(self, var_catalogue:dict)->None:
+        r'''
+            Update kernel and mean reference catalogues
             
-    def __call__(self, inputs:Any):
+            Given a catalogue of basic random variables present in the
+            model, remap kernel keyword arguments to the basic rvs
+
+            Args:
+            -----
+            
+                - | var_catalogue:dict[str,Any] := A catalogue of random
+                    variables present in the model. A mapping of strings
+                    representing variable names to references to the
+                    object
+                    
+            Returns:
+            --------
+            
+                - None
+                
+                Updates the :code:`kernel_refs` and :code:`mean_refs` attributes
+        '''
+        self._mean_refs = {
+            k : var_catalogue[
+                self._mean_name_mapping[v.name]
+                ] for k,v in self.mean_hyperparameters.items()
+            }
+        self._kernel_refs = {
+            k : var_catalogue[
+                self._kernel_name_mapping[v.name]
+                ] for k,v in self.kernel_hyperparameters.items()
+            }
+
+    
+    def __call__(self, inputs:Any, var_catalogue:dict):
         r'''
             Initialize the gaussian subprocess
         '''
-        kparams:dict = dict()
-        for name, ker_hyp in self.kernel_hyperparameters.items():
-            idx_name:str = "{bname}[{i},{j}]".format(
-                i = self.index.layer_idx, j = self.index.subprocess_idx,
-                bname = ker_hyp.name
-            )
-            v = ker_hyp.dist(
-                idx_name, 
-                *ker_hyp.dist_args, 
-                **ker_hyp.dist_kwargs)
-            self.variables[idx_name] =  v
-            kparams[name] = v
-        gp = self.process(
-            mean_func = self.mean(),
-            cov_func= self.kernel(
-                inputs.shape[-1].eval(), 
-                **kparams
-                ),
-            )
-        pname:str = self.alias if self.alias else "{sym}[{i}, {j}]".format(
-            sym = self.symbol, i=self.index.layer_idx, 
-            j = self.index.subprocess_idx
-            )
-        self.gaussian_processor(
+        self.__update_var_refs__(var_catalogue)
+        self.gp, self.func = self.gaussian_processor(
             self.mean,
-            self.process,
             self.kernel,
-            self.
-        )
-        f = gp.prior(pname, inputs)
-        self.gp = gp
-        self.func = f
-        self.variables[pname] = f 
+            self._mean_refs,
+            self._kernel_refs,
+            self.process,
+            self.process_name
+        )(inputs)
+        self.variables[self.process_name] = self.func
         self.variables[
             "gp[{i},{j}]".format(
                 i=self.index.layer_idx, 
                 j = self.index.subprocess_idx
                 )
-            ] = gp       
-        return f
+            ] = self.gp   
+        return self.func
 
 @dataclass(slots=True)
 class GPLayer:
@@ -1827,9 +1990,49 @@ class GPLayer:
         Object Attributes:
         ------------------
         
-            - | subprocesses:Sequence[GaussianSubprocesses] := A :code:`Sequence` of subprocesses in the layer (as :code:`GaussianSubprocess` instances)
+            - | subprocesses:Sequence[GaussianSubprocesses] := A
+                :code:`Sequence` of subprocesses in the layer (as
+                :code:`GaussianSubprocess` instances)
             
-            - | 
+            - | layer_idx:int=0 := An index for the layer
+            
+            - | variables:dict[str, Any] := A catalogue of variables the
+                Layer added to the model. Recorded as a mapping of
+                internal variable names to references to the actual
+                tensor variables in the model
+                
+            - | gps:Sequence := A collection of gaussian process objects
+                created by the layer. These are implementations, for
+                example:
+                
+                .. code-block:: python
+                
+                    gp = pymc.gp.Latent(...)
+    
+            - | functions:Sequence[TensorVariable] := A collection of
+                :code:`TensorVariable` objects that are the outputs of
+                each subprocess. For example:
+                
+                .. code-block:: python
+                
+                    gp = pymc.gp.Latent(...)
+                    function = gp.prior('f', Xnew)
+                    
+            - | processor_type:Type[GPProcess]=FullProcess := An
+                implementor defining the gaussian process implementation
+                to use. Primarily defines the approximation to be used.
+                Must be the same across all layers and subprocesses
+                
+        Object Methods:
+        ---------------
+        
+            - | __call__(inpts:TensorVariable, var_catalogue:dict[str,
+                Any]) := Injects all subprocesses into the model.
+                Assumes a :code:`pymc.Model` context stack is open
+                
+            - | __iter__() := Returns a iterator over the layers'
+                subprocesses, rendering the :code:`GPLayer` an iterable
+                object
     '''
     subprocesses:Sequence[GaussianSubprocess]
     layer_idx:int = 0
@@ -1839,12 +2042,32 @@ class GPLayer:
     processor_type:Type[GPProcessor] = FullProcessor
         
     
-    def __call__(self, inpts):
+    def __call__(self, inpts, var_catalogue:dict[str, Any]):
         r'''
-        
+            Initialize the Gaussian Process layer
+            
+            Inserts all subprocesses in the layer to the
+            :code:`pymc.Model` object
+            
+            Args:
+            -----
+            
+                - | inpts:TensorVariable := The input the layer.
+                    Generally the output of the previous layer
+                    
+                - | var_catalogue:dict[str, TensorVariable] := A mapping
+                    containing variables present in the model. Is a
+                    mapping of internal variable names to references to
+                    the :code:`TensorVariable` objects in the
+                    computation graph
+                    
+            Returns:
+            --------
+            
+                - | f:TensorVariable := The tensor output of the layer
         '''
         for i, subprocess in enumerate(self.subprocesses):
-            l = subprocess(inpts)
+            l = subprocess(inpts, var_catalogue)
             self.gps.append(subprocess.gp)
             self.functions.append(subprocess.func)
             self.variables = merge_dicts(
@@ -1855,4 +2078,45 @@ class GPLayer:
         return f       
     
     def __iter__(self):
+        r'''
+            Construct an iterator for layer object
+            
+            Returns:
+            --------
+            
+                - | subprocess_iterable := Iterator over the layers'
+                    subprocesses
+        '''
         return iter(self.subprocesses)
+    
+class GaussianProcessCoreComponent(CoreModelComponent):
+    r'''
+        Insert docstring here
+    '''
+    __slots__ = ('layers', 'variables', 'basic_rvs')
+    
+    def __init__(self, layers):
+        self.layers = layers
+        self.variables:dict = {}
+        self.basic_rvs:dict = {}
+    
+    def __extract_rvs__(self):
+        r'''
+            Insert docstrings here
+        '''
+        collected:list[dict] = []
+        for layer in self.layers:
+            for process in layer:
+                collected.append(process.__extract_basic_rvs__())
+        self.variables = merge_dicts(self.variables, *collected)
+        
+    def __call__(self, inpts, outpts):
+        r'''
+            Insert docstring here
+        '''
+        collected:list[dict] = []
+        for layer in self.layers:
+            for process in layer:
+                collected.append(process.__extract_basic_rvs__())
+        super().__call__(self.variables)
+        

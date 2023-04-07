@@ -76,7 +76,7 @@ class BayesianModel(ABC):
                 simple, and predictive models, that accept some input
                 information and attempt to predict some output quantity,
                 the inputs should be declared as mutable shared tensors
-                `pymc.Data(name, X, mutable=True)` and the
+                :code:`pymc.Data(name, X, mutable=True)` and the
                 :code:`predict` method should invoke
                 :code:`pymc.set_data(inputs)` to replace the input
                 tensor with a new one. For other special cases see the
@@ -507,7 +507,7 @@ class BESTBase:
     ddof:int = 1
     std_diffusion_factor:int = 2
     zero_offset:float = 1e-4
-    jax_device:str = 'gpu'
+    jax_device:str = 'cpu'
     jax_device_count: int =1
 
 @dataclass(slots=True)
@@ -515,7 +515,7 @@ class BEST(BESTBase):
     r'''
         Bayesian Group difference estimation with pymc.
         
-        Kruschke's `Bayesian Estimation Superceeds the t-Test (BEST)        <https://pubmed.ncbi.nlm.nih.gov/22774788/>`_ model
+        Kruschke's `Bayesian Estimation Supersedes the t-Test (BEST)        <https://pubmed.ncbi.nlm.nih.gov/22774788/>`_ model
         implementation for estimating differences between groups. The
         implementation is based on the `official pymc documentation
         <https://www.pymc.io/projects/examples/en/latest/case_studies/BEST.html>`_.
@@ -1658,6 +1658,10 @@ class GaussianProcess(BayesianEstimator):
                 :code:`GPLayer` instances representing the layers of the
                 GP model. For non-deep gaussian processes a single layer
                 object can be used
+                
+            - | likelihood:LikelihoodComponent := A component defining
+                the likelihood of the mode and how the (possibly latent)
+                GP maps to the likelihood
             
             - | save_name:Optional[str]=None := A string specifying
                 location and filename to save the model's inference
@@ -1721,12 +1725,12 @@ class GaussianProcess(BayesianEstimator):
         
     '''
     layers:Sequence[GPLayer]
-    likelihood = None
-    var_mapping = None
+    likelihood:LikelihoodComponent
     nan_handling:str = field(
         init=True, default_factory = lambda : 'exclude')
     cast:Optional[np.dtype] = field(
         init=True, default_factory = lambda : None)
+    variables:dict = field(default_factory=dict)
     _data_dimentions:Any = field(init=False, default_factory=lambda : None)
     _ndims:Any = field(init=False, default_factory=lambda : None)
     _coords:Any = field(init=False, default_factory=lambda : None)
@@ -1735,8 +1739,8 @@ class GaussianProcess(BayesianEstimator):
     _data_processor:Optional[Data] = field(
         default_factory = lambda : None
         )
-    _model:Optional[pymc.Model] = field(init=False, 
-                                        default_factory=lambda : None)
+    _model:Optional[pymc.Model] = field(
+        init=False, default_factory=lambda : None)
     _io_handler:Optional[ModelIOHandler] = field(
         init=False, default=None
     )
@@ -1750,9 +1754,66 @@ class GaussianProcess(BayesianEstimator):
     nan_present_flag:Optional[bool] = field(
         init=False, default_factory=lambda :None)
     
-    def __call__(self):
-        pass
+    def __post_init__(self)->None:
+        r'''
+            Post init actions
+            
+            Initialize handler objects and validate options
+        '''
+        self._data_processor = Data(
+            nan_handling = self.nan_handling,
+            cast = self.cast,
+        )
+        self._io_handler = ModelIOHandler(
+            _save_path = self.save_path
+        )
+        self._divergence_handler = ConvergencesHandler()
+
+    @property
+    def coords(self)->Optional[dict[str,Any]]:
+        return self._coords
+    @coords.setter
+    def coords(self, val:dict[str, Any])->None:
+        self._coords = val
+
+    @property
+    def idata(self)->Optional[az.InferenceData]:
+        return self._idata
+
+    @idata.setter
+    def idata(self, val:az.InferenceData)->None:
+        self._idata = val
+
+    @property
+    def model(self)->Optional[pymc.Model]:
+        return self._model
+
+    @model.setter
+    def model(self, val:pymc.Model)->None:
+        self._model = val
+        
+    @property
+    def trained(self)->bool:
+        return self._trained
+
+    @trained.setter
+    def trained(self, val:bool)->None:
+        self._trained = val
+
+    @property
+    def initialized(self)->bool:
+        return self._initialized
+
+    @initialized.setter
+    def initialized(self, val:bool)->None:
+        self._initialized = val
     
+    def __call__(self, predictors, targets):
+        ppredictors = Data(predictors)
+        ptargets = Data(targets)
+        core = GaussianProcessComponent()
+        like = self.likelihood
+        
     @property
     def posterior_trace(self):
         pass

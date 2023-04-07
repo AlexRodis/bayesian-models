@@ -16,9 +16,9 @@
 
 from typing import Any, Union, Optional
 from numpy.typing import NDArray
+import numpy as np
 from pandas import DataFrame
 from xarray import DataArray
-
 
 ndarray = NDArray
 InputData = Union[DataArray, DataFrame, NDArray]

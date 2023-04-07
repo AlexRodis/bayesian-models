@@ -129,6 +129,10 @@ class TestGaussianProcesses(unittest.TestCase):
         import pymc as pm
         import pytensor
         N_LAYERS:int = 2
+        L:list[GPLayer] = []
+        variables:dict = dict()
+        var_catalogue:dict = dict()
+        temp_params:list = []
         with pm.Model() as DGP_model:
             inputs = pm.Data(
                 'inputs', 
@@ -140,15 +144,12 @@ class TestGaussianProcesses(unittest.TestCase):
                 self.diab_df.values[:100,[-1]]
                 )
             X = inputs
-            L:list[GPLayer] = []
-            variables:dict = dict()
-            temp_params:list = []
             for i in range(N_LAYERS):
                 p = [GaussianSubprocess(
-                    kernel = pm.gp.cov.Matern12,
-                    mean = pm.gp.mean.Zero,
-                    kernel_hyperparameters = dict(
-                        ls = distribution(pm.HalfCauchy, 'λ',1 )
+                        kernel = pm.gp.cov.Matern12,
+                        mean = pm.gp.mean.Zero,
+                        kernel_hyperparameters = dict(
+                            ls = distribution(pm.HalfCauchy, 'λ',1 )
                         ),
                     index = (i,k)
                 ) for k in range(10)]
@@ -160,8 +161,14 @@ class TestGaussianProcesses(unittest.TestCase):
                     temp_params.append(process.__extract_basic_rvs__())
             variables = merge_dicts(variables,*temp_params)
         with DGP_model:
+            for var_name, dist_obj in variables.items():
+                var_catalogue[var_name] = dist_obj.dist(
+                    var_name, *dist_obj.dist_args, 
+                    dist_obj.dist_kwargs)
+                
+        with DGP_model:
             for l in  L:
-                X = l(X)
+                X = l(X, var_catalogue)
             f = X
             nu = pm.Deterministic('nu', pm.math.exp(f[:,[0]]))
             sigma = pm .Deterministic('sigma', f[:,[1]]**2)
