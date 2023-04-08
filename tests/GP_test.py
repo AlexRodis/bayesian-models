@@ -19,6 +19,11 @@ from bayesian_models.models import GaussianProcess
 from bayesian_models.typing import PREDICATES
 from bayesian_models.core import GPLayer, GaussianSubprocess
 from bayesian_models.core import Distribution, distribution
+from bayesian_models.core import FreeVariablesComponent
+from bayesian_models.core import LikelihoodComponent
+from bayesian_models.core import ModelAdaptorComponent
+from bayesian_models.core import ResponseFunctionComponent
+from bayesian_models.core import ResponseFunctions
 from bayesian_models.utilities import merge_dicts
 import sklearn
 import numpy as np
@@ -128,59 +133,69 @@ class TestGaussianProcesses(unittest.TestCase):
     def test_back_layers(self):
         import pymc as pm
         import pytensor
-        N_LAYERS:int = 2
-        L:list[GPLayer] = []
-        variables:dict = dict()
-        var_catalogue:dict = dict()
-        temp_params:list = []
-        with pm.Model() as DGP_model:
-            inputs = pm.Data(
-                'inputs', 
-                self.diab_df.values[:100,:-1], 
-                mutable=False)
-            
-            outputs = pm.Data(
-                'outputs', 
-                self.diab_df.values[:100,[-1]]
-                )
-            X = inputs
-            for i in range(N_LAYERS):
-                p = [GaussianSubprocess(
-                        kernel = pm.gp.cov.Matern12,
-                        mean = pm.gp.mean.Zero,
-                        kernel_hyperparameters = dict(
-                            ls = distribution(pm.HalfCauchy, 'λ',1 )
+        layers:list[GPLayer] = []
+        l1 = GPLayer(
+            [
+                GaussianSubprocess(
+                    kernel = pm.gp.cov.ExpQuad,
+                    kernel_hyperparameters = dict(
+                        ls = distribution(
+                            pm.HalfCauchy, 'λ', 2
+                        )
                         ),
-                    index = (i,k)
-                ) for k in range(10)]
-                L.append(GPLayer(
-                    p, layer_idx = i
-                ))
-            for i, layer in enumerate(L):
-                for k, process in enumerate(layer):
-                    temp_params.append(process.__extract_basic_rvs__())
-            variables = merge_dicts(variables,*temp_params)
-        with DGP_model:
-            for var_name, dist_obj in variables.items():
-                var_catalogue[var_name] = dist_obj.dist(
-                    var_name, *dist_obj.dist_args, 
-                    dist_obj.dist_kwargs)
-                
-        with DGP_model:
-            for l in  L:
-                X = l(X, var_catalogue)
-            f = X
-            nu = pm.Deterministic('nu', pm.math.exp(f[:,[0]]))
-            sigma = pm .Deterministic('sigma', f[:,[1]]**2)
-            mu = pm.Deterministic('mu', f[:,[2]])
-            
-            y_obs = pm.StudentT(
-                'y_obs', 
-                observed = outputs,
-                mu = mu,
-                sigma= sigma,
-                nu = nu,
+                    mean = pm.gp.mean.Zero,
+                    index = (0,i),
+                ) for i in range(10)
+            ],
+            layer_idx=0
+        )
+        layers.append(l1)
+        l2 = GPLayer(
+            [
+                GaussianSubprocess(
+                    kernel = pm.gp.cov.ExpQuad,
+                    kernel_hyperparameters = dict(
+                        ls = distribution(
+                            pm.HalfCauchy, 'λ', 2
+                        )
+                        ),
+                    mean = pm.gp.mean.Zero,
+                    index = (1,i),
+                ) for i in range(10)
+            ], 
+            layer_idx=1
+        )
+        layers.append(l2)
+        adaptor = ModelAdaptorComponent(
+            var_mapping = dict(
+                μ = lambda t: t.T[0,:],
+                σ = lambda t: t.T[1,:],
+            )
+        )
+        like = LikelihoodComponent(
+                observed = 'train_outputs',
+                distribution = pm.Normal,
+                var_mapping = dict(
+                    mu = 'μ',
+                    sigma = 'σ'
                 )
-            
-        with DGP_model:
-            idata = pm.sample(10, tune=10, chains=2)
+            )
+        response = ResponseFunctionComponent(
+            ResponseFunctions(
+                functions = dict(
+                    f_sig = lambda t: pm.math.exp(t)
+                    ),
+                application_targets = dict(
+                    f_sig = 'σ',
+                    ),
+                records = dict(
+                    f_sig = False,
+                    ),
+            )
+        )
+        obj = GaussianProcess(layers, 
+                              likelihood = like,
+                              adaptor = adaptor,
+                              responses = response,
+                              )(self.diab_df.values[:,:-1],
+                                self.diab_df.values[:,[-1]])

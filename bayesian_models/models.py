@@ -30,7 +30,12 @@ from bayesian_models.core import LikelihoodComponent, distribution
 from bayesian_models.core import Distribution, ResponseFunctions
 from bayesian_models.core import BESTCoreComponent, GaussianSubprocess
 from bayesian_models.core import ResponseFunctionComponent
+from bayesian_models.core import CoreModelComponent
+from bayesian_models.core import FreeVariablesComponent
+from bayesian_models.core import ModelAdaptorComponent
+from bayesian_models.core import GaussianProcessCoreComponent
 from bayesian_models.data import Data
+from bayesian_models.utilities import merge_dicts
 from dataclasses import dataclass, field
 from warnings import warn
 
@@ -1726,11 +1731,17 @@ class GaussianProcess(BayesianEstimator):
     '''
     layers:Sequence[GPLayer]
     likelihood:LikelihoodComponent
+    adaptor:Optional[ModelAdaptorComponent] = field(default=None)
+    responses:Optional[ResponseFunctionComponent] = field(default=None)
+    extra_rvs:Optional[FreeVariablesComponent] = field(default=None)
+    _builder:ModelDirector = ModelDirector
     nan_handling:str = field(
         init=True, default_factory = lambda : 'exclude')
     cast:Optional[np.dtype] = field(
         init=True, default_factory = lambda : None)
     variables:dict = field(default_factory=dict)
+    _core:Optional[GaussianProcessCoreComponent] = field(
+        repr=False, default = None)
     _data_dimentions:Any = field(init=False, default_factory=lambda : None)
     _ndims:Any = field(init=False, default_factory=lambda : None)
     _coords:Any = field(init=False, default_factory=lambda : None)
@@ -1768,6 +1779,7 @@ class GaussianProcess(BayesianEstimator):
             _save_path = self.save_path
         )
         self._divergence_handler = ConvergencesHandler()
+        self._core = GaussianProcessCoreComponent(self.layers)
 
     @property
     def coords(self)->Optional[dict[str,Any]]:
@@ -1809,10 +1821,34 @@ class GaussianProcess(BayesianEstimator):
         self._initialized = val
     
     def __call__(self, predictors, targets):
-        ppredictors = Data(predictors)
-        ptargets = Data(targets)
-        core = GaussianProcessComponent()
-        like = self.likelihood
+        from itertools import count
+        
+        ppredictors = self._data_processor(predictors)
+        ptargets = self._data_processor(targets)
+        self.coords = ppredictors.coords()
+        
+        core_component = GaussianProcessCoreComponent(layers=self.layers)
+        likelihood = self.likelihood
+        responses = self.responses
+        adaptor = self.adaptor
+        builder = ModelDirector(
+            core_component = core_component,
+            likelihood_component = [self.likelihood],
+            adaptor_component = self.adaptor,
+            response_component = self.responses,
+            free_vars_component = self.extra_rvs,
+            coords = self.coords,
+            
+        )
+        builder()
+        self._model = builder.model
+        self.var_names = core_component.variables
+        self._io_handler._model = self._model
+        self._io_handler._class = self
+        self.initialized = True
+        return self
+        
+        
         
     @property
     def posterior_trace(self):
@@ -1823,3 +1859,62 @@ class GaussianProcess(BayesianEstimator):
     
     def predict(self):
         pass
+    
+    def save(self, save_path:Optional[str]=None, 
+             method:str='netcdf')->None:
+        r'''
+            Save the model object for later reuse
+            
+            Available save methods are 'netcdf' and 'pickle'. The latter
+            is discouraged and has known problems. For the 'netcdf'
+            method the posterior trace will be saved.
+            
+            .. caution::
+            
+                At present, no checks are being made to verify that the posterior is compatible with the model object
+                
+            Args:
+            -----
+            
+                - | save_path:Optional[str] := The file path to save the
+                    model to. If :code:`save_path` has been provided at
+                    model initialization, need not be provided
+                    
+                - | method:str='netcdf' := Which method to use to save
+                    the model. For the 'netcdf' method, only the
+                    posterior trance is save and consequently reloaded.
+                    For the 'pickle' method, attempts to serialize the
+                    entire model. The latter case should be avoided
+                    
+            Returns:
+            --------
+            
+                - None
+        '''
+        spath = save_path if save_path is not None else self.save_path
+        self._io_handler.save(spath, method=method)
+    
+    def load(self, save_path:Optional[str]=None)->None:
+        r'''
+            Load a pre trained model from the disk
+            
+            Only meaningful for models saved with the 'netcdf' method.
+            Otherwise, use 'pickle' directly instead
+            
+            .. caution::
+            
+                Not checks are being made that the posterior trace is compatible with model object
+            
+            Args:
+            -----
+            
+                - | save_path:Optional[str] := File path to load the
+                    model from. If :code:`save_path` has been provided
+                    at object initialization, it can be ignored
+                    
+            Returns:
+            --------
+            
+                - None
+        '''
+        self._io_handler.load(save_path)

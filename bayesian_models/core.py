@@ -24,6 +24,7 @@ from typing import Any, Type, Callable, Optional, Union, Iterable
 from typing import Sequence
 from abc import ABC, abstractmethod
 import pymc
+import pymc as pm
 from collections import defaultdict, namedtuple
 from bayesian_models.data import Data
 from bayesian_models.utilities import extract_dist_shape, invert_dict
@@ -1906,18 +1907,63 @@ class GaussianSubprocess:
                     variables
 
         '''
-        kparams = {
-            "{name}[{l_idx},{p_idx}]".format(
-                name = v.name, l_idx = self.index.layer_idx,
-                p_idx = self.index.subprocess_idx
-                ):v for _,v  in self.kernel_hyperparameters.items()
-            }
-        mparams = {
-            "{name}[{l_idx},{p_idx}]".format(
-                name = v.name, l_idx = self.index.layer_idx,
-                p_idx = self.index.subprocess_idx
-                ):v for _,v  in self.mean_hyperparameters.items()
-            }
+        
+        def reindex_names(name_dict)->dict:
+            r'''
+                Remap local subprocess level variable names to global
+                model ones
+                
+                User-specified kernel parameters are expecte to be named
+                locally but could be present across multiple processes.
+                This function replaces the names with indexed ones. For
+                example :code:`λ` local variable is remapped to
+                :code:`λ[1,2]`. For example:
+                
+                .. code-block:: python
+                
+                    params:dict[str, Distribution] = {
+                        'λ' : Distribution(pm.HalfCauchy, 'λ', 
+                        dist_args= (1,)) 
+                    }
+                    # Expected output
+                    nparams:dict[str,Distribution] = {
+                        'λ[0,0]' = Distribution(
+                            pm.HalfCauchy, 'λ[0,0]', dist_args=(1,)
+                        )
+                    }
+                
+                Args:
+                -----
+                
+                    - | name_dict:dict[str, Distribution] := A supplied
+                        dictionary of kernel or mean parameters. Of the general form:
+                        
+                        .. code-block:: python
+
+                            {
+                                λ = Distribution(...)
+                            }
+                            
+                Returns:
+                --------
+                
+                    - | new_dict[str, Distribution] := An updated
+                        dictionary with the variable / parameter names
+                        replaced with indexed version of themselves
+            '''
+            
+            new_dict:dict = dict()
+            for k, dist in name_dict.items():
+                new_name:str = "{name}[{l_idx},{p_idx}]".format(
+                    name = dist.name, l_idx = self.index.layer_idx,
+                    p_idx = self.index.subprocess_idx,
+                )
+                new_dict[new_name] = distribution(
+                    dist.dist, new_name, *dist.dist_args, **dist.dist_kwargs
+                )
+            return new_dict
+        kparams:dict = reindex_names(self.kernel_hyperparameters)
+        mparams:dict = reindex_names(self.mean_hyperparameters)
         return merge_dicts(kparams, mparams)
         
     def __update_var_refs__(self, var_catalogue:dict)->None:
@@ -2023,6 +2069,10 @@ class GPLayer:
                 to use. Primarily defines the approximation to be used.
                 Must be the same across all layers and subprocesses
                 
+            - | output_layer:bool=False := Signals if the layer is the
+                final one. If :code:`True` will name the tensor output
+                of the layer as :code:`'f'` instead of :code:`'f[1]'`
+                
         Object Methods:
         ---------------
         
@@ -2040,6 +2090,8 @@ class GPLayer:
     gps:list = field(default_factory=list)
     functions:list = field(default_factory=list)
     processor_type:Type[GPProcessor] = FullProcessor
+    output_layer:bool = False
+    _l:int=0
         
     
     def __call__(self, inpts, var_catalogue:dict[str, Any]):
@@ -2074,9 +2126,18 @@ class GPLayer:
                 subprocess.variables, self.variables
                 )
         f = pytensor.tensor.stack(self.functions).T
-        self.variables[f"f[{self.layer_idx}]"] = f
-        return f       
+        if not self.output_layer:
+            self.variables[f"f[{self.layer_idx}]"] = f
+        else:
+            self.variables[f'f'] = f
+        return f
     
+    def __next__(self):
+        if self._l<=len(self.subprocesses):
+            return self.subprocesses[self._l]
+        else:
+            raise StopIteration()
+            
     def __iter__(self):
         r'''
             Construct an iterator for layer object
@@ -2088,35 +2149,42 @@ class GPLayer:
                     subprocesses
         '''
         return iter(self.subprocesses)
-    
+
+@dataclass(slots=True)
 class GaussianProcessCoreComponent(CoreModelComponent):
-    r'''
-        Insert docstring here
-    '''
-    __slots__ = ('layers', 'variables', 'basic_rvs')
     
-    def __init__(self, layers):
-        self.layers = layers
-        self.variables:dict = {}
-        self.basic_rvs:dict = {}
+    layers:Sequence[GPLayer] = field(default_factory=list)
+    distributions:dict[str, Distribution] = field(default_factory=dict)
     
-    def __extract_rvs__(self):
+    
+    def __post_init__(self):
         r'''
-            Insert docstrings here
-        '''
-        collected:list[dict] = []
-        for layer in self.layers:
-            for process in layer:
-                collected.append(process.__extract_basic_rvs__())
-        self.variables = merge_dicts(self.variables, *collected)
+            Collect all parameters
         
-    def __call__(self, inpts, outpts):
-        r'''
-            Insert docstring here
+            Prepare the model by collecting and extracting all random
+            variables from the kernel and mean parameters
         '''
-        collected:list[dict] = []
+        collected_rvs:list[dict] = [] 
         for layer in self.layers:
             for process in layer:
-                collected.append(process.__extract_basic_rvs__())
-        super().__call__(self.variables)
+                collected_rvs.append(process.__extract_basic_rvs__())
+        self.distributions = collected_rvs
+        
+    def __call__(self, ppredictors, ptargets)->None:    
+        data:dict[str, Distribution] = dict(
+                train_inputs = distribution(
+                pm.ConstantData, 'train_inputs', ppredictors.values()   
+                ),
+                train_outputs = distribution(
+                    pm.ConstantData, 'train_outputs', ptargets.values()
+                    ),
+                inputs = distribution(
+                    pm.MutableData, 'inputs' , ppredictors.values()
+                ),
+                outputs = distribution(
+                pm.MutableData, 'outputs', ptargets.values()  
+                ),
+            )
+        basic_rvs:dict = merge_dicts(data, *self._basic_rvs)
+        super().__call__(self.distributions)
         
