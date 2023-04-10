@@ -166,6 +166,22 @@ class TestGaussianProcesses(unittest.TestCase):
             layer_idx=1
         )
         layers.append(l2)
+        l3 = GPLayer(
+            [
+                GaussianSubprocess(
+                    kernel = pm.gp.cov.ExpQuad,
+                    kernel_hyperparameters = dict(
+                        ls = distribution(
+                            pm.ConstantData, 'λ', 1.0
+                        )
+                        ),
+                    mean = pm.gp.mean.Zero,
+                    index = (2,i),
+                ) for i in range(10)
+            ], 
+            layer_idx=2
+        )
+        layers.append(l3)
         adaptor = ModelAdaptorComponent(
             var_mapping = dict(
                 μ = lambda t: t.T[0,:],
@@ -197,5 +213,70 @@ class TestGaussianProcesses(unittest.TestCase):
                               likelihood = like,
                               adaptor = adaptor,
                               responses = response,
-                              )(self.diab_df.values[:,:-1],
-                                self.diab_df.values[:,[-1]])
+                              )([self.diab_df.values[:,:-1]],
+                                [self.diab_df.values[:,[-1]]])
+    
+    def test_context(self):
+        import pymc as pm
+        import pytensor
+        layers:list[GPLayer] = []
+        
+        with GaussianProcess() as gp:
+            l1 = GPLayer(
+                [
+                    GaussianSubprocess(
+                        kernel = pm.gp.cov.ExpQuad,
+                        kernel_hyperparameters = dict(
+                            ls = distribution(
+                                pm.HalfCauchy, 'λ', 2
+                            )
+                            ),
+                        mean = pm.gp.mean.Zero,
+                        index = (0,i),
+                    ) for i in range(10)
+                ]
+            )
+            layers.append(l1)
+            l2 = GPLayer(
+                [
+                    GaussianSubprocess(
+                        kernel = pm.gp.cov.ExpQuad,
+                        kernel_hyperparameters = dict(
+                            ls = distribution(
+                                pm.HalfCauchy, 'λ', 2
+                            )
+                            ),
+                        mean = pm.gp.mean.Zero,
+                        index = (1,i),
+                    ) for i in range(10)
+                ]
+            )
+            layers.append(l2)
+            likelihood = LikelihoodComponent(
+                    observed = 'train_outputs',
+                    distribution = pm.Normal,
+                    var_mapping = dict(
+                        mu = 'μ',
+                        sigma = 'σ'
+                    )
+                )
+            responses = ResponseFunctionComponent(
+                ResponseFunctions(
+                    functions = dict(
+                        f_sig = lambda t: pm.math.exp(t)
+                        ),
+                    application_targets = dict(
+                        f_sig = 'σ',
+                        ),
+                    records = dict(
+                        f_sig = False,
+                        ),
+                )
+            )
+            adaptor = ModelAdaptorComponent(
+            var_mapping = dict(
+                μ = lambda t: t.T[0,:],
+                σ = lambda t: t.T[1,:],
+            )
+        )
+

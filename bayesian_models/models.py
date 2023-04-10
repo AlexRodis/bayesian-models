@@ -1710,6 +1710,76 @@ class GaussianProcess(BayesianEstimator):
                 :code:`None` means, unset. The data processor updates
                 this value
                 
+            - | reindex_layers:bool=True := If :code:`True` assumes the
+                user did not explicitly index the layers and will
+                reindex them as :code:`(0,1,...)`. If :code:`False` the
+                user should explicitly provide unique indices for the
+                layers as integers. Example:
+                
+                .. code-block:: python
+                
+                    # Implicit indices. Will be set to 0, 1
+                    implicit_layers = [
+                        GPLayer([
+                            GaussianSubprocess(
+                                kernel = pm.gp.cov.ExpQuad,
+                                kernel_hyperparameters = dict(
+                                    ls = distribution(
+                                        pm.HalfCauchy, 'λ', 2
+                                    )
+                                    ),
+                                mean = pm.gp.mean.Zero,
+                                index = (0,i),
+                            ) for i in range(10)
+                            ]),
+                            
+                            GPLayer([
+                            GaussianSubprocess(
+                                kernel = pm.gp.cov.ExpQuad,
+                                kernel_hyperparameters = dict(
+                                    ls = distribution(
+                                        pm.HalfCauchy, 'λ', 2
+                                    )
+                                    ),
+                                mean = pm.gp.mean.Zero,
+                                index = (0,i),
+                            ) for i in range(10)
+                            ]),
+                    ]
+                    # Explicit indices
+                    expicit_layers = [
+                        GPLayer([
+                            GaussianSubprocess(
+                                kernel = pm.gp.cov.ExpQuad,
+                                kernel_hyperparameters = dict(
+                                    ls = distribution(
+                                        pm.HalfCauchy, 'λ', 2
+                                    )
+                                    ),
+                                mean = pm.gp.mean.Zero,
+                                index = (0,i),
+                            ) for i in range(10)
+                            ],
+                            layer_index=100
+                            ),
+                            
+                            GPLayer([
+                            GaussianSubprocess(
+                                kernel = pm.gp.cov.ExpQuad,
+                                kernel_hyperparameters = dict(
+                                    ls = distribution(
+                                        pm.HalfCauchy, 'λ', 2
+                                    )
+                                    ),
+                                mean = pm.gp.mean.Zero,
+                                index = (0,i),
+                            ) for i in range(10)
+                            ],
+                            layer_index=-998
+                            ),
+                    ]
+                
+                
         Private Attributes:
         ===================
 
@@ -1729,11 +1799,12 @@ class GaussianProcess(BayesianEstimator):
                 Defaults to :code:`ConvergencesHandler`
         
     '''
-    layers:Sequence[GPLayer]
-    likelihood:LikelihoodComponent
+    layers:Optional[Sequence[GPLayer]] = None
+    likelihood:Optional[list[LikelihoodComponent]] = field(default=None)
     adaptor:Optional[ModelAdaptorComponent] = field(default=None)
     responses:Optional[ResponseFunctionComponent] = field(default=None)
     extra_rvs:Optional[FreeVariablesComponent] = field(default=None)
+    reindex_layers:bool = True
     _builder:ModelDirector = ModelDirector
     nan_handling:str = field(
         init=True, default_factory = lambda : 'exclude')
@@ -1742,7 +1813,8 @@ class GaussianProcess(BayesianEstimator):
     variables:dict = field(default_factory=dict)
     _core:Optional[GaussianProcessCoreComponent] = field(
         repr=False, default = None)
-    _data_dimentions:Any = field(init=False, default_factory=lambda : None)
+    _data_dimentions:Any = field(init=False, 
+                                 default_factory=lambda : None)
     _ndims:Any = field(init=False, default_factory=lambda : None)
     _coords:Any = field(init=False, default_factory=lambda : None)
     _idata:Optional[az.InferenceData] = field(
@@ -1765,21 +1837,26 @@ class GaussianProcess(BayesianEstimator):
     nan_present_flag:Optional[bool] = field(
         init=False, default_factory=lambda :None)
     
+    
     def __post_init__(self)->None:
         r'''
             Post init actions
             
             Initialize handler objects and validate options
         '''
-        self._data_processor = Data(
-            nan_handling = self.nan_handling,
-            cast = self.cast,
-        )
-        self._io_handler = ModelIOHandler(
-            _save_path = self.save_path
-        )
-        self._divergence_handler = ConvergencesHandler()
-        self._core = GaussianProcessCoreComponent(self.layers)
+        sentinel:bool = self.layers is None or self.likelihood is None
+        if not sentinel:
+            self._data_processor = Data(
+                nan_handling = self.nan_handling,
+                cast = self.cast,
+            )
+            self._io_handler = ModelIOHandler(
+                _save_path = self.save_path
+            )
+            self._divergence_handler = ConvergencesHandler()
+            # Inform the output layer of it's status so it can correctly
+            # label its output `TensorVariable` as 'f' instead of 'f[i]'
+            self.layers[-1].output_layer = True
 
     @property
     def coords(self)->Optional[dict[str,Any]]:
@@ -1820,14 +1897,48 @@ class GaussianProcess(BayesianEstimator):
     def initialized(self, val:bool)->None:
         self._initialized = val
     
+    def __enter__(self, 
+                  layers:Optional[Sequence[GPLayer]] = None,
+                  likelihood:Optional[list[LikelihoodComponent]] = None,
+                  adaptor:Optional[ModelAdaptorComponent] = None,
+                  responses:Optional[ResponseFunctionComponent] = None,
+                  extra_rvs:Optional[FreeVariablesComponent] = None,
+                  reindex_layers:bool = True,
+                  nan_handling:str = 'exclude',
+                  cast:Optional[np.dtype] = None,
+                  save_path:Optional[str] = None)->None:
+        r'''
+            Insert docstring here
+        '''
+        self.layers = layers
+        self.likelihood = likelihood
+        self.adaptor = adaptor
+        self.responses = responses
+        self.extra_rvs = extra_rvs
+        self.reindex_layers = reindex_layers
+        self.nan_handling = nan_handling
+        self.cast = cast
+        self.save_path = save_path
+        
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.__post_init__()
+        
+    
     def __call__(self, predictors, targets):
-        from itertools import count
+
+        ppredictors = list(map(
+            self._data_processor, predictors
+        ))
+        ptargets = list(map(
+            self._data_processor, targets
+        ))
+        # self.coords = ppredictors.coords()
         
-        ppredictors = self._data_processor(predictors)
-        ptargets = self._data_processor(targets)
-        self.coords = ppredictors.coords()
-        
-        core_component = GaussianProcessCoreComponent(layers=self.layers)
+        core_component = GaussianProcessCoreComponent(
+            layers = self.layers,
+            predictors = ppredictors,
+            targets = ptargets,
+            )
         likelihood = self.likelihood
         responses = self.responses
         adaptor = self.adaptor
@@ -1838,7 +1949,6 @@ class GaussianProcess(BayesianEstimator):
             response_component = self.responses,
             free_vars_component = self.extra_rvs,
             coords = self.coords,
-            
         )
         builder()
         self._model = builder.model
@@ -1847,8 +1957,6 @@ class GaussianProcess(BayesianEstimator):
         self._io_handler._class = self
         self.initialized = True
         return self
-        
-        
         
     @property
     def posterior_trace(self):

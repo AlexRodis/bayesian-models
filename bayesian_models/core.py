@@ -29,6 +29,7 @@ from collections import defaultdict, namedtuple
 from bayesian_models.data import Data
 from bayesian_models.utilities import extract_dist_shape, invert_dict
 from bayesian_models.utilities import merge_dicts
+from bayesian_models.data import CommonDataStructureInterface
 import numpy as np
 import pytensor
 
@@ -563,8 +564,7 @@ class ResponseFunctionComponent:
                     f"{response.target}. Variable {response.target} not "
                     "found on the model"
                 ))
-            
-    
+                
 @dataclass(kw_only=True, slots=True)
 class ModelAdaptorComponent:
     '''
@@ -644,8 +644,6 @@ class ModelAdaptorComponent:
             else:
                 v = func(output)
             self.variables[new_var] = v
-
-
 
 @dataclass(kw_only=True, slots=True)
 class LikelihoodComponent:
@@ -1424,6 +1422,7 @@ class ModelDirector:
                 free_vars_component = FreeVariablesComponent(),
                 adaptor_component = ModelAdaptorComponent(),
             )
+            
         Object Attributes:
         -------------------
         
@@ -2150,41 +2149,103 @@ class GPLayer:
         '''
         return iter(self.subprocesses)
 
-@dataclass(slots=True)
 class GaussianProcessCoreComponent(CoreModelComponent):
     
-    layers:Sequence[GPLayer] = field(default_factory=list)
-    distributions:dict[str, Distribution] = field(default_factory=dict)
+    __slots__ = ('layers', 'predictors', 'targets', 
+                 'distributions', "_multiinput", "_multioutput",)
     
-    
-    def __post_init__(self):
+    def __pre_init__(self, 
+                     layers, 
+                     predictors, 
+                     targets
+                     )->dict[str, Distribution]:
         r'''
-            Collect all parameters
-        
-            Prepare the model by collecting and extracting all random
-            variables from the kernel and mean parameters
+            Insert docstring here
         '''
-        collected_rvs:list[dict] = [] 
-        for layer in self.layers:
+        data:dict[str, Distribution] = {}
+        
+        if len(predictors)==1:
+            data['train_inputs'] = distribution(
+                pm.ConstantData, 'train_inputs', 
+                predictors[0].values()   
+            )
+            data["inputs"] = distribution(
+                pm.MutableData, 'inputs',
+                predictors[0].values()
+                
+            )
+        else:
+            for i, predictor in enumerate(predictors):
+                data[f'train_inputs_{i}'] = distribution(
+                    pm.ConstantData, f'train_inputs_{i}',
+                    predictor.values()
+                )
+                data[f"inputs_{i}"] = distribution(
+                    pm.MutableData, f"inputs_{i}",
+                    predictor.values()
+                )
+                
+        if len(targets)==1:
+            data['train_outputs'] = distribution(
+                pm.ConstantData, 'train_outputs',
+                targets[0].values()
+            )
+            data["outputs"] = distribution(
+                pm.MutableData, 'outputs',
+                targets[0].values()
+            )
+        else:
+            for i, target in enumerate(targets):
+                data[f"train_ouputs_{i}"] = distribution(
+                    pm.ConstantData, f'train_outputs',
+                    target.values()
+                )
+                data[f"outputs_{i}"] = distribution(
+                    pm.MutableData, f"outputs_{i}",
+                    target.values()
+                )
+        collected_rvs:list[dict[str, Distribution]] = [] 
+        for layer in layers:
             for process in layer:
                 collected_rvs.append(process.__extract_basic_rvs__())
-        self.distributions = collected_rvs
         
-    def __call__(self, ppredictors, ptargets)->None:    
-        data:dict[str, Distribution] = dict(
-                train_inputs = distribution(
-                pm.ConstantData, 'train_inputs', ppredictors.values()   
-                ),
-                train_outputs = distribution(
-                    pm.ConstantData, 'train_outputs', ptargets.values()
-                    ),
-                inputs = distribution(
-                    pm.MutableData, 'inputs' , ppredictors.values()
-                ),
-                outputs = distribution(
-                pm.MutableData, 'outputs', ptargets.values()  
-                ),
-            )
-        basic_rvs:dict = merge_dicts(data, *self._basic_rvs)
-        super().__call__(self.distributions)
+        dists:dict[str, Distribution] = merge_dicts(data, 
+                                                    *collected_rvs)
+        return dists
+    
+    def __init__(self, 
+                layers:Sequence[GPLayer], 
+                predictors:Optional[list[
+                     CommonDataStructureInterface
+                     ]] = None,
+                targets:Optional[list[
+                    CommonDataStructureInterface
+                    ]] = None,
+                distributions:dict[str, Distribution] = dict(),
+                model:Optional[pymc.Model]=None,
+                )->None:
+        # WARNING! Putting this after any attributes are set will
+        # trigger an infinite recursion (for some reason)
+        dists = self.__pre_init__(layers, predictors, targets)
+        super().__init__(distributions = dists, model = model)
+        self.layers = layers
+        self.predictors = predictors
+        self.targets = targets
+        self._multiinput:bool = len(predictors) != 1
+        self._multioutput:bool = len(targets) != 1
         
+    def __call__(self)->None:
+        r'''
+            Insert docstring here
+        '''
+        super().__call__()
+        if not self._multiinput:
+            v = self.variables['train_inputs']
+        else:
+            raise NotImplementedError("Multiple inputs or outputs")
+        for layer in self.layers:
+            v = layer(v, self.variables)
+            self.variables = merge_dicts(
+                self.variables, layer.variables
+                )
+        print('Hi')
