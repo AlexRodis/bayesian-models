@@ -2248,4 +2248,4 @@ class GaussianProcessCoreComponent(CoreModelComponent):
             self.variables = merge_dicts(
                 self.variables, layer.variables
                 )
-        print('Hi')
+            

@@ -38,6 +38,7 @@ from bayesian_models.data import Data
 from bayesian_models.utilities import merge_dicts
 from dataclasses import dataclass, field
 from warnings import warn
+import inspect
 
 __all__ = (
         'BayesianModel',
@@ -50,6 +51,21 @@ __all__ = (
         'SWISS',
         'SiLU',
         )
+
+
+def context(func, *args, **kwargs):
+    r'''
+        Insert docstring here
+    '''
+    
+    def wrapper(*args, **kwargs):
+        import inspect
+        # Before
+        self = func(*args)
+        self._p
+        return self
+    
+    return wrapper
 
 
 class BayesianModel(ABC):
@@ -1800,10 +1816,17 @@ class GaussianProcess(BayesianEstimator):
         
     '''
     layers:Optional[Sequence[GPLayer]] = None
-    likelihood:Optional[list[LikelihoodComponent]] = field(default=None)
-    adaptor:Optional[ModelAdaptorComponent] = field(default=None)
-    responses:Optional[ResponseFunctionComponent] = field(default=None)
-    extra_rvs:Optional[FreeVariablesComponent] = field(default=None)
+    likelihoods_component:Optional[
+        list[LikelihoodComponent]
+        ] = field(default=None)
+    adaptor_component:Optional[ModelAdaptorComponent] = field(
+        default=None)
+    responses_component:Optional[
+        ResponseFunctionComponent
+        ] = field(default=None)
+    free_variables_component:Optional[
+        FreeVariablesComponent
+        ] = field(default=None)
     reindex_layers:bool = True
     _builder:ModelDirector = ModelDirector
     nan_handling:str = field(
@@ -1811,7 +1834,7 @@ class GaussianProcess(BayesianEstimator):
     cast:Optional[np.dtype] = field(
         init=True, default_factory = lambda : None)
     variables:dict = field(default_factory=dict)
-    _core:Optional[GaussianProcessCoreComponent] = field(
+    _core_component:Optional[GaussianProcessCoreComponent] = field(
         repr=False, default = None)
     _data_dimentions:Any = field(init=False, 
                                  default_factory=lambda : None)
@@ -1836,7 +1859,33 @@ class GaussianProcess(BayesianEstimator):
         init=True, default = None)
     nan_present_flag:Optional[bool] = field(
         init=False, default_factory=lambda :None)
+    _pre_context_vars:Optional[dict] = field(repr=False, 
+                                        init=False, 
+                                        default=None)
+    _post_context_vars:Optional[dict] = field(repr = False, 
+                                         init= False,              default=None)
+    _context_vars:Optional[dict] = field(repr = False,
+                                         init = False,
+                                         default=None)
+    _context_init:bool= field(repr=False, init=False, default=False)
+    _n_inputs:Optional[int] = field(repr=False, 
+                                    init=False, 
+                                    default=None)
+    _n_outputs:Optional[int] = field(repr=False,
+                                     init=False,
+                                     default=False)
+    _initialized_conditional:bool= field(
+        repr=False, init=False, default=False
+    )
     
+    def _set_output_layer(self):
+        r'''
+            Inform the final layer of its status
+            
+            Updates the :code:`output_layer=True` attribute of the last
+            layer specified, so it's output can be correctly labeled 'f'
+        '''
+        self.layers[-1].output_layer = True
     
     def __post_init__(self)->None:
         r'''
@@ -1844,7 +1893,8 @@ class GaussianProcess(BayesianEstimator):
             
             Initialize handler objects and validate options
         '''
-        sentinel:bool = self.layers is None or self.likelihood is None
+        sentinel:bool = self.layers is None or \
+            self.likelihoods_component is None
         if not sentinel:
             self._data_processor = Data(
                 nan_handling = self.nan_handling,
@@ -1856,7 +1906,7 @@ class GaussianProcess(BayesianEstimator):
             self._divergence_handler = ConvergencesHandler()
             # Inform the output layer of it's status so it can correctly
             # label its output `TensorVariable` as 'f' instead of 'f[i]'
-            self.layers[-1].output_layer = True
+            self._set_output_layer()
 
     @property
     def coords(self)->Optional[dict[str,Any]]:
@@ -1897,57 +1947,95 @@ class GaussianProcess(BayesianEstimator):
     def initialized(self, val:bool)->None:
         self._initialized = val
     
-    def __enter__(self, 
-                  layers:Optional[Sequence[GPLayer]] = None,
-                  likelihood:Optional[list[LikelihoodComponent]] = None,
-                  adaptor:Optional[ModelAdaptorComponent] = None,
-                  responses:Optional[ResponseFunctionComponent] = None,
-                  extra_rvs:Optional[FreeVariablesComponent] = None,
-                  reindex_layers:bool = True,
-                  nan_handling:str = 'exclude',
-                  cast:Optional[np.dtype] = None,
-                  save_path:Optional[str] = None)->None:
+    def __enter__(self):
         r'''
-            Insert docstring here
+            Collect all variable definitions in the caller's namespace
+            so that the context specific ones can be extracted.
+            
+            Jumps on stack frame backwards and extract a copy of the
+            local namespace
         '''
-        self.layers = layers
-        self.likelihood = likelihood
-        self.adaptor = adaptor
-        self.responses = responses
-        self.extra_rvs = extra_rvs
-        self.reindex_layers = reindex_layers
-        self.nan_handling = nan_handling
-        self.cast = cast
-        self.save_path = save_path
-        
+        self._context_init = True
+        namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
+
+        self._pre_context_vars = {
+            k:v for k,v in namespace.items()
+        }
+        return self
+    
+    # Maybe a decorator here ?
     def __exit__(self, exc_type, exc_val, exc_tb):
+        r'''
+            Extract the changes in callers namespace before and after
+            the context manager was opened. 
+            
+            Jumps a single stack frame backwards in the call stack,
+            extracts the differences in the local namespace and sets the
+            :code:`_post_context_vars` and :code:`_context_vars`
+            attributes
+        '''
+        namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
+        self._post_context_vars = namespace
+        # Extract changed variables
+        changed_names:dict[str, Any] = {
+            k1:v1 for (k1, v1), (k2, v2) in zip(
+                self._post_context_vars.items(), 
+                self._pre_context_vars.items()
+            ) if (k1!=k2 or k2 is None) and (v1!=v2)
+        }
+        # Extract new variable names
+        new_names:dict[str, Any] = set(
+            self._post_context_vars.keys()
+            )-set(self._pre_context_vars.keys())
+        new_namespace:dict[str, Any] = {
+            k:self._post_context_vars[k] for k in new_names
+        }
+        self._context_vars = merge_dicts(changed_names, new_namespace)
+        return self
+    
+    def _from_context_mngr(self):
+        r'''
+            If extracts model variables from context variables
+        '''
+        self.layers = self._context_vars['layers']
+        self.likelihoods_component = self._context_vars[
+            'likelihoods_component']
+        self.free_variables_component = self._context_vars.get(
+            'free_variables_component'
+        )
+        self.responses_component = self._context_vars.get(
+            'responses_component'
+        )
+        self.adaptor_component = self._context_vars.get(
+            'adaptor_component'
+        )
         self.__post_init__()
         
     
     def __call__(self, predictors, targets):
-
+        if self._context_init:
+            self._from_context_mngr()
+        self._n_inputs = len(predictors)
+        self._n_outputs = len(targets)
         ppredictors = list(map(
             self._data_processor, predictors
         ))
         ptargets = list(map(
             self._data_processor, targets
         ))
-        # self.coords = ppredictors.coords()
-        
-        core_component = GaussianProcessCoreComponent(
+        self.coords = ppredictors[0].coords()
+
+        self._core_component = GaussianProcessCoreComponent(
             layers = self.layers,
             predictors = ppredictors,
             targets = ptargets,
             )
-        likelihood = self.likelihood
-        responses = self.responses
-        adaptor = self.adaptor
         builder = ModelDirector(
-            core_component = core_component,
-            likelihood_component = [self.likelihood],
-            adaptor_component = self.adaptor,
-            response_component = self.responses,
-            free_vars_component = self.extra_rvs,
+            core_component = self._core_component,
+            likelihood_component = self.likelihoods_component,
+            adaptor_component = self.adaptor_component,
+            response_component = self.responses_component,
+            free_vars_component = self.free_variables_component,
             coords = self.coords,
         )
         builder()
@@ -1956,17 +2044,88 @@ class GaussianProcess(BayesianEstimator):
         self._io_handler._model = self._model
         self._io_handler._class = self
         self.initialized = True
+        self._multiinput = self._core_component._multiinput
+        self._multioutput = self._core_component._multioutput
         return self
         
     @property
     def posterior_trace(self):
         pass
     
-    def fit(self):
-        pass
+    def fit(self, *args,sampler:Callable = pymc.sample ,
+            **kwargs)->az.InferenceData:
+        '''
+            Perform inference and return the posterior
+            
+            Sets the objects :code:`idata` and :code:`trained`
+            attributes. :code:`infer` is an alias for this method
+            
+            Args:
+            =====
+            
+                - | *args:tuple[Any,...] := Optional positional
+                    arguments to forward to the sampler
+                    
+                - | sampler:Callable=pymc.sample := The sampler to used
+                    to perform inference. Optional and defaults to
+                    :code:`pymc.sample`. Other options include
+                    :code:`pymc.sampling.jax.sample_numpyro_nuts` but
+                    have external dependencies
+                
+                - | **kwargs:dict[str, Any] := Optional keyword
+                    arguments to be forwarded to the sampler
+                    
+            Returns:
+            ========
+            
+                - | idata:arviz.InferenceData := The posterior trace as
+                    an :code:`arviz.InferenceData` object
+                    
+            Raises:
+            =======
+
+                - | RuntimeError := If the model has not been
+                    initialized yet
+        '''
+        if not self.initialized:
+            raise RuntimeError((
+                "Cannot run inference, model has not been initialized. "
+                "Ensure you've called the model object before calling "
+                "this method"
+            ))
+        else:
+            with self.model:
+                self.idata = sampler(*args, **kwargs)   
+                self.trained = True             
+        return self.idata
     
-    def predict(self):
-        pass
+    
+    infer = fit
+    
+    def predict(self, Xnew:list, method:str='full'):
+        r'''
+            Predict on new points in the input space
+        '''
+        if not self.trained:
+            raise RuntimeError((
+                "Cannot predict on new points. Model is untrained. "
+                "Ensure the call and fit methods have been called first"
+            ))
+        else:
+            Xnew = Xnew if isinstance(Xnew, Sequence) else [Xnew]
+            if not self._initialized_conditional:
+                with self.model:
+                    pass
+            else:
+                with self.model:
+                    pass
+                
+    def gp_plot(self):
+        r'''
+            Generate the familiar "beads plot" for gaussian processes
+        '''
+        raise NotImplementedError()
+    
     
     def save(self, save_path:Optional[str]=None, 
              method:str='netcdf')->None:

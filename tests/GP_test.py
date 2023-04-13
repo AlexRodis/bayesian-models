@@ -215,13 +215,11 @@ class TestGaussianProcesses(unittest.TestCase):
                               responses = response,
                               )([self.diab_df.values[:,:-1]],
                                 [self.diab_df.values[:,[-1]]])
-    
-    def test_context(self):
         import pymc as pm
         import pytensor
-        layers:list[GPLayer] = []
-        
-        with GaussianProcess() as gp:
+        L:list[GPLayer] = []
+        with GaussianProcess() as obj:
+            
             l1 = GPLayer(
                 [
                     GaussianSubprocess(
@@ -236,7 +234,7 @@ class TestGaussianProcesses(unittest.TestCase):
                     ) for i in range(10)
                 ]
             )
-            layers.append(l1)
+            L.append(l1)
             l2 = GPLayer(
                 [
                     GaussianSubprocess(
@@ -251,16 +249,17 @@ class TestGaussianProcesses(unittest.TestCase):
                     ) for i in range(10)
                 ]
             )
-            layers.append(l2)
-            likelihood = LikelihoodComponent(
+            L.append(l2)
+            layers = L
+            likelihoods_component = [LikelihoodComponent(
                     observed = 'train_outputs',
                     distribution = pm.Normal,
                     var_mapping = dict(
                         mu = 'μ',
                         sigma = 'σ'
                     )
-                )
-            responses = ResponseFunctionComponent(
+                )]
+            responses_component = ResponseFunctionComponent(
                 ResponseFunctions(
                     functions = dict(
                         f_sig = lambda t: pm.math.exp(t)
@@ -273,10 +272,17 @@ class TestGaussianProcesses(unittest.TestCase):
                         ),
                 )
             )
-            adaptor = ModelAdaptorComponent(
+            adaptor_component = ModelAdaptorComponent(
             var_mapping = dict(
                 μ = lambda t: t.T[0,:],
                 σ = lambda t: t.T[1,:],
             )
         )
+            
+        obj(
+            [self.diab_df.values[:,:-1]],
+            [self.diab_df.values[:,[-1]]]
+            )
+        with obj.model:
+            pm.sample()    
 
