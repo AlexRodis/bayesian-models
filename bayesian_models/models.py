@@ -1974,6 +1974,7 @@ class GaussianProcess(BayesianEstimator):
             :code:`_post_context_vars` and :code:`_context_vars`
             attributes
         '''
+        # Stack hopping isn't thread safe ?
         namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
         self._post_context_vars = namespace
         # Extract changed variables
@@ -2040,7 +2041,7 @@ class GaussianProcess(BayesianEstimator):
         )
         builder()
         self._model = builder.model
-        self.var_names = core_component.variables
+        self.var_names = self._core_component.variables
         self._io_handler._model = self._model
         self._io_handler._class = self
         self.initialized = True

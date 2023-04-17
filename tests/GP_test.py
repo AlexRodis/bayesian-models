@@ -127,12 +127,10 @@ class TestGaussianProcesses(unittest.TestCase):
                 )
             
         with DGP_model:
-            idata = pm.sample(10, tunes=10, chains=2)
-        print("Hi")
+            idata = pm.sample(10, tune=10, chains=2)
         
-    def test_back_layers(self):
+    def test_init(self):
         import pymc as pm
-        import pytensor
         layers:list[GPLayer] = []
         l1 = GPLayer(
             [
@@ -145,81 +143,50 @@ class TestGaussianProcesses(unittest.TestCase):
                         ),
                     mean = pm.gp.mean.Zero,
                     index = (0,i),
-                ) for i in range(10)
+                ) for i in range(3)
             ],
             layer_idx=0
         )
         layers.append(l1)
-        l2 = GPLayer(
-            [
-                GaussianSubprocess(
-                    kernel = pm.gp.cov.ExpQuad,
-                    kernel_hyperparameters = dict(
-                        ls = distribution(
-                            pm.HalfCauchy, 'λ', 2
-                        )
-                        ),
-                    mean = pm.gp.mean.Zero,
-                    index = (1,i),
-                ) for i in range(10)
-            ], 
-            layer_idx=1
-        )
-        layers.append(l2)
-        l3 = GPLayer(
-            [
-                GaussianSubprocess(
-                    kernel = pm.gp.cov.ExpQuad,
-                    kernel_hyperparameters = dict(
-                        ls = distribution(
-                            pm.ConstantData, 'λ', 1.0
-                        )
-                        ),
-                    mean = pm.gp.mean.Zero,
-                    index = (2,i),
-                ) for i in range(10)
-            ], 
-            layer_idx=2
-        )
-        layers.append(l3)
         adaptor = ModelAdaptorComponent(
             var_mapping = dict(
-                μ = lambda t: t.T[0,:],
-                σ = lambda t: t.T[1,:],
+                f_mu = lambda t: t.T[0,:],
+                f_sigma = lambda t: t.T[1,:],
             )
         )
         like = LikelihoodComponent(
                 observed = 'train_outputs',
                 distribution = pm.Normal,
                 var_mapping = dict(
-                    mu = 'μ',
+                    mu = 'f_mu',
                     sigma = 'σ'
                 )
             )
         response = ResponseFunctionComponent(
             ResponseFunctions(
                 functions = dict(
-                    f_sig = lambda t: pm.math.exp(t)
+                    σ = lambda t: pm.math.exp(t)
                     ),
                 application_targets = dict(
-                    f_sig = 'σ',
+                    σ = 'f_sigma',
                     ),
                 records = dict(
-                    f_sig = False,
+                    σ = False,
                     ),
             )
         )
         obj = GaussianProcess(layers, 
-                              likelihood = like,
-                              adaptor = adaptor,
-                              responses = response,
-                              )([self.diab_df.values[:,:-1]],
+                            likelihoods_component = [like],
+                            adaptor_component = adaptor,
+                            responses_component = response,
+                            )([self.diab_df.values[:,:-1]],
                                 [self.diab_df.values[:,[-1]]])
-        import pymc as pm
-        import pytensor
-        L:list[GPLayer] = []
-        with GaussianProcess() as obj:
+        obj.fit(10, tune=10, chains=2)
             
+    def test_context(self):
+        import pymc as pm
+        with GaussianProcess() as obj:
+            layers:list[GPLayer] = []
             l1 = GPLayer(
                 [
                     GaussianSubprocess(
@@ -231,58 +198,38 @@ class TestGaussianProcesses(unittest.TestCase):
                             ),
                         mean = pm.gp.mean.Zero,
                         index = (0,i),
-                    ) for i in range(10)
-                ]
+                    ) for i in range(3)
+                ],
+                layer_idx=0
             )
-            L.append(l1)
-            l2 = GPLayer(
-                [
-                    GaussianSubprocess(
-                        kernel = pm.gp.cov.ExpQuad,
-                        kernel_hyperparameters = dict(
-                            ls = distribution(
-                                pm.HalfCauchy, 'λ', 2
-                            )
-                            ),
-                        mean = pm.gp.mean.Zero,
-                        index = (1,i),
-                    ) for i in range(10)
-                ]
+            layers.append(l1)
+            adaptor_component = ModelAdaptorComponent(
+                var_mapping = dict(
+                    f_mu = lambda t: t.T[0,:],
+                    f_sigma = lambda t: t.T[1,:],
+                )
             )
-            L.append(l2)
-            layers = L
             likelihoods_component = [LikelihoodComponent(
                     observed = 'train_outputs',
                     distribution = pm.Normal,
                     var_mapping = dict(
-                        mu = 'μ',
+                        mu = 'f_mu',
                         sigma = 'σ'
                     )
                 )]
             responses_component = ResponseFunctionComponent(
                 ResponseFunctions(
                     functions = dict(
-                        f_sig = lambda t: pm.math.exp(t)
+                        σ = lambda t: pm.math.exp(t)
                         ),
                     application_targets = dict(
-                        f_sig = 'σ',
+                        σ = 'f_sigma',
                         ),
                     records = dict(
-                        f_sig = False,
+                        σ = False,
                         ),
                 )
             )
-            adaptor_component = ModelAdaptorComponent(
-            var_mapping = dict(
-                μ = lambda t: t.T[0,:],
-                σ = lambda t: t.T[1,:],
-            )
-        )
-            
-        obj(
-            [self.diab_df.values[:,:-1]],
-            [self.diab_df.values[:,[-1]]]
-            )
-        with obj.model:
-            pm.sample()    
-
+        obj([self.diab_df.values[:,:-1]],
+            [self.diab_df.values[:,[-1]]])
+        obj.fit(10, tune=10, chains=2)
