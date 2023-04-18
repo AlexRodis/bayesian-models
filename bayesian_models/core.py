@@ -1817,6 +1817,7 @@ class GaussianSubprocess:
     process_name:Optional[str] = None
     random_variables:dict = field(default_factory=dict)
     variables:dict = field(default_factory=dict)
+    topology:Optional[str] = field(default=None)
     _mean_name_mapping:Optional[dict[str, str]] = field(
         repr=False,
         default=None
@@ -2090,7 +2091,29 @@ class GPLayer:
     functions:list = field(default_factory=list)
     processor_type:Type[GPProcessor] = FullProcessor
     output_layer:bool = False
+    topology:Optional[str]=field(default=None)
+    _sub_topology:Optional[str] = field(
+        repr = False, init=False, default=None
+    )
     _l:int=0
+    
+    def __post_init__(self):
+        self._get_subtopology()
+    
+    def _get_subtopology(self)->None:
+        r'''
+            Infer the subprocess topology
+        '''
+        from copy import copy
+        from itertools import groupby
+        sorted_subprocesses:Sequence[GaussianSubprocess] = sorted(
+            copy(self.subprocesses), key=lambda e: e.topology)
+        gs = groupby(sorted_subprocesses, key= lambda e:e.topology)
+        self._sub_topology = {self.topology:{
+            topological_group:list(members
+                                   ) for topological_group, members in gs
+        }}
+
         
     
     def __call__(self, inpts, var_catalogue:dict[str, Any]):
@@ -2124,7 +2147,14 @@ class GPLayer:
             self.variables = merge_dicts(
                 subprocess.variables, self.variables
                 )
-        f = pytensor.tensor.stack(self.functions).T
+        if self.topology is None:
+            f = pytensor.tensor.stack(self.functions).T
+        else:
+            f = pymc.Deterministic(self.topology,
+                pytensor.tensor.stack(self.functions).T
+            )
+        str_f_name:str = f"f[{self.layer_idx}]" if self.output_layer \
+            else "f"
         if not self.output_layer:
             self.variables[f"f[{self.layer_idx}]"] = f
         else:
@@ -2152,7 +2182,8 @@ class GPLayer:
 class GaussianProcessCoreComponent(CoreModelComponent):
     
     __slots__ = ('layers', 'predictors', 'targets', 
-                 'distributions', "_multiinput", "_multioutput",)
+                 'distributions', "_multiinput", "_multioutput",
+                 "topology")
     
     def __pre_init__(self, 
                      layers, 
@@ -2233,6 +2264,31 @@ class GaussianProcessCoreComponent(CoreModelComponent):
         self.targets = targets
         self._multiinput:bool = len(predictors) != 1
         self._multioutput:bool = len(targets) != 1
+        self.topology:Optional[dict[str, Any]] = field(
+            init= False,
+            repr=True,
+            default_factory = dict
+        )
+        
+    def _get_complete_topology(self):
+        r'''
+            Collect all the layers' topology specs and produce the total
+            topology spec
+        '''
+        from itertools import groupby
+        topology:dict[str,Any] = {"root":None}
+        layer_wise = sorted(
+            [layer._sub_topology for layer in self.layers],
+            key = lambda e:e.topology
+            )
+        gp = groupby(layer_wise, key = lambda e:e.topology)
+        
+        topology['root'] = {
+            k:v for k,v  in gp
+        }
+        self.topology = topology
+        print("Hi")
+        
         
     def __call__(self)->None:
         r'''

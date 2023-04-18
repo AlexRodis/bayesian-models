@@ -233,3 +233,68 @@ class TestGaussianProcesses(unittest.TestCase):
         obj([self.diab_df.values[:,:-1]],
             [self.diab_df.values[:,[-1]]])
         obj.fit(10, tune=10, chains=2)
+        
+    def test_context(self):
+        import pymc as pm
+        with GaussianProcess() as obj:
+            layers:list[GPLayer] = []
+            l1 = GPLayer(
+                [
+                    GaussianSubprocess(
+                        kernel = pm.gp.cov.ExpQuad,
+                        kernel_hyperparameters = dict(
+                            ls = distribution(
+                                pm.HalfCauchy, 'λ', 2
+                            )
+                            ),
+                        mean = pm.gp.mean.Zero,
+                        index = (0,i),
+                        topology="A"
+                    ) for i in range(5)
+                ] + [
+                    GaussianSubprocess(
+                        kernel = pm.gp.cov.ExpQuad,
+                        kernel_hyperparameters = dict(
+                            ls = distribution(
+                                pm.HalfCauchy, 'λ', 2
+                            )
+                            ),
+                        mean = pm.gp.mean.Zero,
+                        index = (1,i),
+                        topology="B",
+                    ) for i in range(3)
+                    ],
+                layer_idx=0,
+                topology = "C"
+            )
+            layers.append(l1)
+            adaptor_component = ModelAdaptorComponent(
+                var_mapping = dict(
+                    f_mu = lambda t: t.T[0,:],
+                    f_sigma = lambda t: t.T[1,:],
+                )
+            )
+            likelihoods_component = [LikelihoodComponent(
+                    observed = 'train_outputs',
+                    distribution = pm.Normal,
+                    var_mapping = dict(
+                        mu = 'f_mu',
+                        sigma = 'σ'
+                    )
+                )]
+            responses_component = ResponseFunctionComponent(
+                ResponseFunctions(
+                    functions = dict(
+                        σ = lambda t: pm.math.exp(t)
+                        ),
+                    application_targets = dict(
+                        σ = 'f_sigma',
+                        ),
+                    records = dict(
+                        σ = False,
+                        ),
+                )
+            )
+        obj([self.diab_df.values[:,:-1]],
+            [self.diab_df.values[:,[-1]]])
+        obj.fit(10, tune=10, chains=2)
