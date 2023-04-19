@@ -1819,9 +1819,17 @@ class GaussianProcess(BayesianEstimator):
     likelihoods_component:Optional[
         list[LikelihoodComponent]
         ] = field(default=None)
+    _conditional_likelihoods:Optional[
+        list[LikelihoodComponent]
+        ] = field(default=None)
     adaptor_component:Optional[ModelAdaptorComponent] = field(
         default=None)
+    _conditional_adaptor:Optional[ModelAdaptorComponent] = field(
+        default=None)
     responses_component:Optional[
+        ResponseFunctionComponent
+        ] = field(default=None)
+    _conditional_responses:Optional[
         ResponseFunctionComponent
         ] = field(default=None)
     free_variables_component:Optional[
@@ -1907,6 +1915,18 @@ class GaussianProcess(BayesianEstimator):
             # Inform the output layer of it's status so it can correctly
             # label its output `TensorVariable` as 'f' instead of 'f[i]'
             self._set_output_layer()
+            nada, nres = self._duplicate_components()
+            self._conditional_adaptor = nada
+            self._conditional_responses = nres
+            self._conditional_likelihoods = [
+               LikelihoodComponent(
+                   distribution = likelihood.distribution,
+                   var_mapping = {
+                       k:f"{v}_star" for k,v in \
+                           likelihood.var_mapping.items()
+                   }                   
+                   ) for likelihood in self.likelihoods_component
+            ]
 
     @property
     def coords(self)->Optional[dict[str,Any]]:
@@ -2103,7 +2123,64 @@ class GaussianProcess(BayesianEstimator):
     
     infer = fit
     
-    def predict(self, Xnew:list, method:str='full'):
+    def _duplicate_components(self):
+        r'''
+            Spawn new adaptor and response components to target
+            predictive GP variables
+            
+            Full bayesian treatment of a GP requires that, for each GP a
+            new variables representing the conditional be spawened.
+            Hence derived variables (results of stacking and concating,
+            transformations and subtensor splits) have be duplicated.
+            The new variables follow the "X_star" naming convention.
+            Wherever a variable was previously named "X" it'conditional
+            version is named "X_star". For example, for a subprocess
+            "f[1,0]" the conditional variable wil be named "f[1,0]_star"
+        '''
+        if self.adaptor_component is not None:
+            vmap:dict = self.adaptor_component.var_mapping
+            new_adaptor = ModelAdaptorComponent(
+                var_mapping = {
+                f"{k}_star":v for k,v in vmap.items()
+                }
+            )
+        else:
+            new_adaptor = None
+        if self.responses_component is not None:
+            og_refs = self.responses_component.responses
+            newfuncs = {
+                f"{k}_star":v for k,v in og_refs.functions.items()
+                }
+            newtargets = {
+                f"{k}_star":f"{v}_star" for k,v in og_refs.application_targets.items()
+            }
+            newrecords = {
+                f"{k}_star":v for k,v in og_refs.records.items()
+            } 
+            new_responses = ResponseFunctionComponent(
+                ResponseFunctions(
+                    functions = newfuncs,
+                    application_targets = newtargets,
+                    records = newrecords,
+                )
+            )
+        else:
+            new_responses = None
+        
+        return new_adaptor, new_responses
+    
+    def condition(self, Xnew):
+        '''
+            Propagate the conditioning process across the structure
+        '''
+        with self.model:
+            self._core_component.condition(
+                Xnew, self._conditional_likelihoods,
+                new_adaptor = self._conditional_adaptor, 
+                new_responses = self._conditional_responses,
+                )
+    
+    def predict(self, Xnew, method:str='full', **kwargs):
         r'''
             Predict on new points in the input space
         '''
@@ -2113,14 +2190,16 @@ class GaussianProcess(BayesianEstimator):
                 "Ensure the call and fit methods have been called first"
             ))
         else:
-            Xnew = Xnew if isinstance(Xnew, Sequence) else [Xnew]
             if not self._initialized_conditional:
-                with self.model:
-                    pass
+                self.condition(Xnew)
             else:
-                with self.model:
-                    pass
-                
+                pm.set_data(dict(inputs=Xnew))
+        with self.model:
+            trace = pm.sample_posterior_predictive(
+                self.idata,
+                var_names = ["f_mu_star"],**kwargs )
+        return trace
+                    
     def gp_plot(self):
         r'''
             Generate the familiar "beads plot" for gaussian processes

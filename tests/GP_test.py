@@ -71,64 +71,6 @@ class TestGaussianProcesses(unittest.TestCase):
         diab_df = pd.concat([X, y], axis=1)
         cls.diab_df = diab_df
         
-    def test_dev(self):
-        r'''
-            Convenience test for interactive development
-            Remove when ready
-        '''
-        import pymc as pm
-        import pytensor
-        N_LAYERS:int = 2
-        N_NEURONS:int = 3
-
-        with pm.Model() as DGP_model:
-            inputs = pm.Data(
-                'inputs', 
-                self.diab_df.values[:,:-1], 
-                mutable=False)
-            
-            outputs = pm.Data(
-                'outputs', 
-                self.diab_df.values[:,[-1]]
-                )
-            X = inputs
-        with DGP_model:
-            # Layers
-            for i in range(N_LAYERS):
-                # Sub processes
-                gps = []
-                fs = []
-                for j in range(N_NEURONS):
-                    η = pm.HalfCauchy(f'η_{i,j}', 1)
-                    λ = pm.HalfCauchy(f'λ_{i,j}', 1)
-                    mean_func = pm.gp.mean.Constant(0)
-                    cov = η*pm.gp.cov.Matern52(
-                        input_dim=X.shape[-1].eval(), ls=λ,
-                        )
-                    gp = pm.gp.Latent(
-                        mean_func = mean_func, 
-                        cov_func = cov
-                        )
-                    gps.append(gp)
-                    f = gp.prior(f'f_{i,j}', X)
-                    fs.append(f)
-                f = pytensor.tensor.stack(fs).T
-                X = f
-            nu = pm.Deterministic('nu', pm.math.exp(f[:,[0]]))
-            sigma = pm .Deterministic('sigma', f[:,[1]]**2)
-            mu = pm.Deterministic('mu', f[:,[2]])
-            
-            y_obs = pm.StudentT(
-                'y_obs', 
-                observed = outputs,
-                mu = mu,
-                sigma= sigma,
-                nu = nu,
-                )
-            
-        with DGP_model:
-            idata = pm.sample(10, tune=10, chains=2)
-        
     def test_init(self):
         import pymc as pm
         layers:list[GPLayer] = []
@@ -182,6 +124,7 @@ class TestGaussianProcesses(unittest.TestCase):
                             )([self.diab_df.values[:,:-1]],
                                 [self.diab_df.values[:,[-1]]])
         obj.fit(10, tune=10, chains=2)
+        obj.predict(self.diab_df.values[:,:-1])
             
     def test_context(self):
         import pymc as pm
@@ -236,6 +179,7 @@ class TestGaussianProcesses(unittest.TestCase):
         
     def test_context(self):
         import pymc as pm
+        import pickle
         with GaussianProcess() as obj:
             layers:list[GPLayer] = []
             l1 = GPLayer(
@@ -297,4 +241,10 @@ class TestGaussianProcesses(unittest.TestCase):
             )
         obj([self.diab_df.values[:,:-1]],
             [self.diab_df.values[:,[-1]]])
-        obj.fit(10, tune=10, chains=2)
+        # obj.fit(draws=10, tune=10, chains=2)
+        # with open("gp_test.pickle", "wb") as file:
+        #     pickle.dump(obj.idata, file)
+        with open("gp_test.pickle", "rb") as file:
+            obj.idata = pickle.load(file)  
+        obj.trained = True
+        obj.predict(self.diab_df.values[:,:-1])

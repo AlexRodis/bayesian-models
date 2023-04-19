@@ -1999,7 +1999,6 @@ class GaussianSubprocess:
                 ] for k,v in self.kernel_hyperparameters.items()
             }
 
-    
     def __call__(self, inputs:Any, var_catalogue:dict):
         r'''
             Initialize the gaussian subprocess
@@ -2021,6 +2020,20 @@ class GaussianSubprocess:
                 )
             ] = self.gp   
         return self.func
+    
+    def condition(self, X):
+        r'''
+            Build the conditional distribution
+        '''
+        str_f_name:str = "{sym}_{this}[{layer_idx},{process_idx}]".format(
+            sym = self.symbol,
+            this = "star",
+            layer_idx = self.index.layer_idx,
+            process_idx = self.index.subprocess_idx,
+        )
+        f = self.gp.conditional(str_f_name, X)
+        self.variables[str_f_name] = f
+        return f
 
 @dataclass(slots=True)
 class GPLayer:
@@ -2087,8 +2100,8 @@ class GPLayer:
     subprocesses:Sequence[GaussianSubprocess]
     layer_idx:int = 0
     variables:dict = field(default_factory=dict)
-    gps:list = field(default_factory=list)
-    functions:list = field(default_factory=list)
+    gps:dict = field(default_factory=dict)
+    functions:dict = field(default_factory=dict)
     processor_type:Type[GPProcessor] = FullProcessor
     output_layer:bool = False
     topology:Optional[str]=field(default=None)
@@ -2104,24 +2117,26 @@ class GPLayer:
         r'''
             Infer the subprocess topology
         '''
-        from copy import copy
-        from itertools import groupby
-        sorted_subprocesses:Sequence[GaussianSubprocess] = sorted(
-            copy(self.subprocesses), key=lambda e: e.topology)
-        gs = groupby(sorted_subprocesses, key= lambda e:e.topology)
-        self._sub_topology = {self.topology:{
-            topological_group:list(members
-                                   ) for topological_group, members in gs
-        }}
-
-        
+        if self.topology is not None:
+            from copy import copy
+            from itertools import groupby
+            sorted_subprocesses:Sequence[GaussianSubprocess] = sorted(
+                copy(self.subprocesses), key=lambda e: e.topology)
+            gs = groupby(sorted_subprocesses, key= lambda e:e.topology)
+            self._sub_topology = {self.topology:{
+                topological_group:list(members
+                                    ) for topological_group, members in gs
+            }}
+        else:
+            self._sub_topology = {None: {None:self.subprocesses}}
     
     def __call__(self, inpts, var_catalogue:dict[str, Any]):
         r'''
             Initialize the Gaussian Process layer
             
             Inserts all subprocesses in the layer to the
-            :code:`pymc.Model` object
+            :code:`pymc.Model` object and inducing priors over them.
+            Spawns random variables representing the "induced" :math:`f`
             
             Args:
             -----
@@ -2140,25 +2155,86 @@ class GPLayer:
             
                 - | f:TensorVariable := The tensor output of the layer
         '''
-        for i, subprocess in enumerate(self.subprocesses):
-            l = subprocess(inpts, var_catalogue)
-            self.gps.append(subprocess.gp)
-            self.functions.append(subprocess.func)
-            self.variables = merge_dicts(
-                subprocess.variables, self.variables
+        GP = GaussianSubprocess
+        layer_funcs:list=[]
+        process_vars:list[dict]=[]
+        deterministics:dict={}
+        local_topology:dict[str,GP] = self._sub_topology[
+            self.topology
+            ]
+        for p_topology, processes in local_topology.items():
+            gps:list=[]
+            funcs:list = []
+            for process in processes:
+                l = process(inpts, var_catalogue)
+                gps.append(process.gp)
+                funcs.append(process.func)
+                process_vars.append(process.variables)
+            self.gps[p_topology] = gps
+            self.functions[p_topology] = funcs
+            stacked = pytensor.tensor.stack(funcs).T     
+            if p_topology is not None:
+                f = pymc.Deterministic(f"f[{p_topology}]",
+                        stacked
                 )
+                deterministics[f"f[{p_topology}]"] = f
+            else:
+                f = stacked
+            layer_funcs.append(f)
+        self.variables = merge_dicts(self.variables, deterministics,
+                                     *process_vars)
         if self.topology is None:
-            f = pytensor.tensor.stack(self.functions).T
+            layer_out = f
         else:
-            f = pymc.Deterministic(self.topology,
-                pytensor.tensor.stack(self.functions).T
+            layer_out = pymc.Deterministic(f"f[{self.topology}]",
+                pytensor.tensor.concatenate(layer_funcs, axis=-1)
             )
-        str_f_name:str = f"f[{self.layer_idx}]" if self.output_layer \
+            self.variables[f"f[{self.topology}]"]=layer_out
+        str_f_name:str = f"f[{self.layer_idx}]" if not self.output_layer \
             else "f"
         if not self.output_layer:
-            self.variables[f"f[{self.layer_idx}]"] = f
+            self.variables[str_f_name] = layer_out
         else:
-            self.variables[f'f'] = f
+            self.variables[str_f_name] = layer_out
+        return layer_out
+
+    def condition(self, inpts):
+        r'''
+            Construct the conditional distribution
+        '''
+        GP = GaussianSubprocess
+        layer_funcs:list=[]
+        process_vars:list[dict]=[]
+        deterministics:dict={}
+        local_topology:dict[str,GP] = self._sub_topology[
+            self.topology
+            ]
+        for p_topology, processes in local_topology.items():
+            funcs:list = []
+            for process in processes:
+                l = process.condition(inpts)
+                funcs.append(l)
+                process_vars.append(process.variables)
+            f = pymc.Deterministic(f"f_{p_topology}_star",
+                pytensor.tensor.stack(funcs).T
+                )
+            deterministics[f"f_{p_topology}_star"] = f
+            layer_funcs.append(f)
+        self.variables = merge_dicts(self.variables, deterministics,
+                                     *process_vars)
+        if self.topology is None:
+            f = pytensor.tensor.stack(layer_funcs).T
+        else:
+            f = pymc.Deterministic(f"f_{self.topology}_star",
+                pytensor.tensor.concatenate(layer_funcs, axis=-1)
+            )
+            self.variables[f"f_{self.topology}_star"]=f
+        str_f_name:str = f"f[{self.layer_idx}]_star" if self.output_layer \
+            else "f_star"
+        if not self.output_layer:
+            self.variables[f"f[{self.layer_idx}]_star"] = f
+        else:
+            self.variables[f'f_star'] = f
         return f
     
     def __next__(self):
@@ -2200,19 +2276,10 @@ class GaussianProcessCoreComponent(CoreModelComponent):
                 pm.ConstantData, 'train_inputs', 
                 predictors[0].values()   
             )
-            data["inputs"] = distribution(
-                pm.MutableData, 'inputs',
-                predictors[0].values()
-                
-            )
         else:
             for i, predictor in enumerate(predictors):
                 data[f'train_inputs_{i}'] = distribution(
                     pm.ConstantData, f'train_inputs_{i}',
-                    predictor.values()
-                )
-                data[f"inputs_{i}"] = distribution(
-                    pm.MutableData, f"inputs_{i}",
                     predictor.values()
                 )
                 
@@ -2221,18 +2288,10 @@ class GaussianProcessCoreComponent(CoreModelComponent):
                 pm.ConstantData, 'train_outputs',
                 targets[0].values()
             )
-            data["outputs"] = distribution(
-                pm.MutableData, 'outputs',
-                targets[0].values()
-            )
         else:
             for i, target in enumerate(targets):
                 data[f"train_ouputs_{i}"] = distribution(
                     pm.ConstantData, f'train_outputs',
-                    target.values()
-                )
-                data[f"outputs_{i}"] = distribution(
-                    pm.MutableData, f"outputs_{i}",
                     target.values()
                 )
         collected_rvs:list[dict[str, Distribution]] = [] 
@@ -2270,26 +2329,6 @@ class GaussianProcessCoreComponent(CoreModelComponent):
             default_factory = dict
         )
         
-    def _get_complete_topology(self):
-        r'''
-            Collect all the layers' topology specs and produce the total
-            topology spec
-        '''
-        from itertools import groupby
-        topology:dict[str,Any] = {"root":None}
-        layer_wise = sorted(
-            [layer._sub_topology for layer in self.layers],
-            key = lambda e:e.topology
-            )
-        gp = groupby(layer_wise, key = lambda e:e.topology)
-        
-        topology['root'] = {
-            k:v for k,v  in gp
-        }
-        self.topology = topology
-        print("Hi")
-        
-        
     def __call__(self)->None:
         r'''
             Insert docstring here
@@ -2305,3 +2344,37 @@ class GaussianProcessCoreComponent(CoreModelComponent):
                 self.variables, layer.variables
                 )
             
+    def condition(self, Xnew, conditional_likelihoods,
+                  new_adaptor=None, new_responses=None):
+        if len(conditional_likelihoods) != 1:
+            raise NotImplementedError((
+                "Multiple likelihoods / outputs not implemented. "
+                "Expected exactly one likelihood but received "
+                f"{len(conditional_likelihoods)}"
+            ))
+        inputs = pymc.MutableData('inputs', Xnew)
+        self.variables['inputs'] = inputs
+        L = inputs
+        for layer in self.layers:
+            L = layer.condition(L)
+            self.variables = merge_dicts(
+                self.variables, layer.variables
+                )
+        if new_adaptor is not None:
+            new_adaptor(self.variables["f_star"])
+            self.variables = merge_dicts(
+                self.variables, new_adaptor.variables
+                )
+        if new_responses is not None:
+            new_responses(self.variables)
+            self.variables = merge_dicts(
+                self.variables, new_responses.variables
+            )
+        for likelihood in conditional_likelihoods:
+            vmap:dict = likelihood.var_mapping
+            shapes:dict = {
+                k:self.variables[v] for k,v in vmap.items()
+            }
+            outputs = likelihood.distribution("outputs", **shapes)
+            self.variables['outputs'] = outputs
+        print("Hi")
