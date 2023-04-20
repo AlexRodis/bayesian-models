@@ -16,7 +16,7 @@
 
 import pymc as pm, pymc
 import typing
-from typing import Any, Union, Callable, Optional, Sequence
+from typing import Any, Union, Callable, Optional, Sequence, Type
 from abc import ABC, abstractmethod
 import pandas as pd
 import numpy as np
@@ -34,6 +34,7 @@ from bayesian_models.core import CoreModelComponent
 from bayesian_models.core import FreeVariablesComponent
 from bayesian_models.core import ModelAdaptorComponent
 from bayesian_models.core import GaussianProcessCoreComponent
+from bayesian_models.core import GPProcessor, FullProcessor
 from bayesian_models.data import Data
 from bayesian_models.utilities import merge_dicts
 from dataclasses import dataclass, field
@@ -1835,6 +1836,9 @@ class GaussianProcess(BayesianEstimator):
     free_variables_component:Optional[
         FreeVariablesComponent
         ] = field(default=None)
+    gaussian_processor:Type[GPProcessor] = field(
+        init=True, repr=True, default=FullProcessor
+        )
     reindex_layers:bool = True
     _builder:ModelDirector = ModelDirector
     nan_handling:str = field(
@@ -1894,6 +1898,14 @@ class GaussianProcess(BayesianEstimator):
             layer specified, so it's output can be correctly labeled 'f'
         '''
         self.layers[-1].output_layer = True
+        
+    def _set_processor_(self)->None:
+        r'''
+            Update layers and subprocesses with the specified processor
+        '''
+        for layer in self.layers:
+            layer.gaussian_processor = self.gaussian_processor
+        
     
     def __post_init__(self)->None:
         r'''
@@ -1916,6 +1928,7 @@ class GaussianProcess(BayesianEstimator):
             # label its output `TensorVariable` as 'f' instead of 'f[i]'
             self._set_output_layer()
             nada, nres = self._duplicate_components()
+            self._set_processor_()
             self._conditional_adaptor = nada
             self._conditional_responses = nres
             self._conditional_likelihoods = [
