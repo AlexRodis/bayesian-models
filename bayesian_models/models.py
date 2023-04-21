@@ -1940,6 +1940,9 @@ class GaussianProcess(BayesianEstimator):
                    }                   
                    ) for likelihood in self.likelihoods_component
             ]
+            # Inform the layers of the type of gp to run
+            for layer in self.layers:
+                layer._set_processors_(self.gaussian_processor)
 
     @property
     def coords(self)->Optional[dict[str,Any]]:
@@ -2045,7 +2048,6 @@ class GaussianProcess(BayesianEstimator):
         )
         self.__post_init__()
         
-    
     def __call__(self, predictors, targets):
         if self._context_init:
             self._from_context_mngr()
@@ -2192,6 +2194,23 @@ class GaussianProcess(BayesianEstimator):
                 new_adaptor = self._conditional_adaptor, 
                 new_responses = self._conditional_responses,
                 )
+            
+    def _full_conditional_(self, Xnew, **kwargs):
+        r'''
+            Insert docstring here
+        '''
+        if not self._initialized_conditional:
+                self.condition(Xnew)
+        else:
+            pm.set_data(dict(inputs=Xnew))
+            
+        with self.model:
+            trace = pm.sample_posterior_predictive(
+                self.idata,
+                var_names = ["f_mu_star"],**kwargs )
+        return trace
+    
+        
     
     def predict(self, Xnew, method:str='full', **kwargs):
         r'''
@@ -2202,16 +2221,14 @@ class GaussianProcess(BayesianEstimator):
                 "Cannot predict on new points. Model is untrained. "
                 "Ensure the call and fit methods have been called first"
             ))
+        # Support predict in the future
+        if method == "full":
+            self._full_conditional_(Xnew, **kwargs)
         else:
-            if not self._initialized_conditional:
-                self.condition(Xnew)
-            else:
-                pm.set_data(dict(inputs=Xnew))
-        with self.model:
-            trace = pm.sample_posterior_predictive(
-                self.idata,
-                var_names = ["f_mu_star"],**kwargs )
-        return trace
+            raise ValueError((
+                "Unrecognized prediction strategy. Expected one of "
+                f"'full' or 'mean' but received {method} instead"
+            ))
                     
     def gp_plot(self):
         r'''

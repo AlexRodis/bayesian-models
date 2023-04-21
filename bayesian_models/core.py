@@ -1799,7 +1799,7 @@ class HSGP(GPProcessor):
                 - | data:pytensor.TensorVariable := Observed data for
                     the process
                     
-            Returna:
+            Returns:
             =======
             
                 - | process:tuple[process, output_tensor] := A tuple
@@ -1864,7 +1864,7 @@ class HSGP(GPProcessor):
         default_basis = [25]
         default_boundary = [10.0]
         default_ext_factor = 1.25
-        dims = data.shape[-1].eval()
+        dims = data.shape[-1].eval().tolist()
         params:dict[str, Any] = dict(
             mean_func = self.mean_func(**self.mean_params),
             cov_func = self.cov_func(
@@ -2520,10 +2520,17 @@ class GPLayer:
     )
     _l:int=0
     
-    def __post_init__(self):
-        self._get_subtopology()
+    def _set_processors_(self, processor:Type[GPProcessor])->None:
+        r'''
+            Inform the sub layers of the gaussian processor to be used
+        '''
+        # TODO: This type of propagation is really ugly. Need to improve
+        self.gaussian_processor = processor
         for subprocess in self.subprocesses:
             subprocess.gaussian_processor = self.gaussian_processor
+    
+    def __post_init__(self):
+        self._get_subtopology()
     
     def _get_subtopology(self)->None:
         r'''
@@ -2913,7 +2920,44 @@ class GaussianProcessCoreComponent(CoreModelComponent):
     def condition(self, Xnew, conditional_likelihoods,
                   new_adaptor=None, new_responses=None):
         r'''
-            Insert docstring here
+            Propagate the conditioning across the structure
+            
+            Spawn conditional variables for the layers and subprocesses
+            and connect them, applying response and adaptor components
+            to the new variables.
+            
+            Args:
+            =====
+            
+            
+                - | Xnew:TensorVariable := Node for new inputs to
+                    predict with
+                    
+                - | conditional_likelihoods:list[LikelihoodComponent] :=
+                    Clone of the original likelihood with updated
+                    variable mappings. New mappings are named with the
+                    suffix "_star"
+                    
+                - | new_adaptor:Optional[ModelAdaptorComponent] := A
+                    cloned adaptor component with update variable names.
+                    New names are the old ones, with suffix '_star'
+                    
+                - | new_responses:Optional[ResponseFunctionComponent] :=
+                    A clone response function component to be applied to
+                    the new, conditional variables
+                    
+            Returns:
+            ========
+            
+                - None
+                
+                Propagates conditioning across the structure
+                
+            Raises:
+            =======
+            
+                - | NotImplementedError := If likelihoods list has more
+                    than one element. Multiple outputs not supported
         '''
         if len(conditional_likelihoods) != 1:
             raise NotImplementedError((
@@ -2946,3 +2990,21 @@ class GaussianProcessCoreComponent(CoreModelComponent):
             }
             outputs = likelihood.distribution("outputs", **shapes)
             self.variables['outputs'] = outputs
+
+KERNEL_ID = str
+BASE_KERNEL = pymc.gp.cov.Covariance
+KERNEL_PARAMS_MAPPING = dict[]
+
+
+@dataclass(slots=True)
+class Kernel:
+    r'''
+        Class for complex kernels
+    '''
+    
+    base_kernels:dict[KERNEL_ID,BASE_KERNEL]
+    kernel_parameters:Optional[dict[KERNEL_ID, dict[] ]]
+    
+    
+    
+    

@@ -242,18 +242,74 @@ class TestGaussianProcesses(unittest.TestCase):
         obj([self.diab_df.values[:,:-1]],
             [self.diab_df.values[:,[-1]]])
         obj.fit(draws=100, tune=100, chains=2)
-        with open("gp_test.pickle", "wb") as file:
-            pickle.dump(obj.idata, file)
+        # with open("gp_test.pickle", "wb") as file:
+        #     pickle.dump(obj.idata, file)
         # with open("gp_test.pickle", "rb") as file:
         #     obj.idata = pickle.load(file)  
         # obj.trained = True
-        obj.predict(self.diab_df.values[:,:-1])
+        # obj.predict(self.diab_df.values[:,:-1])
+        
+    def test_point_predictions(self):
+        import pymc as pm
+        layers:list[GPLayer] = []
+        l1 = GPLayer(
+            [
+                GaussianSubprocess(
+                    kernel = pm.gp.cov.ExpQuad,
+                    kernel_hyperparameters = dict(
+                        ls = distribution(
+                            pm.HalfCauchy, 'λ', 2
+                        )
+                        ),
+                    mean = pm.gp.mean.Zero,
+                    index = (0,i),
+                ) for i in range(2)
+            ],
+            layer_idx=0
+        )
+        layers.append(l1)
+        adaptor = ModelAdaptorComponent(
+            var_mapping = dict(
+                f_mu = lambda t: t.T[0,:],
+                f_sigma = lambda t: t.T[1,:],
+            )
+        )
+        like = LikelihoodComponent(
+                observed = 'train_outputs',
+                distribution = pm.Normal,
+                var_mapping = dict(
+                    mu = 'f_mu',
+                    sigma = 'σ'
+                )
+            )
+        response = ResponseFunctionComponent(
+            ResponseFunctions(
+                functions = dict(
+                    σ = lambda t: pm.math.exp(t)
+                    ),
+                application_targets = dict(
+                    σ = 'f_sigma',
+                    ),
+                records = dict(
+                    σ = False,
+                    ),
+            )
+        )
+        obj = GaussianProcess(layers, 
+                            likelihoods_component = [like],
+                            adaptor_component = adaptor,
+                            responses_component = response,
+                            )([self.diab_df.values[:,:-1]],
+                                [self.diab_df.values[:,[-1]]])
+        obj.fit(10, tune=10, chains=2)
+        # obj.predict(self.diab_df.values[:,:-1])
+
 
     def test_HSGP(self):
         import pymc as pm
         import pickle
         from bayesian_models.core import HSGP
-        HSGP.n_basis = [25]
+        HSGP.n_basis = [7]
         HSGP.prop_ext_factor = 1.2
         with GaussianProcess(gaussian_processor=HSGP) as obj:
             layers:list[GPLayer] = []
@@ -268,23 +324,9 @@ class TestGaussianProcesses(unittest.TestCase):
                             ),
                         mean = pm.gp.mean.Zero,
                         index = (0,i),
-                        topology="A"
-                    ) for i in range(5)
-                ] + [
-                    GaussianSubprocess(
-                        kernel = pm.gp.cov.ExpQuad,
-                        kernel_hyperparameters = dict(
-                            ls = distribution(
-                                pm.HalfCauchy, 'λ', 2
-                            )
-                            ),
-                        mean = pm.gp.mean.Zero,
-                        index = (1,i),
-                        topology="B",
-                    ) for i in range(3)
-                    ],
+                    ) for i in range(2)
+                ],
                 layer_idx=0,
-                topology = "C"
             )
             layers.append(l1)
             adaptor_component = ModelAdaptorComponent(
@@ -314,12 +356,12 @@ class TestGaussianProcesses(unittest.TestCase):
                         ),
                 )
             )
-        obj([self.diab_df.values[:,:-1]],
+        obj([self.diab_df.values[:,:2]],
             [self.diab_df.values[:,[-1]]])
         obj.fit(draws=500, tune=500, chains=2)
-        with open("hsgp_test.pickle", "wb") as file:
-            pickle.dump(obj.idata, file)
+        # with open("hsgp_test.pickle", "wb") as file:
+        #     pickle.dump(obj.idata, file)
         # with open("gp_test.pickle", "rb") as file:
         #     obj.idata = pickle.load(file)  
         # obj.trained = True
-        # obj.predict(self.diab_df.values[:,:-1])
+        obj.predict(self.diab_df.values[:,:-1])
