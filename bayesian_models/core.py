@@ -2992,18 +2992,167 @@ class GaussianProcessCoreComponent(CoreModelComponent):
             self.variables['outputs'] = outputs
 
 KERNEL_ID = str
+PARAM_ID = str
+PARAM = Union[pymc.Distribution, float, int]
 BASE_KERNEL = pymc.gp.cov.Covariance
-KERNEL_PARAMS_MAPPING = dict[]
-
+TRANSFORMED_KERNEL = Any
+TENSOR_VARIABLE = Any
+VAR_ID = str
+VAR_OBJ = Any
+KERNEL_PARAMS = dict[PARAM_ID, PARAM]
+KERNEL_PARAMS_MAPPING = dict[KERNEL_ID, KERNEL_PARAMS]
+KERNEL_TRANSFORM_VARS = dict[KERNEL_ID, KERNEL_PARAMS]
+MODEL_VARIABLES = dict[VAR_ID, VAR_OBJ]
+KERNEL_TRANSFORMER = Callable[[BASE_KERNEL, ],TRANSFORMED_KERNEL]
+KERNEL_TRANSFORMERS = dict[KERNEL_ID, KERNEL_TRANSFORMER]
+KERNEL_COMBINATOR = Callable[[list],TENSOR_VARIABLE]
 
 @dataclass(slots=True)
 class Kernel:
     r'''
-        Class for complex kernels
+        Class for custom kernels
+        
+        Provides an API for user specified composite kernels, that are
+        derived from base kernels. Specify a set of kernels (as
+        key-value pairs) and operate on them by creating new kernels
+        that are combinations of the basic ones and other random
+        variables. The resulting transformed kernels can be then
+        synthesized to a final forms according to user specification
+        
+        Object Attributes:
+        ==================
+
+            - | base_kernels:dict[KERNEL_ID, BASE_KERNEL] := A
+                dictionary mapping kernel names to basic kernel objects
+                (i.e. :code:`pymc.gp.cov.Covariance` instances). Defines
+                the basic set of kernels to be used.
+                
+                Example Usage:
+                
+                .. code-block:: python
+                
+                    KERNEL = pymc.gp.cov.Covariance
+                    base_kernels:dict[str,KERNEL] = dict(
+                        k_se = pymc.gp.cov.ExpQuad,
+                        k_wn = pymc.gp.cov.WhiteNoise,
+                        k_ln = pymc.gp.cov.Linear
+                    ) # Compose a kernel from the Exponential Quadratic
+                    # and WhiteNoise kernels
+                
+            - | kernel_parameters:Optional[KERNEL_PARAMS_MAPPING]=None
+                := Defines The 'internal' kernel parameters. Is a two
+                level deep nested dict. The first level maps kernel
+                names (:code:`KERNEL_ID`) to parameters. The parameters
+                are specified as another dictionary, mapping parameter
+                names to object definitions
+                
+                Example Usage:
+                
+                .. code-block:: python
+
+                    intparams = {
+                        'k_se' : dict(
+                            ls = 'λ'
+                        ),
+                        'k_wn' : dict(
+                            sigma =  σ
+                            ),
+                    } # Define a single parameter for each one of two
+                    # Kernels. Define the mapping of variable to kernel
+                    # argument
+                
+            - | kernel_parameter_mapping:Optional[dict[str,str]]=None :=
+                A dictionary mapping kernel object parameters to
+                internal parameter names
+                
+                Example usage:
+                
+                .. code-block:: python
+                
+                    kmap = dict(
+                       λ = distribution('λ', HalfCauchy, 2),
+                       σ = distribution('σ', HalfCauchy, 2)
+                    ) # Define priors for two kernel parameters
+                
+            - | ext_vars:Optional[dict[str,dict]]]=None := Additional
+                variables used to transform the kernel. Supplied double
+                nested dictionary. The first level maps kernel names to
+                dictionaries of variables. The second level maps
+                parameters names to object definitions
+                
+                Example Usage:
+                
+                .. code-block:: python
+                    
+                    pars:dict[str,dict[str,Distribution]] = {
+                        'k_se': {
+                            'η_se':distribution('η_se', HalfCauchy, 2)
+                            },
+                        'k_ln': {
+                            'η_ln':distribution('η_ln', HalfCauchy, 2)
+                            },
+                    } # Define transform parameters for two basic
+                    # kernels . Map the parameters to the kernel they 
+                    # correspond to
+
+                
+            - | kernel_transformers:Optional[dict[str, Callable]]=None
+                := A dictionary mapping base kernel to kernel
+                transformer object. The keys of this dictionary are base
+                kernel names. The items are :code:`Callable` objects
+                which handle the transformation. These objects have an
+                exact signature. The all receive a reference to the
+                kernel to be transformed and a dictionary mapping
+                variable names to references (analoguous to the
+                :code:`ext_vars`). Should return the new, transformed
+                kernel object
+                
+                Example Usage:
+                
+                .. code-block:: python
+                
+                    transformer = {
+                        'k_se': lambda kernel, vars: vars['η_se']*kernel,
+                        'k_ls': lambda kernel, vars: vars['η_ln']*kernel,
+                    } # Transform each kernel by multiplying by the 
+                    # 'η_' parameter defined elsewhere
+                
+            - | kernel_combinator:Optional[Callable]=None := Defined how
+                transformed kernels are to be combined to the final
+                kernel. Should receive exactly one argument, which is a
+                sequence of transgformed kernels. Should return exactly
+                one value, the result of composing the transformed
+                kernels
+                
+                Example Usage:
+                
+                .. code-block:: python
+                
+                    combinator:Callable = lambda kernels: \
+                    kernels[0]+kernels[1]+kernels[2]
+                    # Sum three kernels 
+                
+        Object Methods:
+        ================
+        
+            - | __call__(var_catalogue:dict[str,TENSOR_VARIABLE]) :=
+                Apply the transformations and compositions defined and
+                return the composite kernel
     '''
     
-    base_kernels:dict[KERNEL_ID,BASE_KERNEL]
-    kernel_parameters:Optional[dict[KERNEL_ID, dict[] ]]
+    base_kernels:dict[KERNEL_ID,BASE_KERNEL] = field(
+        default_factory=dict
+        )
+    kernel_parameters:Optional[KERNEL_PARAMS_MAPPING] = None
+    ext_vars:Optional[KERNEL_TRANSFORM_VARS] = None
+    kernel_transformer:Optional[KERNEL_TRANSFORMERS] = None
+    kernel_combinator:Optional[KERNEL_COMBINATOR] = None
+    
+    def __post_init__(self):
+        pass
+    
+    def __call__(self):
+        pass
     
     
     

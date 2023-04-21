@@ -177,6 +177,20 @@ class TestGaussianProcesses(unittest.TestCase):
             [self.diab_df.values[:,[-1]]])
         obj.fit(10, tune=10, chains=2)
         
+    def test_ICM_experiments(self):
+        import pymc as pm, pymc
+        X = self.diab_df.values[:,:-1]
+        d = X.shape[-1]
+        y =  self.diab_df.values[:,[-1]]
+        Y = np.concatenate([y]*2, axis=-1)
+        K = Y.shape[-1]
+        with pymc.Model() as model:
+            kse = pm.gp.cov.ExpQuad(d, ls=[1]*d)
+            gp = pm.gp.Latent(cov_func=kse)
+            f = gp.prior('f',X, shape=(K,))
+            y = pm.Normal('y', observed=Y, mu = f, sigma=[1,1])
+    
+        
     def test_context(self):
         import pymc as pm
         import pickle
