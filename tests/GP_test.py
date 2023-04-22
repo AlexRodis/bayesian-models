@@ -23,12 +23,13 @@ from bayesian_models.core import FreeVariablesComponent
 from bayesian_models.core import LikelihoodComponent
 from bayesian_models.core import ModelAdaptorComponent
 from bayesian_models.core import ResponseFunctionComponent
-from bayesian_models.core import ResponseFunctions
+from bayesian_models.core import ResponseFunctions, Kernel
 from bayesian_models.utilities import merge_dicts
 import sklearn
 import numpy as np
 import pandas as pd
 import warnings
+import pymc as pm, pymc
 
 class TestGaussianProcesses(unittest.TestCase):
     
@@ -72,17 +73,60 @@ class TestGaussianProcesses(unittest.TestCase):
         cls.diab_df = diab_df
         
     def test_init(self):
-        import pymc as pm
+        kernel = Kernel(
+            'k',
+            base_kernels = {
+                'k_se' : pm.gp.cov.ExpQuad,
+                # 'k_wn':pm.gp.cov.WhiteNoise,
+                "k_ln":pm.gp.cov.Linear,
+            },# type:ignore
+            kernel_parameters = {
+                'k_se': {
+                    'ls':distribution(
+                        pm.HalfCauchy, 'λ', 2, 
+                        transform = lambda e:e+1
+                    ),
+                },
+                # 'k_wn':{
+                #     'sigma':distribution(
+                #         pm.HalfCauchy, 'σ_wn', 2, 
+                #         transform=lambda e:e+1
+                #         ),
+                # },
+                'k_ln':{
+                    'c':distribution(
+                        pm.ConstantData, 'c', 5
+                    )
+                }
+                
+            }, # type:ignore
+            ext_vars = {
+                'k_se': {
+                    'η_se':distribution(
+                        pm.HalfCauchy, 'η_se', 2, 
+                        transform = lambda e:e+1
+                    ),
+                },
+                # 'k_wn':{
+                #     'η_wn':distribution(
+                #         pm.HalfCauchy, 'η_wn', 2,
+                #         transform=lambda e:e+1
+                #         ),
+                # }
+            },#type: ignore
+            kernel_transformers = {
+                'k_se' : lambda ker, pars: pars['η_se']*ker,
+                # 'k_wn' : lambda ker, pars: pars['η_wn']*ker,
+                'k_ln' : lambda ker, pars: pars['η_ln']*ker,
+            },# type: ignore
+            kernel_combinator = lambda kers: kers['k_se'] + \
+                kers["k_ln"] 
+        )
         layers:list[GPLayer] = []
         l1 = GPLayer(
             [
                 GaussianSubprocess(
-                    kernel = pm.gp.cov.ExpQuad,
-                    kernel_hyperparameters = dict(
-                        ls = distribution(
-                            pm.HalfCauchy, 'λ', 2
-                        )
-                        ),
+                    kernel = kernel,
                     mean = pm.gp.mean.Zero,
                     index = (0,i),
                 ) for i in range(3)
@@ -90,21 +134,21 @@ class TestGaussianProcesses(unittest.TestCase):
             layer_idx=0
         )
         layers.append(l1)
-        adaptor = ModelAdaptorComponent(
+        adaptor_component = ModelAdaptorComponent(
             var_mapping = dict(
                 f_mu = lambda t: t.T[0,:],
                 f_sigma = lambda t: t.T[1,:],
             )
         )
-        like = LikelihoodComponent(
+        likelihoods_component = [LikelihoodComponent(
                 observed = 'train_outputs',
                 distribution = pm.Normal,
                 var_mapping = dict(
                     mu = 'f_mu',
                     sigma = 'σ'
                 )
-            )
-        response = ResponseFunctionComponent(
+            )]
+        responses_component = ResponseFunctionComponent(
             ResponseFunctions(
                 functions = dict(
                     σ = lambda t: pm.math.exp(t)
@@ -117,17 +161,24 @@ class TestGaussianProcesses(unittest.TestCase):
                     ),
             )
         )
-        obj = GaussianProcess(layers, 
-                            likelihoods_component = [like],
-                            adaptor_component = adaptor,
-                            responses_component = response,
-                            )([self.diab_df.values[:,:-1]],
-                                [self.diab_df.values[:,[-1]]])
+        
+        obj = GaussianProcess(
+            layers = layers,
+            likelihoods_component = likelihoods_component,
+            adaptor_component=adaptor_component,
+            responses_component=responses_component,
+        )
+        obj([self.diab_df.values[:,:-1]],
+            [self.diab_df.values[:,[-1]]])
         obj.fit(10, tune=10, chains=2)
-        obj.predict(self.diab_df.values[:,:-1])
             
     def test_context(self):
         import pymc as pm
+        kernel = Kernel(
+            base_kernels = {
+                'k_se' : pm.gp.cov.ExpQuad
+            }
+        )
         with GaussianProcess() as obj:
             layers:list[GPLayer] = []
             l1 = GPLayer(
@@ -189,9 +240,8 @@ class TestGaussianProcesses(unittest.TestCase):
             gp = pm.gp.Latent(cov_func=kse)
             f = gp.prior('f',X, shape=(K,))
             y = pm.Normal('y', observed=Y, mu = f, sigma=[1,1])
-    
         
-    def test_context(self):
+    def test_context_topology(self):
         import pymc as pm
         import pickle
         with GaussianProcess() as obj:
@@ -317,7 +367,6 @@ class TestGaussianProcesses(unittest.TestCase):
                                 [self.diab_df.values[:,[-1]]])
         obj.fit(10, tune=10, chains=2)
         # obj.predict(self.diab_df.values[:,:-1])
-
 
     def test_HSGP(self):
         import pymc as pm
