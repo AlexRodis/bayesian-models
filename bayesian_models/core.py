@@ -32,6 +32,7 @@ from bayesian_models.utilities import merge_dicts
 from bayesian_models.data import CommonDataStructureInterface
 import numpy as np
 import pytensor
+from warnings import warn
 
 Response = namedtuple("Response", ["name", "func", "target", "record"])
 Response.__doc__ = r"""
@@ -1585,13 +1586,12 @@ class FullProcessor(GPProcessor):
                  "mean_params")
     
     def __init__(self, mean_func, cov_func, 
-                    mean_params,kernel_params, process, pname)->None:
+                    mean_params,pname)->None:
         self.mean_func = mean_func
         self.cov_func = cov_func
         self.pname = pname
-        self.kernel_params = kernel_params
         self.mean_params = mean_params
-        self.process = process
+        self.process = pm.gp.Latent
         
     def __call__(self, data):
         r'''
@@ -1614,10 +1614,7 @@ class FullProcessor(GPProcessor):
         '''
         gp = self.process(
             mean_func = self.mean_func(**self.mean_params),
-            cov_func= self.cov_func(
-                data.shape[-1].eval(), 
-                **self.kernel_params
-                ),
+            cov_func= self.cov_func,
             )
         f = gp.prior(self.pname, data)
         return gp, f
@@ -1775,11 +1772,10 @@ class HSGP(GPProcessor):
                  'process')
     
     def __init__(self, mean_func, cov_func, 
-                mean_params,kernel_params, process, pname)->None:
+                mean_params, pname)->None:
         self.mean_func = mean_func
         self.cov_func = cov_func
         self.pname = pname
-        self.kernel_params = kernel_params
         self.mean_params = mean_params
         self.process = pm.gp.HSGP
         
@@ -1867,9 +1863,7 @@ class HSGP(GPProcessor):
         dims = data.shape[-1].eval().tolist()
         params:dict[str, Any] = dict(
             mean_func = self.mean_func(**self.mean_params),
-            cov_func = self.cov_func(
-                dims, **self.kernel_params
-                ),
+            cov_func = self.cov_func,
             drop_first = self.drop_first_basis
         )
         # Use boundary parameter only if it is the only one specified
@@ -1913,6 +1907,8 @@ MODEL_VARIABLES = dict[VAR_ID, VAR_OBJ]
 KERNEL_TRANSFORMER = Callable[[BASE_KERNEL, ],TRANSFORMED_KERNEL]
 KERNEL_TRANSFORMERS = dict[KERNEL_ID, KERNEL_TRANSFORMER]
 KERNEL_COMBINATOR = Callable[[list],TENSOR_VARIABLE]
+K_IPARS = dict[str,dict[str,TENSOR_VARIABLE]]
+K_EPARS = dict[str, dict[str, TENSOR_VARIABLE]]
 
 @dataclass(slots=True)
 class Kernel:
@@ -2060,11 +2056,16 @@ class Kernel:
         )
     shape:Optional[list[tuple[int,...]]] = None
     active_dims:Optional[Sequence[int]] = None
-    kernel_parameters:Optional[KERNEL_PARAMS_MAPPING] = None
-    _kernel_init_ipars:Optional[dict[str, dict[str, TENSOR_VARIABLE]]] = None
-    ext_vars:Optional[KERNEL_TRANSFORM_VARS] = None
-    _kernel_init_epars:Optional[dict[str, dict[str, TENSOR_VARIABLE]]] = None
-    kernel_transformers:Optional[KERNEL_TRANSFORMERS] = None
+    kernel_parameters:KERNEL_PARAMS_MAPPING = field(
+        default_factory=dict)
+    _kernel_init_ipars:Optional[K_IPARS] = field(
+        init=False, repr=False, default_factory=dict)
+    ext_vars:Optional[KERNEL_TRANSFORM_VARS] = field(
+        default_factory=dict)
+    _kernel_init_epars:Optional[K_EPARS] = field(
+        init=False, repr=False, default_factory=dict)
+    kernel_transformers:Optional[KERNEL_TRANSFORMERS] = field(
+        default_factory=dict)
     kernel_combinator:Optional[KERNEL_COMBINATOR] = None
     
     def __post_init__(self)->None:
@@ -2095,6 +2096,52 @@ class Kernel:
                 f"kernel_parameters {self.kernel_parameters} and "
                 f"kernel_tranformer {self.kernel_transformers}"
                 ))
+        nulldict = dict()
+        nullset = lambda odict : nulldict if odict is None else odict
+        kernels:set = set(self.base_kernels.keys())
+        inpars:set = set(nullset(self.kernel_parameters).keys())
+        expars:set = set(nullset(self.ext_vars).keys())
+        extrans:set  =set(nullset(self.kernel_transformers).keys())
+        # Set differences for missing arguments
+        no_ipars = kernels-inpars
+        no_kernels = inpars-kernels
+        no_trans = expars - extrans
+        no_exparams = extrans-expars
+        NULL = set()
+        if len(kernels)>1 and self.kernel_combinator is None:
+            raise ValueError((
+                "Multiple base kernels received, but not combinator "
+                "given. When multiple base kernels are provided a "
+                "kernel_combinator should be supplied mapping them to "
+                "single final kernel. Received base kernels "
+                f"{self.base_kernels.keys()} but no kernel_transformer"
+            ))
+        if no_ipars != NULL:
+            ValueError((
+                f"Base kernels {no_ipars} have no internal parameters"
+                "specified"
+            ))
+        if no_kernels != NULL:
+            raise ValueError((
+                f"Parameters {no_kernels} target non existing kernels. "
+                "Did you forget to provide the base kernel in the "
+                "base_kernels argument?"
+            ))
+        if no_trans != NULL:
+            warn((
+                f"Kernels {no_trans} have external parameters but no "
+                "transformers specified for them. These parameters will"
+                " be effectively ignored"
+            ))
+        if no_exparams != NULL:
+            raise ValueError((
+                f"Found transformers for base kernels {no_exparams} "
+                "but no external parameters have been specified for "
+                "them. Transformer has not transformation to perform "
+                "on the kernel"
+            ))
+            
+        
             
     def _update_irefs(self, tensor_pars:dict)->None:
         r'''
@@ -2103,7 +2150,8 @@ class Kernel:
         '''
         self._kernel_init_ipars = {
             kid:{
-                parg:tensor_pars[kid][pval.name] for parg, pval in kpars.items()
+                parg:tensor_pars[kid][pval.name] for parg, pval \
+                    in kpars.items()
                 } for kid,kpars in self.kernel_parameters.items()
         }
     
@@ -2115,11 +2163,16 @@ class Kernel:
         
     def _initialize_base_kernels(self, inpt_shape):
         r'''
-            Inject base kernels and their hyperparmeters to the model
+            Inject base kernels and their hyperparameters to the model
         '''
+        # For the WhiteNoise kernel only, do no specify active_dims and
+        # input_dim
         bases = {
-            kid: kfunc(self.shape[0][-1], 
-                       **self._kernel_init_ipars[kid]
+            kid: (
+                kfunc(
+                    self.shape[0][-1], **self._kernel_init_ipars[kid]
+                    ) if kfunc != pm.gp.cov.WhiteNoise else kfunc(
+                        **self._kernel_init_ipars[kid])
                        ) for kid,kfunc in self.base_kernels.items()
         }
         return bases
@@ -2127,20 +2180,24 @@ class Kernel:
     def _apply_transforms_(self, bases)->dict:
         transformed:dict={}
         for kernel_id, transformer in self.kernel_transformers.items():
-            _c = self._kernel_init_epars[kernel_id]
-            _x = self.base_kernels[kernel_id]
             transformed[kernel_id] = transformer(
                 bases[kernel_id],
                 self._kernel_init_epars[kernel_id]
             )
-        return transformed
+        collected:dict[str, pymc.gp.cov.Covariance] = {
+            kid:(
+                transformed[kid] if transformed.get(kid) is not None \
+                    else bases[kid] 
+                ) for kid in bases.keys()
+        }
+        return collected
     
     def __call__(self, var_catalogue:dict[str,Any], inpt_shape)->Any:
         bases = self._initialize_base_kernels(inpt_shape)
         if self.kernel_parameters is not None:
             transformed:dict = self._apply_transforms_(bases)
         else:
-            transformed:dict = self.base_kernels
+            transformed:dict = bases
         if self.kernel_combinator is not None:
             synthesized:Any = self.kernel_combinator(transformed)
         else:
@@ -2514,7 +2571,7 @@ class GaussianSubprocess:
                 i = self.index.layer_idx,
                 j = self.index.subprocess_idx
                 ) for _, v in self.mean_hyperparameters.items()
-            }
+            } if self.mean_hyperparameters is not None else  None
         kernel_int_pars = self.kernel.kernel_parameters
         kernel_ext_pars = self.kernel.ext_vars
         kintnamemap = {k:{
@@ -2524,7 +2581,8 @@ class GaussianSubprocess:
                 j = self.index.subprocess_idx,
             )
             for p,dist in v.items()
-            } for k,v in kernel_int_pars.items()}
+            } for k,v in kernel_int_pars.items()} if kernel_int_pars\
+                is not None else None
         kextnamemap = {
             k:{
                 dist.name : "{sym}[{i},{j}]".format(
@@ -2543,17 +2601,17 @@ class GaussianSubprocess:
                 } for kname,v in kernel_int_pars.items()
         } if kernel_int_pars is not None else {}
         
-        if kernel_ext_pars is not None:
-            self._ker_ext_refs = {
-                kname:{
-                    parname:None for parname in kpars.keys()
-                    } for kname,kpars in kernel_ext_pars.items()
-                }
-        else:
-            self._ker_ext_refs = {}
+        # if kernel_ext_pars is not None:
+        self._ker_ext_refs = {
+            kname:{
+                parname:None for parname in kpars.keys()
+                } for kname,kpars in kernel_ext_pars.items()
+            } if kernel_ext_pars is not None else None
+        # else:
+        #     self._ker_ext_refs = {}
         self._mean_refs = {
             k: None for k,_ in self.mean_hyperparameters.items()
-        }
+        } 
         self.process_name = self.alias if self.alias is not None else \
             "{sym}[{i},{j}]".format(
                 sym = self.symbol,
@@ -2654,10 +2712,10 @@ class GaussianSubprocess:
         k_epars = self.kernel.ext_vars
         ipars = merge_dicts(*[
             reindex_names(v) for _,v in k_ipars.items()
-        ])
+        ]) if k_ipars is not None else dict()
         epars = merge_dicts(*[
             reindex_names(v) for _,v in k_epars.items()
-        ])
+        ]) if k_epars is not None else dict()
         kparams:dict = merge_dicts(ipars,epars)
         mparams:dict = reindex_names(self.mean_hyperparameters)
         return merge_dicts(kparams, mparams)
@@ -2688,37 +2746,34 @@ class GaussianSubprocess:
             k : var_catalogue[
                 self._mean_name_mapping[v.name]
                 ] for k,v in self.mean_hyperparameters.items()
-            }
-        # self._kernel_refs = {
-        #     k : var_catalogue[
-        #         self._kernel_name_mapping[v.name]
-        #         ] for k,v in self.kernel_hyperparameters.items()
-        #     }
+            } if self.mean_hyperparameters is not None else dict(0)
         kiparams = {
             ker:{
                 dist.name:dist for _, dist in pdict.items()
                 } for ker,pdict in self.kernel.kernel_parameters.items()
-            }
+            } if self.kernel.kernel_parameters is not None else dict()
         keparams = self.kernel.ext_vars
         # Remap names->Distributions to names->TensorVariables
-        self._ker_int_refs = {
-            kname: {
-                    n:var_catalogue[
-                        self._ker_name_map_int[kname][n]
-                        ] for n,m in v.items()
+        if kiparams is not None:
+            self._ker_int_refs = {
+                kname: {
+                        n:var_catalogue[
+                            self._ker_name_map_int[kname][n]
+                            ] for n,m in v.items()
+                    }
+                for kname,v in kiparams.items() 
                 }
-            for kname,v in kiparams.items() 
-            }
-        self._ker_ext_refs = {
-            kname: {
-                    n:var_catalogue[
-                        self._ker_name_map_ext[kname][n]
-                        ] for n,m in v.items()
+            self.kernel._update_irefs(self._ker_int_refs)
+        if keparams is not None:
+            self._ker_ext_refs = {
+                kname: {
+                        n:var_catalogue[
+                            self._ker_name_map_ext[kname][n]
+                            ] for n,m in v.items()
+                    }
+                for kname,v in keparams.items() 
                 }
-            for kname,v in keparams.items() 
-            }
-        self.kernel._update_irefs(self._ker_int_refs)
-        self.kernel._update_erefs(self._ker_ext_refs)
+            self.kernel._update_erefs(self._ker_ext_refs)
 
     def __call__(self, inputs:Any, var_catalogue:dict):
         r'''
@@ -2746,10 +2801,8 @@ class GaussianSubprocess:
         final_kernel = self.kernel(var_catalogue, inputs.shape)
         self.gp, self.func = self.gaussian_processor(
             self.mean,
-            self.kernel,
+            final_kernel,
             self._mean_refs,
-            self._kernel_refs,
-            self.process,
             self.process_name
         )(inputs)
         self.variables[self.process_name] = self.func

@@ -2010,25 +2010,28 @@ class GaussianProcess(BayesianEstimator):
             :code:`_post_context_vars` and :code:`_context_vars`
             attributes
         '''
-        # Stack hopping isn't thread safe ?
-        namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
-        self._post_context_vars = namespace
-        # Extract changed variables
-        changed_names:dict[str, Any] = {
-            k1:v1 for (k1, v1), (k2, v2) in zip(
-                self._post_context_vars.items(), 
-                self._pre_context_vars.items()
-            ) if (k1!=k2 or k2 is None) and (v1!=v2)
-        }
-        # Extract new variable names
-        new_names:dict[str, Any] = set(
-            self._post_context_vars.keys()
-            )-set(self._pre_context_vars.keys())
-        new_namespace:dict[str, Any] = {
-            k:self._post_context_vars[k] for k in new_names
-        }
-        self._context_vars = merge_dicts(changed_names, new_namespace)
-        return self
+        if exc_val is None:
+            # Stack hopping isn't thread safe ?
+            namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
+            self._post_context_vars = namespace
+            # Extract changed variables
+            changed_names:dict[str, Any] = {
+                k1:v1 for (k1, v1), (k2, v2) in zip(
+                    self._post_context_vars.items(), 
+                    self._pre_context_vars.items()
+                ) if (k1!=k2 or k2 is None) and (v1!=v2)
+            }
+            # Extract new variable names
+            new_names:dict[str, Any] = set(
+                self._post_context_vars.keys()
+                )-set(self._pre_context_vars.keys())
+            new_namespace:dict[str, Any] = {
+                k:self._post_context_vars[k] for k in new_names
+            }
+            self._context_vars = merge_dicts(changed_names, new_namespace)
+            return self
+        else:
+            raise exc_type(exc_val)
     
     def _from_context_mngr(self):
         r'''
