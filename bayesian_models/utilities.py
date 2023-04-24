@@ -70,6 +70,15 @@ def merge_dicts(*args:tuple[dict])->dict:
         map(lambda e: e.items(), args)
     ) }
     
+def get_wnulldict(dictionary:dict[str,Any], 
+                    lookupstr:str)->dict:
+    r'''
+        Drop in replacement for :code:`dictionary.get(...)` that returns
+        an empty dictionary instead of :code:`None` on a non existent
+        key lookup
+    '''
+    fetch = dictionary.get(lookupstr)
+    return fetch if fetch is not None else dict()
 
 def tidy_multiindex(df:pd.DataFrame, sep:str="."):
     r'''

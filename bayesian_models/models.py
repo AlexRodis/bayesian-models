@@ -34,7 +34,7 @@ from bayesian_models.core import CoreModelComponent
 from bayesian_models.core import FreeVariablesComponent
 from bayesian_models.core import ModelAdaptorComponent
 from bayesian_models.core import GaussianProcessCoreComponent
-from bayesian_models.core import GPProcessor, FullProcessor
+from bayesian_models.core import GPProcessor, FullProcessor, ContextVars
 from bayesian_models.data import Data
 from bayesian_models.utilities import merge_dicts
 from dataclasses import dataclass, field
@@ -1650,7 +1650,7 @@ class BEST(BESTBase):
 
 
 @dataclass(slots=True)
-class GaussianProcess(BayesianEstimator):
+class GaussianProcess(ContextVars, BayesianEstimator):
     r'''
         General Gaussian Process model
         
@@ -1871,15 +1871,6 @@ class GaussianProcess(BayesianEstimator):
         init=True, default = None)
     nan_present_flag:Optional[bool] = field(
         init=False, default_factory=lambda :None)
-    _pre_context_vars:Optional[dict] = field(repr=False, 
-                                        init=False, 
-                                        default=None)
-    _post_context_vars:Optional[dict] = field(repr = False, 
-                                         init= False,              default=None)
-    _context_vars:Optional[dict] = field(repr = False,
-                                         init = False,
-                                         default=None)
-    _context_init:bool= field(repr=False, init=False, default=False)
     _n_inputs:Optional[int] = field(repr=False, 
                                     init=False, 
                                     default=None)
@@ -1888,6 +1879,9 @@ class GaussianProcess(BayesianEstimator):
                                      default=False)
     _initialized_conditional:bool= field(
         repr=False, init=False, default=False
+    )
+    _posterior_trace:Optional[az.InferenceData] = field(
+        init=False, repr=False, default=None
     )
     
     def _set_output_layer(self):
@@ -1913,6 +1907,7 @@ class GaussianProcess(BayesianEstimator):
             
             Initialize handler objects and validate options
         '''
+        super(GaussianProcess, self).__init__()
         sentinel:bool = self.layers is None or \
             self.likelihoods_component is None
         if not sentinel:
@@ -1983,56 +1978,6 @@ class GaussianProcess(BayesianEstimator):
     def initialized(self, val:bool)->None:
         self._initialized = val
     
-    def __enter__(self):
-        r'''
-            Collect all variable definitions in the caller's namespace
-            so that the context specific ones can be extracted.
-            
-            Jumps on stack frame backwards and extract a copy of the
-            local namespace
-        '''
-        self._context_init = True
-        namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
-
-        self._pre_context_vars = {
-            k:v for k,v in namespace.items()
-        }
-        return self
-    
-    # Maybe a decorator here ?
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        r'''
-            Extract the changes in callers namespace before and after
-            the context manager was opened. 
-            
-            Jumps a single stack frame backwards in the call stack,
-            extracts the differences in the local namespace and sets the
-            :code:`_post_context_vars` and :code:`_context_vars`
-            attributes
-        '''
-        if exc_val is None:
-            # Stack hopping isn't thread safe ?
-            namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
-            self._post_context_vars = namespace
-            # Extract changed variables
-            changed_names:dict[str, Any] = {
-                k1:v1 for (k1, v1), (k2, v2) in zip(
-                    self._post_context_vars.items(), 
-                    self._pre_context_vars.items()
-                ) if (k1!=k2 or k2 is None) and (v1!=v2)
-            }
-            # Extract new variable names
-            new_names:dict[str, Any] = set(
-                self._post_context_vars.keys()
-                )-set(self._pre_context_vars.keys())
-            new_namespace:dict[str, Any] = {
-                k:self._post_context_vars[k] for k in new_names
-            }
-            self._context_vars = merge_dicts(changed_names, new_namespace)
-            return self
-        else:
-            raise exc_type(exc_val)
-    
     def _from_context_mngr(self):
         r'''
             If extracts model variables from context variables
@@ -2049,11 +1994,12 @@ class GaussianProcess(BayesianEstimator):
         self.adaptor_component = self._context_vars.get(
             'adaptor_component'
         )
-        self.__post_init__()
         
     def __call__(self, predictors, targets):
-        if self._context_init:
-            self._from_context_mngr()
+        # if self._context_init:
+        #     self._from_context_mngr()
+        super(GaussianProcess, self).__call__()
+        self.__post_init__()
         self._n_inputs = len(predictors)
         self._n_outputs = len(targets)
         ppredictors = list(map(
@@ -2089,7 +2035,11 @@ class GaussianProcess(BayesianEstimator):
         
     @property
     def posterior_trace(self):
-        pass
+        return self._posterior_trace
+    
+    @posterior_trace.setter
+    def posterior_trace(self, val:az.InferenceData)->None:
+        self._posterior_trace = val
     
     def fit(self, *args,sampler:Callable = pymc.sample ,
             **kwargs)->az.InferenceData:
@@ -2226,7 +2176,9 @@ class GaussianProcess(BayesianEstimator):
             ))
         # Support predict in the future
         if method == "full":
-            self._full_conditional_(Xnew, **kwargs)
+            trace = self._full_conditional_(Xnew, **kwargs)
+            self.posterior_trace = trace
+            return self.posterior_trace
         else:
             raise ValueError((
                 "Unrecognized prediction strategy. Expected one of "

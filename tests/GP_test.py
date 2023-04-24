@@ -72,9 +72,51 @@ class TestGaussianProcesses(unittest.TestCase):
         diab_df = pd.concat([X, y], axis=1)
         cls.diab_df = diab_df
     
+    def test_kernel_context(self):
+        
+        with Kernel() as kernel:
+            name = 'k'
+            base_kernels = {
+                'k_se' : pm.gp.cov.ExpQuad,
+                "k_ln":pm.gp.cov.Linear,
+            }
+            kernel_parameters = {
+                'k_se': {
+                    'ls':distribution(
+                        pm.HalfCauchy, 'λ', 2, 
+                        transform = lambda e:e+1
+                    ),
+                },
+                'k_ln':{
+                    'c':distribution(
+                        pm.ConstantData, 'c', 5
+                    )
+                }
+            }
+            ext_vars = {
+                'k_se': {
+                    'η_se':distribution(
+                        pm.HalfCauchy, 'η_se', 2, 
+                        transform = lambda e:e+1
+                    ),
+                },
+                'k_ln': {
+                    'η_ln':distribution(
+                        pm.HalfCauchy, 'η_ln', 2, 
+                        transform = lambda e:e+1
+                    ),
+                },
+            }
+            kernel_transformers = {
+                'k_se' : lambda ker, pars: pars['η_se']*ker,
+                'k_ln' : lambda ker, pars: pars['η_ln']*ker,
+            }
+            kernel_combinator = lambda kers: kers['k_se'] + \
+                kers["k_ln"]
+    
     def test_kernel(self):
         kernel = Kernel(
-            'k',
+            name='k',
             base_kernels = {
                 'k_se' : pm.gp.cov.ExpQuad,
                 "k_ln":pm.gp.cov.Linear,
@@ -114,6 +156,61 @@ class TestGaussianProcesses(unittest.TestCase):
             kernel_combinator = lambda kers: kers['k_se'] + \
                 kers["k_ln"]
         )
+        
+    def test_predict(self):
+        X = self.diab_df.values[:,:3]
+        Y = self.diab_df.values[:,[-1]]
+        # with GaussianProcess() as gp:
+        #     with Kernel() as kernel:
+        #         name="k"
+        #         base_kernels = dict(
+        #             k_se = pm.gp.cov.ExpQuad
+        #         )
+        #         kernel_parameters = dict(
+        #             k_se = dict(
+        #                 ls = distribution(
+        #                     pm.HalfCauchy, 'λ', 2,
+        #                     transform = lambda e: e+.1
+        #                 )
+        #             )
+        #         )
+        #     layers = GPLayer(
+        #         [
+        #             GaussianSubprocess(
+        #                 kernel = kernel,
+        #                 index = (0,i)
+        #             ) for i in range(1)
+        #         ],
+        #         layer_idx=0
+        #     )
+        #     free_variables_component = FreeVariablesComponent(
+        #         dict(
+        #             σ = distribution(
+        #                 pm.HalfNormal, 'σ', 1, transform=lambda e:e+.1
+        #             )
+        #         )
+        #     )
+        #     likelihood_component = LikelihoodComponent(
+        #         var_mapping = dict(
+        #             mu = 'f',
+        #             sigma = 'σ'
+        #         )
+        #     )
+        # gp.fit(X,Y)
+        # trace = gp.predict(X)
+        with pymc.Model() as model:
+            k = pm.gp.cov.ExpQuad(3, ls=1)
+            gp = pm.gp.HSGP([10]*3, c=1.2, cov_func=k)
+            f = gp.prior('f', X)
+            f_star = gp.conditional('f_star', X)
+            s = pm.HalfNormal('s', 2)+.1
+            y = pm.Normal('y', mu=f,sigma=s, observed=Y)
+            
+        with model:
+            idata = pm.sample()
+        with model:
+            trace = pm.sample_posterior_predictive(
+                idata, var_names=['f_star'])
 
     def test_coreg(self):
         # Define inputs and outputs
@@ -128,24 +225,31 @@ class TestGaussianProcesses(unittest.TestCase):
 
         # Define mixing matrix and spatial kernel
         W = np.random.randn(3, 2)  # Mixing matrix
-        k = pm.gp.cov.ExpQuad(4)  # Spatial kernel
+        κ = np.random.rand(3)
+        k = pm.gp.cov.ExpQuad(4,ls=1)  # Spatial kernel
 
         # Mixing matrix covariance
-        k_icm = pm.gp.cov.Coregion(3, k=k, W=W, active_dims=[3])
+        k_coreg = pm.gp.cov.Coregion(3,kappa=κ, 
+                                   W=W, active_dims=[3])
+
+        k = k_coreg*k
 
         # Define GP latent variable
         with pm.Model() as model:
-            gp = pm.gp.Latent(cov_func=k_icm)
+            gp = pm.gp.Latent(cov_func=k)
             f = gp.prior('f', X=X)
-
+            s = pm.HalfNormal('s', 1)+.1
         # Define output variable
         with model:
-            Y_obs = pm.MvNormal('Y_obs', mu=f[groups], cov=gp.cov, observed=Y)
-
+            Y_obs = pm.Normal('Y_obs', 
+                                mu=f[groups], 
+                                sigma=s, observed=Y)
+        with model:
+            idata = pm.sample()
 
     def test_init(self):
         kernel = Kernel(
-            'k',
+            name = 'k',
             base_kernels = {
                 'k_se' : pm.gp.cov.ExpQuad,
                 "k_ln":pm.gp.cov.Linear,
@@ -238,13 +342,20 @@ class TestGaussianProcesses(unittest.TestCase):
             
     def test_context(self):
         import pymc as pm
-        kernel = Kernel(
-            'k',
-            base_kernels = {
-                'k_se' : pm.gp.cov.ExpQuad
-            }
-        )
+            
         with GaussianProcess() as obj:
+            with Kernel() as kernel:
+                name='k'
+                base_kernels = {
+                    'k_se' : pm.gp.cov.ExpQuad
+                }
+                kernel_parameters = {
+                    'k_se' : {
+                        'ls' : distribution(
+                            pm.MutableData, 'λ', 1
+                        )
+                    }
+                }
             layers:list[GPLayer] = []
             l1 = GPLayer(
                 [
@@ -287,33 +398,38 @@ class TestGaussianProcesses(unittest.TestCase):
         obj([self.diab_df.values[:,:-1]],
             [self.diab_df.values[:,[-1]]])
         obj.fit(10, tune=10, chains=2)
+        trace = obj.predict(self.diab_df.values[:,:-1])
         
     def test_context_topology(self):
         import pymc as pm
         import pickle
         with GaussianProcess() as obj:
+            kernel = Kernel(
+                'k',
+                base_kernels = {
+                    'k_se' : pm.gp.cov.ExpQuad
+                },
+                kernel_parameters = {
+                    'k_se': {
+                        'ls': distribution(
+                            pm.HalfCauchy, 'l', 2, 
+                            transform = lambda e:e+1
+                        ),
+                    }
+                    },
+            )
             layers:list[GPLayer] = []
             l1 = GPLayer(
                 [
                     GaussianSubprocess(
-                        kernel = pm.gp.cov.ExpQuad,
-                        kernel_hyperparameters = dict(
-                            ls = distribution(
-                                pm.HalfCauchy, 'λ', 2
-                            )
-                            ),
+                        kernel = kernel,
                         mean = pm.gp.mean.Zero,
                         index = (0,i),
                         topology="A"
                     ) for i in range(5)
                 ] + [
                     GaussianSubprocess(
-                        kernel = pm.gp.cov.ExpQuad,
-                        kernel_hyperparameters = dict(
-                            ls = distribution(
-                                pm.HalfCauchy, 'λ', 2
-                            )
-                            ),
+                        kernel = kernel,
                         mean = pm.gp.mean.Zero,
                         index = (1,i),
                         topology="B",
@@ -352,31 +468,40 @@ class TestGaussianProcesses(unittest.TestCase):
             )
         obj([self.diab_df.values[:,:-1]],
             [self.diab_df.values[:,[-1]]])
-        obj.fit(draws=100, tune=100, chains=2)
+        obj.fit(draws=10, tune=10, chains=2)
         # with open("gp_test.pickle", "wb") as file:
         #     pickle.dump(obj.idata, file)
         # with open("gp_test.pickle", "rb") as file:
         #     obj.idata = pickle.load(file)  
         # obj.trained = True
-        # obj.predict(self.diab_df.values[:,:-1])
+        obj.predict(self.diab_df.values[:,:-1])
 
     def test_HSGP(self):
         import pymc as pm
-        import pickle
         from bayesian_models.core import HSGP
-        HSGP.n_basis = [7]
+        HSGP.n_basis = [7]*3
         HSGP.prop_ext_factor = 1.2
+        X = self.diab_df.values[:, :3]
+        Y = self.diab_df.values[:,[-1]]
         with GaussianProcess(gaussian_processor=HSGP) as obj:
             layers:list[GPLayer] = []
+            with Kernel() as kernel:
+                name = "k"
+                base_kernels = {
+                    'k_se': pm.gp.cov.ExpQuad
+                }
+                kernel_parameters = {
+                    'k_se' : {
+                        'ls' : distribution(
+                            pm.HalfCauchy,'λ', 2, 
+                            transform=lambda e:e+.1
+                        )
+                    }
+                }
             l1 = GPLayer(
                 [
                     GaussianSubprocess(
-                        kernel = pm.gp.cov.ExpQuad,
-                        kernel_hyperparameters = dict(
-                            ls = distribution(
-                                pm.HalfCauchy, 'λ', 2
-                            )
-                            ),
+                        kernel = kernel,
                         mean = pm.gp.mean.Zero,
                         index = (0,i),
                     ) for i in range(2)
@@ -411,8 +536,8 @@ class TestGaussianProcesses(unittest.TestCase):
                         ),
                 )
             )
-        obj([self.diab_df.values[:,:2]],
-            [self.diab_df.values[:,[-1]]])
+        obj([X],
+            [Y])
         obj.fit(draws=500, tune=500, chains=2)
         # with open("hsgp_test.pickle", "wb") as file:
         #     pickle.dump(obj.idata, file)

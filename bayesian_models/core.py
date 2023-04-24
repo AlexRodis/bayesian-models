@@ -28,7 +28,7 @@ import pymc as pm
 from collections import defaultdict, namedtuple
 from bayesian_models.data import Data
 from bayesian_models.utilities import extract_dist_shape, invert_dict
-from bayesian_models.utilities import merge_dicts
+from bayesian_models.utilities import merge_dicts, get_wnulldict
 from bayesian_models.data import CommonDataStructureInterface
 import numpy as np
 import pytensor
@@ -187,6 +187,142 @@ def distribution(dist:pymc.Distribution,name:str,
 
 ScalarModelParameter = Union[float, int]
 ModelParameter = Union[Distribution, ScalarModelParameter]
+
+
+class InstanceMethod:
+    r"""
+        Class for hiding references to instance methods so they can be
+        pickled.
+        Example usage:
+        
+        .. code-block:: python
+            self.method = InstanceMethod(some_object, 'method_name')
+
+        Original implementation by :code:`pymc`
+    """
+
+    def __init__(self, obj, method_name):
+        self.obj = obj
+        self.method_name = method_name
+
+    def __call__(self, *args, **kwargs):
+        return getattr(self.obj, self.method_name)(*args, **kwargs)
+
+class AlternateContext(object):
+    r"""
+        Alternate implementation for object which use context managers
+        as alternate initializers. 
+        
+        This is a thread local variable implementation and is thread
+        safe, but will only work with custom objects. The objects should
+        call :code:`AlternateContext.get_context()` to fetch the
+        innermost context object and then register themselves to it. To
+        use, context user objects should subclass this class
+        
+        Implementation originally from :code:`pymc`. Modified by
+        removing configuration related code
+    """
+    import threading
+    
+    contexts = threading.local()
+
+    def __enter__(self):
+        type(self).get_contexts().append(self)
+        return self
+
+    def __exit__(self, typ, value, traceback):
+        type(self).get_contexts().pop()
+
+    @classmethod
+    def get_contexts(cls):
+        # no race-condition here, cls.contexts is a thread-local object
+        # be sure not to override contexts in a subclass however!
+        if not hasattr(cls.contexts, 'stack'):
+            cls.contexts.stack = []
+        return cls.contexts.stack
+
+    @classmethod
+    def get_context(cls):
+        """Return the deepest context on the stack."""
+        try:
+            return cls.get_contexts()[-1]
+        except IndexError:
+            raise TypeError("No context on context stack")
+    
+
+class ContextVars:
+    r'''
+        Coop inheritance mixin class for classes that use context
+        managers are alternate initializers
+    '''
+    
+    def __init__(self):
+        self._pre_context_vars:Optional[dict[str,Any]]=None
+        self._context_init:bool = False
+        self._context_vars:Optional[dict[str,Any]]=None
+    
+    @abstractmethod
+    def _from_context_mngr(self):
+        raise NotImplementedError()
+    
+    def __enter__(self):
+        r'''
+            Collect all variable definitions in the caller's namespace
+            so that the context specific ones can be extracted.
+            
+            Jumps on stack frame backwards and extract a copy of the
+            local namespace
+        '''
+        import inspect 
+        self._context_init = True
+        namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
+
+        self._pre_context_vars = {
+            k:v for k,v in namespace.items()
+        }
+        return self
+    
+    # Maybe a decorator here ?
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        r'''
+            Extract the changes in callers namespace before and after
+            the context manager was opened. 
+            
+            Jumps a single stack frame backwards in the call stack,
+            extracts the differences in the local namespace and sets the
+            :code:`_post_context_vars` and :code:`_context_vars`
+            attributes
+        '''
+        if exc_val is None:
+            import inspect
+            # Stack hopping isn't thread safe ?
+            namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
+            post_context_vars = {
+                alias: var_obj for alias, var_obj in namespace.items()
+            }
+            # Extract changed variables
+            changed_names:dict[str, Any] = {
+                k1:v1 for (k1, v1), (k2, v2) in zip(
+                    post_context_vars.items(), 
+                    self._pre_context_vars.items()
+                ) if (k1!=k2 or k2 is None) and (v1!=v2)
+            }
+            # Extract new variable names
+            new_names:dict[str, Any] = set(
+                post_context_vars.keys()
+                )-set(self._pre_context_vars.keys())
+            new_namespace:dict[str, Any] = {
+                k:post_context_vars[k] for k in new_names
+            }
+            self._context_vars = merge_dicts(changed_names, 
+                                             new_namespace)
+            return self
+        else:
+            raise exc_type(exc_val)
+        
+    def __call__(self)->None:
+        if self._context_init:
+            self._from_context_mngr()
 
 @dataclass(slots=True)
 class FreeVariablesComponent:
@@ -1911,7 +2047,7 @@ K_IPARS = dict[str,dict[str,TENSOR_VARIABLE]]
 K_EPARS = dict[str, dict[str, TENSOR_VARIABLE]]
 
 @dataclass(slots=True)
-class Kernel:
+class Kernel(ContextVars):
     r'''
         Class for custom kernels
         
@@ -2050,7 +2186,7 @@ class Kernel:
                 return the composite kernel
     '''
     
-    name:str
+    name:str="null"
     base_kernels:dict[KERNEL_ID,BASE_KERNEL] = field(
         default_factory=dict
         )
@@ -2068,6 +2204,7 @@ class Kernel:
         default_factory=dict)
     kernel_combinator:Optional[KERNEL_COMBINATOR] = None
     
+    
     def __post_init__(self)->None:
         r'''
             Validate inputs
@@ -2084,65 +2221,67 @@ class Kernel:
                         kernel_transformer is provided. Must provide
                         either None or both of these arguments
         '''
-        if len(self.base_kernels)==0:
-            raise ValueError("base_kernels argument cannot be empty")
-        c1 = self.kernel_transformers is None
-        c2 = self.kernel_parameters is None
-        trans_sentinel:bool = c1 != c2
-        if trans_sentinel:
-            raise ValueError((
-                "Both or neither kernel_parameters and "
-                "kernel_transformer must be provided. Received "
-                f"kernel_parameters {self.kernel_parameters} and "
-                f"kernel_tranformer {self.kernel_transformers}"
+        super(Kernel, self).__init__()
+        sentinel:bool = self.base_kernels is not None or \
+            self.base_kernels == dict()
+        if not sentinel:
+            if len(self.base_kernels)==0:
+                raise ValueError("base_kernels argument cannot be empty")
+            c1 = self.kernel_transformers is None
+            c2 = self.kernel_parameters is None
+            trans_sentinel:bool = c1 != c2
+            if trans_sentinel:
+                raise ValueError((
+                    "Both or neither kernel_parameters and "
+                    "kernel_transformer must be provided. Received "
+                    f"kernel_parameters {self.kernel_parameters} and "
+                    f"kernel_tranformer {self.kernel_transformers}"
+                    ))
+            nulldict = dict()
+            nullset = lambda odict : nulldict if odict is None else odict
+            kernels:set = set(self.base_kernels.keys())
+            inpars:set = set(nullset(self.kernel_parameters).keys())
+            expars:set = set(nullset(self.ext_vars).keys())
+            extrans:set  =set(nullset(self.kernel_transformers).keys())
+            # Set differences for missing arguments
+            no_ipars = kernels-inpars
+            no_kernels = inpars-kernels
+            no_trans = expars - extrans
+            no_exparams = extrans-expars
+            NULL = set()
+            if len(kernels)>1 and self.kernel_combinator is None:
+                raise ValueError((
+                    "Multiple base kernels received, but not combinator "
+                    "given. When multiple base kernels are provided a "
+                    "kernel_combinator should be supplied mapping them to "
+                    "single final kernel. Received base kernels "
+                    f"{self.base_kernels.keys()} but no kernel_transformer"
                 ))
-        nulldict = dict()
-        nullset = lambda odict : nulldict if odict is None else odict
-        kernels:set = set(self.base_kernels.keys())
-        inpars:set = set(nullset(self.kernel_parameters).keys())
-        expars:set = set(nullset(self.ext_vars).keys())
-        extrans:set  =set(nullset(self.kernel_transformers).keys())
-        # Set differences for missing arguments
-        no_ipars = kernels-inpars
-        no_kernels = inpars-kernels
-        no_trans = expars - extrans
-        no_exparams = extrans-expars
-        NULL = set()
-        if len(kernels)>1 and self.kernel_combinator is None:
-            raise ValueError((
-                "Multiple base kernels received, but not combinator "
-                "given. When multiple base kernels are provided a "
-                "kernel_combinator should be supplied mapping them to "
-                "single final kernel. Received base kernels "
-                f"{self.base_kernels.keys()} but no kernel_transformer"
-            ))
-        if no_ipars != NULL:
-            ValueError((
-                f"Base kernels {no_ipars} have no internal parameters"
-                "specified"
-            ))
-        if no_kernels != NULL:
-            raise ValueError((
-                f"Parameters {no_kernels} target non existing kernels. "
-                "Did you forget to provide the base kernel in the "
-                "base_kernels argument?"
-            ))
-        if no_trans != NULL:
-            warn((
-                f"Kernels {no_trans} have external parameters but no "
-                "transformers specified for them. These parameters will"
-                " be effectively ignored"
-            ))
-        if no_exparams != NULL:
-            raise ValueError((
-                f"Found transformers for base kernels {no_exparams} "
-                "but no external parameters have been specified for "
-                "them. Transformer has not transformation to perform "
-                "on the kernel"
-            ))
-            
+            if no_ipars != NULL:
+                raise ValueError((
+                    f"Base kernels {no_ipars} have no internal parameters "
+                    "specified"
+                ))
+            if no_kernels != NULL:
+                raise ValueError((
+                    f"Parameters {no_kernels} target non existing kernels. "
+                    "Did you forget to provide the base kernel in the "
+                    "base_kernels argument?"
+                ))
+            if no_trans != NULL:
+                warn((
+                    f"Kernels {no_trans} have external parameters but no "
+                    "transformers specified for them. These parameters will"
+                    " be effectively ignored"
+                ))
+            if no_exparams != NULL:
+                raise ValueError((
+                    f"Found transformers for base kernels {no_exparams} "
+                    "but no external parameters have been specified for "
+                    "them. Transformer has not transformation to perform "
+                    "on the kernel"
+                ))
         
-            
     def _update_irefs(self, tensor_pars:dict)->None:
         r'''
             Update mapping of internal kernel parameters to tensor
@@ -2192,7 +2331,34 @@ class Kernel:
         }
         return collected
     
+    def _from_context_mngr(self):
+        r'''
+            Extracts model variables from context variables
+        '''
+        from functools import partial
+        cvars:dict[str,Any] = self._context_vars
+        lookup = partial(get_wnulldict,cvars)
+        
+        self.name = cvars['name']
+        self.base_kernels = cvars['base_kernels']
+        self.kernel_parameters = cvars['kernel_parameters']
+        self.ext_vars = lookup('ext_vars')
+        self.kernel_transformers = lookup('kernel_transformers')
+        self.kernel_combinator = cvars.get('kernel_combinator')
+    
+    def _complete_ctx_init_(self):
+        r'''
+            When intialized via the context manager, this method is
+            called to ensure the object is properly initialized
+        '''
+        super(Kernel, self).__call__()
+        if self._context_init:
+            self.__post_init__()
+    
     def __call__(self, var_catalogue:dict[str,Any], inpt_shape)->Any:
+        super(Kernel, self).__call__()
+        if self._context_init:
+            self.__post_init__()
         bases = self._initialize_base_kernels(inpt_shape)
         if self.kernel_parameters is not None:
             transformed:dict = self._apply_transforms_(bases)
@@ -2202,9 +2368,23 @@ class Kernel:
             synthesized:Any = self.kernel_combinator(transformed)
         else:
             synthesized:Any = transformed[
-                transformed.keys()[0]
+                list(transformed.keys())[0]
                 ]  
         return synthesized
+
+@dataclass(slots=True)
+class CoregionKernel(ContextVars):
+    kernel:Optional[Kernel] = field(default=None)
+    name:str = ""
+    coreg_parameters:Optional[dict[str,Distribution]] = None
+    
+    
+    def __call__(self, var_catalogue):
+        pass
+    
+    
+    
+    
     
 @dataclass(slots=True)
 class GaussianSubprocess:
@@ -2443,10 +2623,6 @@ class GaussianSubprocess:
                 context stack is open. :code:`var_catalogue` is a global
                 model variable catalogue, and should be supplied by the builder. 
     '''
-    # kernel:pymc.gp.cov.Covariance
-    # kernel_hyperparameters:dict[str, ModelParameter] = field(
-    #     default_factory=dict
-    #     )
     kernel:Kernel
     mean:pymc.gp.mean  = pymc.gp.mean.Zero
     mean_hyperparameters:dict[str, ModelParameter] = field(
@@ -2477,15 +2653,9 @@ class GaussianSubprocess:
     _ker_ext_refs:Optional[dict[str, dict[str,Any]]] = field(
         init=False, repr=False, default = None
     )
-    # _kernel_name_mapping:Optional[dict[str, str]] = field(
-    #     repr=False, default = None
-    #     )
     _mean_refs:dict[str, Optional[Any]] = field(
         repr=False, default_factory=dict
         )
-    # _kernel_refs:dict[str, Optional[Any]] = field(
-    #     repr=False, default_factory=dict
-    # )
     index:tuple[int, int]=field(default_factory=tuple)
     gp:Optional[Any] = field(repr=False, default= None)
     func:Optional[Any] = field(repr=False, default=None)
@@ -2551,7 +2721,6 @@ class GaussianSubprocess:
                     :code:`i,j` are indexers for the layer and
                     subprocess,  respectively.
         '''
-        
         from warnings import warn
         if self.alias is not None and self.symbol=='f':
             warn((
@@ -2572,6 +2741,7 @@ class GaussianSubprocess:
                 j = self.index.subprocess_idx
                 ) for _, v in self.mean_hyperparameters.items()
             } if self.mean_hyperparameters is not None else  None
+        self.kernel._complete_ctx_init_()
         kernel_int_pars = self.kernel.kernel_parameters
         kernel_ext_pars = self.kernel.ext_vars
         kintnamemap = {k:{
@@ -2582,7 +2752,7 @@ class GaussianSubprocess:
             )
             for p,dist in v.items()
             } for k,v in kernel_int_pars.items()} if kernel_int_pars\
-                is not None else None
+                is not None else dict()
         kextnamemap = {
             k:{
                 dist.name : "{sym}[{i},{j}]".format(
@@ -2592,23 +2762,20 @@ class GaussianSubprocess:
                 )
                 for _, dist in v.items()
                 } for k,v in kernel_ext_pars.items()
-        } if kernel_ext_pars is not None else {}
+        } if kernel_ext_pars is not None else dict()
         self._ker_name_map_int = kintnamemap
         self._ker_name_map_ext = kextnamemap
         self._ker_int_refs = {
             kname: {
                 alias:None for alias in v.keys()
                 } for kname,v in kernel_int_pars.items()
-        } if kernel_int_pars is not None else {}
+        } if kernel_int_pars is not None else dict()
         
-        # if kernel_ext_pars is not None:
         self._ker_ext_refs = {
             kname:{
                 parname:None for parname in kpars.keys()
                 } for kname,kpars in kernel_ext_pars.items()
-            } if kernel_ext_pars is not None else None
-        # else:
-        #     self._ker_ext_refs = {}
+            } if kernel_ext_pars is not None else dict()
         self._mean_refs = {
             k: None for k,_ in self.mean_hyperparameters.items()
         } 
