@@ -1980,7 +1980,7 @@ class GaussianProcess(ContextVars, BayesianEstimator):
     
     def _from_context_mngr(self):
         r'''
-            If extracts model variables from context variables
+            Εxtracts model variables from context variables
         '''
         self.layers = self._context_vars['layers']
         self.likelihoods_component = self._context_vars[

@@ -2374,17 +2374,136 @@ class Kernel(ContextVars):
 
 @dataclass(slots=True)
 class CoregionKernel(ContextVars):
-    kernel:Optional[Kernel] = field(default=None)
-    name:str = ""
-    coreg_parameters:Optional[dict[str,Distribution]] = None
+    r'''
+        Special kernel for coregionalized Gaussian Processes. These
+        processes are generally defined by the special kernel:
+        
+        .. math::
+        
+            \begin{array}{c}
+            k_{ICM}(x,x^{\prime}) = \overset{J}{\underset{j=0}{\sum}}
+            B_j\otimes k_j(x,x^{\prime})\\
+            \\
+            B_j = W_jW_j^T + diag{\kappa}
+            \end{array}
+            Where :math:`\otimes` is the Kronecker procduct, :math:`B_j`
+            is the coregionalization matrix, :math:`W_j` is the mixing
+            matrix which decides which gaussian processes map to which
+            outputs and the term :math:`diag(\kappa)` allows independant
+            variance. The matrix :math:`W` is of shape :math:`p\times q`
+            and mixes :math:`q` gaussian processes to produce :math:`p`
+            outputs.
+            
+            Usage Example:
+            
+            .. code-block:: python
+
+                # Base kernel
+                with Kernel() as k_b:
+                    name = 'k_se'
+                    base_kernels = {
+                        'k_se':pymc.gp.cov.ExpQuad
+                    }
+                    kernel_parameters = dict(
+                        k_se = dict(
+                            ls = distribution(
+                                pm.MutableData, 'l', 1
+                            )
+                        )
+                    ext_vars = {
+                        'k_se': {
+                            
+                            'η_se':distribution(
+                                pm.HalfCauchy, 'η_se', 2, 
+                                transform = lambda e:e+1
+                                ),
+                            }
+                    kernel_transformers = {
+                        'k_se': lambda k, v: v['η_se']*k
+                    }
+                with Coregion() as cor:
+                    name = "k"
+                    kernels:dict = {
+                        'k_se' : k_b
+                    }
+                    anisotropic=False
+                    coreg_parameters = {
+                        'k_se': {
+                            'W' : distribution(
+                                pm.Normal, 'W' ,0,1, shape=(3,4)
+                                ), # 3 outputs and 4 processes
+                            'kappa':distribution(
+                                pm.Normal,
+                                    pm.Normal, 'kappa', 0,1, shape=(3,)
+                                ),
+                        }
+                    }
+            
+        Object Attributes:
+        ==================
+        
+            - | kernels:Sequence[Kernel] := Defines a set of  spatial
+                kernels to use during coregionalization.
+                
+            - | name:str="null" := An alias for the synthesized kernel
+            
+            - | anisotropic:bool=False := If :math:`False` (default),
+                then it assumed that observations are provided for every
+                output :math:`p` (the size of the first axis of the
+                inputs is assumed to be the same). The likelihood is
+                assumed to be multivariate and the models' final output
+                is a matrix of the shape :math:`\overset{N\times
+                p}{\mathbf{f}}` and a :math:`p` dimensional multivariate
+                likelihood is used. If :math:`True` the process is
+                anisotropic. Then the inputs need not have the same size
+                over the first axis (but need to be equal over the
+                second axis), a collection of :math:`p` output tensors
+                will  be spawned of the general shape
+                :math:`\overset{N_j \times 1}{f_j}` and each will be
+                given a sepperate likelihood.
+                
+            - | coreg_parameters:dict[str,dict[str,Distribution]]=None
+                := The design for the coregionalization matrix as two
+                level deep dictionary nested structure. The keys of the
+                outer dict are aliases mapping to those of the
+                :code:`kernels` argument. The elements are dictionaries
+                whose keys are coregion arguments (see below) and whose
+                values are :code:`Distribution` objects representing
+                priors on the relevant parameter / argument. Each
+                coregion kernel gets either two parameters
+                :math:`W,kappa` or the parameter :math:`B`
+                
+            
+
+    '''
+    kernels:Optional[dict[str,Kernel]] = field(default=None)
+    name:str = "null"
+    anisotropic:bool=False
+    coreg_parameters:Optional[dict[str,dict[str,Distribution]]] = None
+    _coreg_refs:Optional[dict[str,dict[str,Distribution]]] = None
     
+    def __post_init__(self):
+        c1:bool = self.kernels is None
+        c2:bool = self.coreg_parameters is None
+        sentinel:bool = c1 or c2
+        if not sentinel:
+            pass
+        else:
+            pass
     
+    def _from_context_mng_(self):
+        r'''
+            Update attributes via alterate constructor
+        '''
+    
+    def _coregionalize_(self):
+        r'''
+            Prepeare the coregionalization kernel
+        '''
+                   
     def __call__(self, var_catalogue):
-        pass
-    
-    
-    
-    
+        for kernel in self.kernels:
+            kernel(var_catalogue)
     
 @dataclass(slots=True)
 class GaussianSubprocess:
@@ -2785,7 +2904,6 @@ class GaussianSubprocess:
                 i = self.index.layer_idx,
                 j = self.index.subprocess_idx,
             )
-    
     
     def _update_shape(self, shape:tuple[int,...])->None:
         self.shape = shape

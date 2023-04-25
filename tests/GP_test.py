@@ -24,6 +24,7 @@ from bayesian_models.core import LikelihoodComponent
 from bayesian_models.core import ModelAdaptorComponent
 from bayesian_models.core import ResponseFunctionComponent
 from bayesian_models.core import ResponseFunctions, Kernel
+from bayesian_models.core import CoregionKernel
 from bayesian_models.utilities import merge_dicts
 import sklearn
 import numpy as np
@@ -213,39 +214,52 @@ class TestGaussianProcesses(unittest.TestCase):
                 idata, var_names=['f_star'])
 
     def test_coreg(self):
-        # Define inputs and outputs
-        X = np.random.rand(100, 4)  # Input matrix
-        Y1 = np.random.randn(50, 1)  # Output 1
-        Y2 = np.random.randn(30, 1)  # Output 2
-        Y3 = np.random.randn(20, 1)  # Output 3
-        Y = np.vstack([Y1, Y2, Y3])  # Stacked output matrix
-
-        # Define group variable
-        groups = np.repeat(np.arange(3), [50, 30, 20])
-
-        # Define mixing matrix and spatial kernel
-        W = np.random.randn(3, 2)  # Mixing matrix
-        κ = np.random.rand(3)
-        k = pm.gp.cov.ExpQuad(4,ls=1)  # Spatial kernel
-
-        # Mixing matrix covariance
-        k_coreg = pm.gp.cov.Coregion(3,kappa=κ, 
-                                   W=W, active_dims=[3])
-
-        k = k_coreg*k
-
-        # Define GP latent variable
-        with pm.Model() as model:
-            gp = pm.gp.Latent(cov_func=k)
-            f = gp.prior('f', X=X)
-            s = pm.HalfNormal('s', 1)+.1
-        # Define output variable
-        with model:
-            Y_obs = pm.Normal('Y_obs', 
-                                mu=f[groups], 
-                                sigma=s, observed=Y)
-        with model:
-            idata = pm.sample()
+        X = self.diab_df.values[:, :-1]
+        M = X.shape[-1] # Input dimensions
+        p:int = 3 # Number of outputs
+        q:int = 3 # Number of processes
+        Y = self.diab_df.values[:,[-1]]
+        with Kernel() as k_b:
+            name = "kb"
+            base_kernels = {
+                'k_se': pm.gp.cov.ExpQuad
+            }
+            kernel_parameters = {
+                "k_se": {
+                    'ls' : distribution(
+                        pymc.HalfCauchy, 'λ', 2,
+                        shape = (M,),
+                        transform = lambda e:e+.1
+                    )
+                }
+            }
+            ext_vars = {
+                'k_se' : {
+                    'η_se' : distribution(
+                        pymc.HalfCauchy, 'η_se', 2,
+                        transform = lambda e:e+.1
+                    )
+                }
+            }
+            kernel_transformers = {
+                'k_se' : lambda k, pars: pars['η_se']*k 
+            }
+        with CoregionKernel() as cor:
+            name = "k"
+            kernels = {
+                'k_se' : k_b
+            }
+            coreg_params = {
+                'k_se' : {
+                    'W': distribution(
+                        pymc.Normal, 'W',0,1, shape=(p,q)
+                    ),
+                    'kappa' : distribution(
+                        pymc.Normal, 'kappa', 0,1, shape=(p,)
+                    )
+                }
+            }
+            
 
     def test_init(self):
         kernel = Kernel(
