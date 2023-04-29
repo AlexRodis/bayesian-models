@@ -1405,10 +1405,11 @@ class BEST(BESTBase):
                 - | multilevel_on:str='[' := A separator defining the
                     multilevel index. :code:`pymc` by default
                     concatinates the label according to the form:
-                    {var_name}[{feature_label}]. The argument will
-                    reindex them in a multilevel fashion of the form
-                    (var_name, feature_label) in the resulting
-                    dataframe. Set to None to disable this behavior.
+                    :code:`{var_name}[{feature_label}]`. The argument
+                    will reindex them in a multilevel fashion of the
+                    form :code:`(var_name, feature_label)` in the
+                    resulting dataframe. Set to None to disable this
+                    behavior.
 
                 - | extend_summary:bool=True := If True the new
                     Significance column extends the summary dataframe.
@@ -1454,14 +1455,14 @@ class BEST(BESTBase):
             warn(("Length of variables, ropes and hdis not equal. The"
                   " shortest value will be considered"))
         results=dict()
-        null_interval = interval(0,0)
+        null_interval = interval()
         for var_name, rope,hdi in zip(var_names,ropes, hdis):
             raw_summary = az.summary(self.idata, var_names=[var_name],
             filter_vars='like', hdi_prob=hdi)
-            rope=interval(*rope)
+            rope=interval(rope)
             out=[]
             for idx,row in raw_summary.iterrows():
-                ci=interval(row[2], row[3])
+                ci=interval([row[2], row[3]])
                 if ci in rope:
                     out.append("Not Significant")
                 elif ci & rope != null_interval:
