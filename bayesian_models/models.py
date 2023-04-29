@@ -14,7 +14,7 @@
 #
 #   This module contains model definitions
 
-import pymc as pymc, pm
+import pymc as pm, pymc
 import typing
 from typing import Any, Union, Callable, Optional
 from abc import ABC, abstractmethod
