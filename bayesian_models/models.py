@@ -1405,10 +1405,11 @@ class BEST(BESTBase):
                 - | multilevel_on:str='[' := A separator defining the
                     multilevel index. :code:`pymc` by default
                     concatinates the label according to the form:
-                    {var_name}[{feature_label}]. The argument will
-                    reindex them in a multilevel fashion of the form
-                    (var_name, feature_label) in the resulting
-                    dataframe. Set to None to disable this behavior.
+                    :code:`{var_name}[{feature_label}]`. The argument
+                    will reindex them in a multilevel fashion of the
+                    form :code:`(var_name, feature_label)` in the
+                    resulting dataframe. Set to None to disable this
+                    behavior.
 
                 - | extend_summary:bool=True := If True the new
                     Significance column extends the summary dataframe.
