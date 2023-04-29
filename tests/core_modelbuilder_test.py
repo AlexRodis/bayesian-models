@@ -29,9 +29,7 @@ from bayesian_models.core import LikelihoodComponent, distribution
 from bayesian_models.core import ModelAdaptorComponent
 from bayesian_models.core import ResponseFunctionComponent
 from bayesian_models.core import ResponseFunctions
-from bayesian_models.core import NeuralNetCoreComponent
 from bayesian_models.data import Data
-from bayesian_models.models import Layer
 from bayesian_models.utilities import powerset, dict_powerset
 from bayesian_models.data import Data
 
