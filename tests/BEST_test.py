@@ -251,7 +251,7 @@ class TestBESTModel(unittest.TestCase):
         sig = results["Δσ"].loc[:,"Significance"]
         self.assertTrue( Δμ.iloc[0]-ref_val_mu <= ε)
 
-    def test_desition_rule(self):
+    def test_decision_rule(self):
         obj = BEST()(self.df, "group")
         obj.fit(tune=1000, draws=2000, chains=2,
                 progressbar=False)
@@ -403,3 +403,12 @@ class TestBESTModel(unittest.TestCase):
             std_difference=True, effect_magnitude=True
             )(df, "target")
         self.assertTrue(True)
+        
+    def test_dev(self):
+        import pandas as pd
+        df = pd.read_excel("origin_only.xlsx", header=[0], index_col=0)
+        obj = BEST()(df, "Origin")
+        idata = obj.fit()
+        results = obj.predict(ropes=[(-.1,.1)], hdis=[.95])
+        results = results["Δμ"]
+        print("Hi")
