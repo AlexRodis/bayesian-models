@@ -1454,14 +1454,14 @@ class BEST(BESTBase):
             warn(("Length of variables, ropes and hdis not equal. The"
                   " shortest value will be considered"))
         results=dict()
-        null_interval = interval(0,0)
+        null_interval = interval()
         for var_name, rope,hdi in zip(var_names,ropes, hdis):
             raw_summary = az.summary(self.idata, var_names=[var_name],
             filter_vars='like', hdi_prob=hdi)
-            rope=interval(*rope)
+            rope=interval(rope)
             out=[]
             for idx,row in raw_summary.iterrows():
-                ci=interval(row[2], row[3])
+                ci=interval([row[2], row[3]])
                 if ci in rope:
                     out.append("Not Significant")
                 elif ci & rope != null_interval:

@@ -404,11 +404,3 @@ class TestBESTModel(unittest.TestCase):
             )(df, "target")
         self.assertTrue(True)
         
-    def test_dev(self):
-        import pandas as pd
-        df = pd.read_excel("origin_only.xlsx", header=[0], index_col=0)
-        obj = BEST()(df, "Origin")
-        idata = obj.fit()
-        results = obj.predict(ropes=[(-.1,.1)], hdis=[.95])
-        results = results["Δμ"]
-        print("Hi")
