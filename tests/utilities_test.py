@@ -1,7 +1,7 @@
 import unittest
 import numpy
 import pandas
-from bayesian_models.utilities import tidy_multiindex
+from bayesian_models.utilities import tidy_multiindex, merge_dicts
 
 
 class TestTidyMultiIndex(unittest.TestCase):
@@ -122,4 +122,13 @@ class TestTidyMultiIndex(unittest.TestCase):
         
         self.assertTrue(
             all(ind==ndf.index) and all(cols==ndf.columns)
+        )
+        
+    def test_dict_merge(self):
+        d1:dict = dict(foo=1)
+        d2:dict = dict(bar=5)
+        d3:dict = dict(baz="Hello")
+        d4:dict = dict(fizz = (1,2))
+        self.assertTrue(
+            merge_dicts(d1, d2, d3, d4)==d1|d2|d3|d4
         )

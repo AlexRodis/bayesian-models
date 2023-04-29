@@ -21,10 +21,11 @@ import  pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Optional, Union, Any, Hashable, Iterable, Type
-from typing import Callable, NamedTuple
+from typing import Callable, NamedTuple, Sequence
 from .typing import ndarray, InputData, SHAPE, DIMS, COORDS
 from .typing import AXIS_PERMUTATION
 from dataclasses import dataclass, field
+from bayesian_models.utilities import merge_dicts
 
 
 
@@ -626,8 +627,20 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                 the structure to the specified data type. Returns a
                 fresh DataStrcture object
             
-            - | unique(axis:Optional[int]=None)->NDArrayStructure
-                := Return unique values in the structure. If axis is provided, unique values over the specified axis are returned. Else unique values over the entire structure are returned.  Is a Generator that yields unique values. If :code:`axis=None` the Generator yields a single tuple of the form `(None, vals)` where :code:`vals` is numpy vector of unique elements in the entire structure. If axis is provided, iterates over the specified axis yielding tuples of the form `(coordinate_label, vals)` where :code:`coordinate_label` is the label coordinate of the current iteration. :code:`vals` is a numpy vector of unique values in the resulting sub structure. Loosely equivalent to:
+            - | unique(axis:Optional[int]=None)->NDArrayStructure :=
+                Return unique values in the structure. If axis is
+                provided, unique values over the specified axis are
+                returned. Else unique values over the entire structure
+                are returned.  Is a Generator that yields unique values.
+                If :code:`axis=None` the Generator yields a single tuple
+                of the form `(None, vals)` where :code:`vals` is numpy
+                vector of unique elements in the entire structure. If
+                axis is provided, iterates over the specified axis
+                yielding tuples of the form `(coordinate_label, vals)`
+                where :code:`coordinate_label` is the label coordinate
+                of the current iteration. :code:`vals` is a numpy vector
+                of unique values in the resulting sub structure. Loosely
+                equivalent to:
             
                 .. code-block::
                 
@@ -636,7 +649,8 @@ class NDArrayStructure(DataStructure, UtilityMixin):
                         while True:
                             try:
                                 crd = struct.coords[axis][i]
-                                vals = numpy.unique(struct.transpose(axis)[i,...])
+                                vals = numpy.unique(struct.transpose(
+                                    axis)[i,...])
                                 yield crd, vals
                             except KeyError:
                                 raise StopIteration
@@ -3042,8 +3056,214 @@ class CommonDataProcessor(DataProcessor):
         _data = self._cast_data(_data)
         return _data
     
+@dataclass(slots=True)
+class LCMProcessor(CommonDataProcessor):
+    r'''
+        Specialized preprocessor unit for the Linear Coregionalization
+        (LCM) model.
+        
+        The Linear and Intrinsic Coregionalization models have
+        specialized requirements for data handling and reshaping. In
+        general, these models accept multiple inputs and outputs, of the
+        form:
+        
+        .. math::
+        
+            \begin{array}{c}
+            \mathcal{Y} = {\mathbf{\overset{N_1\times 1}{Y_0}}, 
+            \mathbf{\overset{N_1 \times 1}{Y_1}}, \dots,
+            \mathbf{\overset{N_j\times 1}{Y_j}}, \dots, 
+            \mathbf{\overset{N_p\times 1}{Y_p}}}\\
+            \\
+            \mathcal{X} = {\mathbf{\overset{N_1\times M}{X_0}}, 
+            \mathbf{\overset{N_1 \times M}{X_1}}, \dots,
+            \mathbf{\overset{N_j\times 1}{X_j}}, \dots, 
+            \mathbf{\overset{N_p\times M}{X_p}}}\\
+            \end{array}
+        
+        This model accepts two sets of length :math:`p` input/output
+        matrices, where :math:`p` is the number of outputs of the MGP
+        model. Input matrices :math:`\mathbf{\overset{N_j\times
+        M}{X_j}}` must all have the same size of the second axis and but
+        may not have the same size of the second axis. The outputs are
+        matrices :math:`\mathbf{\overset{N_j\times 1}{Y_j}}`, i.e.
+        column vectors.
+        
+        The expected matrix :math:`\mathbf{\overset{\thicksim}{X}}` for
+        the model will be assembled by first horizontally stacking each
+        matrix with a column vector that indexes the output:
+        
+        .. math::
 
+            \mathbf{\overset{\prime}{
+                \overset{\sum N_j \times M+1}{X_j}}
+                } =
+                \begin{pmatrix}
+                    \mathbf{X_j} & \mathbf{(j)_{0}^{N_j}}\\
+                \end{pamtrix}
 
+        Where :math:`\mathbf{(j)_{0}^{N_j}}` is a column vector of the
+        integer :math:`j` repeated :0-N_j: times. These matrices are
+        then stacked vertically to form the final matrix:
+        
+        .. math::
+
+            \mathbf{\overset{\thicksim}{\overset{\sum N_j \times M+1
+            }{X}}} = 
+            \begin{pamtrix}
+                \mathbf{X_0} & \mathbf{0}_0^N_0//
+                //
+                \mathbf{X_1} & \mathbf{1}_0^N_1//
+                //
+                \dots\\
+                \\
+                \mathbf{X_j} & \mathbf{j}_0^N_j//
+                //
+                \vdots
+                \\
+                \mathbf{X_p} & \mathbf{p}_0^N_p//
+                //
+            \end{pmatrix}
+        
+        If all groups have the same number of observations, then the
+        matrices :math:`\mathbf{Y}_j` may be left as if. Alternatively
+        they need to be stacked vertically producing the matrix
+        :math:`\overset{\thicksim}{\mathbf{Y}}` as follows:
+        
+        .. math::
+
+            \mathbf{\overset{\thicksim}{\overset{\sum N_j \times 1
+            }{Y}}} = 
+            \begin{pamtrix}
+                \mathbf{Y_0}//
+                //
+                \mathbf{Y_1}//
+                //
+                \dots\\
+                \\
+                \mathbf{Y_j}//
+                //
+                \vdots
+                \\
+                \mathbf{Y_p}//
+                //
+            \end{pmatrix}
+            
+        This object inherits from and extends the functionality of
+        :code:`CommonDataProcessor`. All matrices will be preprocessed
+        by this general processor
+            
+        Object Attributes:
+        ==================
+        
+            - | multivariate:bool=False := If :code:`True` will attempt
+                stack the outputs as well
+                
+        Object Private Attributes:
+        ========================== 
+        
+            - | _input_dims:Optional[int]= None := The size of the
+                second axis of the inputs. Once set, all further
+                matrices should have size :code:`M` in their second axis
+                
+            - | _n_obs:Optional[Sequence[int]] := A collection of the
+                sizes of the first axis of the matrices. Each pair or
+                inputs/outputs must have the same size of the first axis
+                
+            - | _common_obs:bool=Optional[False] := Signals of the
+                number of observations matches across all processes
+                
+            - | _n_outputs:Optional[int] := Dimensionality of the
+                output. Infered from the length of input and output
+                sets. Both sets must have the same length
+                
+        The following attributes are ineherited from :code:`CommonDataProcessor`:
+        
+               
+        Object Attributes:
+        ===================
+        
+            - | nan_handler:NANHandlerContext := The missing values
+                handler. Optional. Defaults to ExcludeMissingNAN.
+                Initially a ref to the context class, will be replaced
+                by a instance of that class.
+            
+            - | cast:Optional[np.dtype]=None := Attempt to forcefully
+                cast all inputs to the specified type. Optional.
+                Defaults to :code:`np.float32`. Setting this to
+                :code:`None` will disable typecasting
+            
+            - | type_spec := Schema to validate. Not implemented and
+                will be ignored
+            
+            - | casting_kwargs:dict={} := Keyword arguements to be
+                forwarded to the underlying typecaster. See numpy for
+                details. Defaults to an empty dict.
+                
+            .. danger::
+            
+                Typecasting is not fully implemented due to the
+                limitations of numpy arrays (they are homogenuous
+                structures, whereas pandas DataFrames are not). Use this
+                option only to cast the entire structure to a certain
+                dtype
+                
+        See the :code:`CommonDataProcessor` docstring for more
+        information
+    '''
+    
+    multivariate:bool=False
+    _input_dims:Optional[int]= field(
+        init=False,  repr=True, default=None
+    )
+    _n_obs:Optional[Sequence[int]]=field(
+        default=None, repr=True, init=False)
+    _common_obs:Optional[bool]= field(
+        default=None, repr=True, init=False 
+    )
+    _n_outputs:Optional[int]=field(
+        repr=True, default=None, init=False
+    )
+    processor:Optional[Callable]=field(
+        repr=False, init=False, default=None
+    )
+    
+    def __post_init__(self):
+        r'''
+            Initialize the base processor
+        '''
+        # Create a handle for data preprocessing
+        self.processor = super(LCMProcessor, self).__call__
+    
+    def _check_data_(self, Xs, Ys)->None:
+        r'''
+            Examine the data dimensionality
+        '''
+        from functools import reduce
+        from itertools import pairwise
+        
+        # Extract size of i-th axis of array-like iterable it
+        ext_dims = lambda it,i : map(lambda e: e.shape[i], it)
+        # Jointly iterate over the i-th axis two array-like iterables
+        # it1 and it2
+        dim_ziper = lambda it1, it2,i: zip(
+            ext_dims(it1,i), ext_dims(it2, i) 
+            )
+        pair_eq = lambda e:e[0]+e[1]
+        pequal = lambda it: all(map(pair_eq, pairwise(it)))
+        
+        
+        if len(Xs)!=len(Ys):
+            raise ValueError((
+                "Number of input and output matrices must be equal. "
+                f"Received {len(Xs)} input structures and {len(Ys)} "
+                "output structures"
+            ))
+        
+    
+    def __call__(Xs:Sequence, Ys:Sequence):
+        pass
+    
 @dataclass(kw_only=True)
 class DataProcessingDirector:
     r'''
@@ -3087,6 +3307,10 @@ class DataProcessingDirector:
         if self.processor is not None:
             return self.processor(data) #type:ignore
 
+# This is basically an Facade for the underlying processor. However it
+# is too strongly coupled with the CommonDataProcessor. Need to be
+# reimplemented in a more modular fashion. This can also be a dataclass
+# or use slots instead
 
 class Data:
     r'''
@@ -3152,7 +3376,7 @@ class Data:
                  processor:Type[DataProcessor] = \
                      CommonDataProcessor,
                  cast:Any = np.float32, type_spec:dict = {},
-                 casting_kwargs:dict = {}, 
+                 casting_kwargs:dict = {}, **kwargs
                  )->None:
         
         if nan_handling not in Data.nan_handlers:
@@ -3167,6 +3391,7 @@ class Data:
         self.process_director:Optional[DataProcessingDirector] = None
         self.type_spec = type_spec
         self.casting_kwargs = casting_kwargs
+        self.kwargs = kwargs
     
     def __call__(self,data:InputData)->CommonDataStructureInterface:
         r'''
@@ -3212,15 +3437,16 @@ class Data:
                               "Valid options are 'ignore', 'impute' "
                               "and 'exclude'. Received "
                               f"{self.nan_handling} instead"))
-            
+        generic_args:dict = dict(
+                cast = self.cast,
+                type_spec = self.type_spec,
+                casting_kwargs = self.casting_kwargs,
+                               )
+        all_args:dict = merge_dicts(generic_args, self.kwargs)
         self.process_director = DataProcessingDirector(
             processor = self.data_processor,
             nan_handler_context = self.nan_handler,
-            processor_kwargs = dict(
-                cast = self.cast,
-                type_spec = self.type_spec,
-                casting_kwargs = self.casting_kwargs
-                               )
+            processor_kwargs = all_args
             )
         return self.process_director(data)
         

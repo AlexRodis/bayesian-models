@@ -16,7 +16,7 @@
 
 import pymc as pm, pymc
 import typing
-from typing import Any, Union, Callable, Optional
+from typing import Any, Union, Callable, Optional, Sequence, Type
 from abc import ABC, abstractmethod
 import pandas as pd
 import numpy as np
@@ -25,25 +25,48 @@ import arviz as az
 import pytensor
 from interval import interval
 from bayesian_models.math import ELU, GELU, SiLU, SWISS, ReLU
-from bayesian_models.core import ModelDirector
+from bayesian_models.core import ModelDirector, GPLayer
 from bayesian_models.core import LikelihoodComponent, distribution
 from bayesian_models.core import Distribution, ResponseFunctions
-from bayesian_models.core import BESTCoreComponent
+from bayesian_models.core import BESTCoreComponent, GaussianSubprocess
 from bayesian_models.core import ResponseFunctionComponent
+from bayesian_models.core import CoreModelComponent
+from bayesian_models.core import FreeVariablesComponent
+from bayesian_models.core import ModelAdaptorComponent
+from bayesian_models.core import GaussianProcessCoreComponent
+from bayesian_models.core import GPProcessor, FullProcessor, ContextVars
 from bayesian_models.data import Data
+from bayesian_models.utilities import merge_dicts
 from dataclasses import dataclass, field
 from warnings import warn
+import inspect
 
 __all__ = (
         'BayesianModel',
         'BayesianEstimator',
         'BEST',
+        'GaussianProcess'
         'ReLU',
         'GELU',
         'ELU',
         'SWISS',
         'SiLU',
         )
+
+
+def context(func, *args, **kwargs):
+    r'''
+        Insert docstring here
+    '''
+    
+    def wrapper(*args, **kwargs):
+        import inspect
+        # Before
+        self = func(*args)
+        self._p
+        return self
+    
+    return wrapper
 
 
 class BayesianModel(ABC):
@@ -75,7 +98,7 @@ class BayesianModel(ABC):
                 simple, and predictive models, that accept some input
                 information and attempt to predict some output quantity,
                 the inputs should be declared as mutable shared tensors
-                `pymc.Data(name, X, mutable=True)` and the
+                :code:`pymc.Data(name, X, mutable=True)` and the
                 :code:`predict` method should invoke
                 :code:`pymc.set_data(inputs)` to replace the input
                 tensor with a new one. For other special cases see the
@@ -506,7 +529,7 @@ class BESTBase:
     ddof:int = 1
     std_diffusion_factor:int = 2
     zero_offset:float = 1e-4
-    jax_device:str = 'gpu'
+    jax_device:str = 'cpu'
     jax_device_count: int =1
 
 @dataclass(slots=True)
@@ -514,7 +537,7 @@ class BEST(BESTBase):
     r'''
         Bayesian Group difference estimation with pymc.
         
-        Kruschke's `Bayesian Estimation Superceeds the t-Test (BEST)        <https://pubmed.ncbi.nlm.nih.gov/22774788/>`_ model
+        Kruschke's `Bayesian Estimation Supersedes the t-Test (BEST)        <https://pubmed.ncbi.nlm.nih.gov/22774788/>`_ model
         implementation for estimating differences between groups. The
         implementation is based on the `official pymc documentation
         <https://www.pymc.io/projects/examples/en/latest/case_studies/BEST.html>`_.
@@ -1566,6 +1589,609 @@ class BEST(BESTBase):
             raise RuntimeError("Cannot plot trace. Model is untrained")
         
         return az.plot_trace(self.idata, *args, **kwargs)
+    
+    def save(self, save_path:Optional[str]=None, 
+             method:str='netcdf')->None:
+        r'''
+            Save the model object for later reuse
+            
+            Available save methods are 'netcdf' and 'pickle'. The latter
+            is discouraged and has known problems. For the 'netcdf'
+            method the posterior trace will be saved.
+            
+            .. caution::
+            
+                At present, no checks are being made to verify that the posterior is compatible with the model object
+                
+            Args:
+            -----
+            
+                - | save_path:Optional[str] := The file path to save the
+                    model to. If :code:`save_path` has been provided at
+                    model initialization, need not be provided
+                    
+                - | method:str='netcdf' := Which method to use to save
+                    the model. For the 'netcdf' method, only the
+                    posterior trance is save and consequently reloaded.
+                    For the 'pickle' method, attempts to serialize the
+                    entire model. The latter case should be avoided
+                    
+            Returns:
+            --------
+            
+                - None
+        '''
+        spath = save_path if save_path is not None else self.save_path
+        self._io_handler.save(spath, method=method)
+    
+    def load(self, save_path:Optional[str]=None)->None:
+        r'''
+            Load a pre trained model from the disk
+            
+            Only meaningful for models saved with the 'netcdf' method.
+            Otherwise, use 'pickle' directly instead
+            
+            .. caution::
+            
+                Not checks are being made that the posterior trace is compatible with model object
+            
+            Args:
+            -----
+            
+                - | save_path:Optional[str] := File path to load the
+                    model from. If :code:`save_path` has been provided
+                    at object initialization, it can be ignored
+                    
+            Returns:
+            --------
+            
+                - None
+        '''
+        self._io_handler.load(save_path)
+
+
+@dataclass(slots=True)
+class GaussianProcess(ContextVars, BayesianEstimator):
+    r'''
+        General Gaussian Process model
+        
+        Common types of Gaussian Processes supported are:
+        
+        - Basic Gaussian Processes
+        - Deep Gaussian Processes
+        - Multi Output Gaussian Processes
+        - Gaussian Processes with Separable kernels
+        - Intrinsic Coregionalization Gaussian Processes
+        
+        Example usage:
+        
+        .. code-block:: python
+        
+            obj = GaussianProcess(
+                [
+                    GPLayer()
+                ]
+            )
+        
+    
+        Object Attributes:
+        ------------------
+        
+            - | layers:Sequence[GPLayer] := A sequence of
+                :code:`GPLayer` instances representing the layers of the
+                GP model. For non-deep gaussian processes a single layer
+                object can be used
+                
+            - | likelihood:LikelihoodComponent := A component defining
+                the likelihood of the mode and how the (possibly latent)
+                GP maps to the likelihood
+            
+            - | save_name:Optional[str]=None := A string specifying
+                location and filename to save the model's inference
+                results. Optional. If set during objects' construction,
+                the :code:`save` method may be called without an
+                explicit :code:`save_path` argument.
+            
+            
+            - | idata:Optional[arviz.InferenceData]=None :=
+                :code:`arviz.InferenceData` object containing the
+                results of model inference. Becomes set after calling
+                the :code:`fit` method
+            
+            - | trained:bool=False := Sentinel signaling whether the
+                model has been trained or not. Defaults to False. Should
+                be switched on after calling :code:`fit`. Prevents
+                :code:`predict` from being called on an object that has
+                not been trained.
+
+            - | initialized:bool=False := Sentinel signaling whether the
+                model has been full initialized. Defaults to False.
+                Should be set after the object is called. Prevents
+                :code:`fit` and :code:`predict` from being called prior
+                to complete initialization.
+                
+            - | nan_handling:str='exclude' := Strategy for handling
+                missing values in the data. Options are 'exclude'
+                (default) and 'impute' (not implemented)
+                
+            - | cast:Optional[numpy.dtype]=None := Data type to cast the
+                input data to. Set to :code:`None` to disable casting
+                (default)
+                
+            - | data_processor:Optional[Data]=None := A data
+                preprocessor class which handles data preprocessing.
+                Optional. Defaults to
+                :code:`bayesian_models.data.CommonDataProcessor`
+                
+            - | nan_present_flag:Optional[bool]=None := Flag for the
+                presence of missing values in the input data.
+                :code:`None` means, unset. The data processor updates
+                this value
+                
+            - | reindex_layers:bool=True := If :code:`True` assumes the
+                user did not explicitly index the layers and will
+                reindex them as :code:`(0,1,...)`. If :code:`False` the
+                user should explicitly provide unique indices for the
+                layers as integers. Example:
+                
+                .. code-block:: python
+                
+                    # Implicit indices. Will be set to 0, 1
+                    implicit_layers = [
+                        GPLayer([
+                            GaussianSubprocess(
+                                kernel = pm.gp.cov.ExpQuad,
+                                kernel_hyperparameters = dict(
+                                    ls = distribution(
+                                        pm.HalfCauchy, 'λ', 2
+                                    )
+                                    ),
+                                mean = pm.gp.mean.Zero,
+                                index = (0,i),
+                            ) for i in range(10)
+                            ]),
+                            
+                            GPLayer([
+                            GaussianSubprocess(
+                                kernel = pm.gp.cov.ExpQuad,
+                                kernel_hyperparameters = dict(
+                                    ls = distribution(
+                                        pm.HalfCauchy, 'λ', 2
+                                    )
+                                    ),
+                                mean = pm.gp.mean.Zero,
+                                index = (0,i),
+                            ) for i in range(10)
+                            ]),
+                    ]
+                    # Explicit indices
+                    expicit_layers = [
+                        GPLayer([
+                            GaussianSubprocess(
+                                kernel = pm.gp.cov.ExpQuad,
+                                kernel_hyperparameters = dict(
+                                    ls = distribution(
+                                        pm.HalfCauchy, 'λ', 2
+                                    )
+                                    ),
+                                mean = pm.gp.mean.Zero,
+                                index = (0,i),
+                            ) for i in range(10)
+                            ],
+                            layer_index=100
+                            ),
+                            
+                            GPLayer([
+                            GaussianSubprocess(
+                                kernel = pm.gp.cov.ExpQuad,
+                                kernel_hyperparameters = dict(
+                                    ls = distribution(
+                                        pm.HalfCauchy, 'λ', 2
+                                    )
+                                    ),
+                                mean = pm.gp.mean.Zero,
+                                index = (0,i),
+                            ) for i in range(10)
+                            ],
+                            layer_index=-998
+                            ),
+                    ]
+                
+                
+        Private Attributes:
+        ===================
+
+            - | coords := dict-like of dimension labels :code:`xarray`
+                coords. Will be inferred from inputs and used to
+                label the posterior
+
+            - | _model:Optional[pymc.Model] := The :code:`pymc.Model`
+                object
+            
+            - | _io_handler:Optional[ModelIOHandler] := Handler for
+                model saving and loading. Defaults to
+                :code:`bayesian_models.core.ModelIOHandler`
+                
+            - | _divergence_handler:Optional[ConvergencesHandler] :=
+                Handler for MCMC convergence validation. Optional.
+                Defaults to :code:`ConvergencesHandler`
+        
+    '''
+    layers:Optional[Sequence[GPLayer]] = None
+    likelihoods_component:Optional[
+        list[LikelihoodComponent]
+        ] = field(default=None)
+    _conditional_likelihoods:Optional[
+        list[LikelihoodComponent]
+        ] = field(default=None)
+    adaptor_component:Optional[ModelAdaptorComponent] = field(
+        default=None)
+    _conditional_adaptor:Optional[ModelAdaptorComponent] = field(
+        default=None)
+    responses_component:Optional[
+        ResponseFunctionComponent
+        ] = field(default=None)
+    _conditional_responses:Optional[
+        ResponseFunctionComponent
+        ] = field(default=None)
+    free_variables_component:Optional[
+        FreeVariablesComponent
+        ] = field(default=None)
+    gaussian_processor:Type[GPProcessor] = field(
+        init=True, repr=True, default=FullProcessor
+        )
+    reindex_layers:bool = True
+    _builder:ModelDirector = ModelDirector
+    nan_handling:str = field(
+        init=True, default_factory = lambda : 'exclude')
+    cast:Optional[np.dtype] = field(
+        init=True, default_factory = lambda : None)
+    variables:dict = field(default_factory=dict)
+    _core_component:Optional[GaussianProcessCoreComponent] = field(
+        repr=False, default = None)
+    _data_dimentions:Any = field(init=False, 
+                                 default_factory=lambda : None)
+    _ndims:Any = field(init=False, default_factory=lambda : None)
+    _coords:Any = field(init=False, default_factory=lambda : None)
+    _idata:Optional[az.InferenceData] = field(
+        init=False, default_factory=lambda : None)
+    _data_processor:Optional[Data] = field(
+        default_factory = lambda : None
+        )
+    _model:Optional[pymc.Model] = field(
+        init=False, default_factory=lambda : None)
+    _io_handler:Optional[ModelIOHandler] = field(
+        init=False, default=None
+    )
+    _divergence_handler:Optional[ConvergencesHandler] = field(
+        init=False, default=None
+    )
+    _initialized:Optional[bool] = field(default_factory=lambda : False)
+    _trained:Optional[bool] = field(default_factory=lambda : False)
+    save_path:Optional[str] = field(
+        init=True, default = None)
+    nan_present_flag:Optional[bool] = field(
+        init=False, default_factory=lambda :None)
+    _n_inputs:Optional[int] = field(repr=False, 
+                                    init=False, 
+                                    default=None)
+    _n_outputs:Optional[int] = field(repr=False,
+                                     init=False,
+                                     default=False)
+    _initialized_conditional:bool= field(
+        repr=False, init=False, default=False
+    )
+    _posterior_trace:Optional[az.InferenceData] = field(
+        init=False, repr=False, default=None
+    )
+    
+    def _set_output_layer(self):
+        r'''
+            Inform the final layer of its status
+            
+            Updates the :code:`output_layer=True` attribute of the last
+            layer specified, so it's output can be correctly labeled 'f'
+        '''
+        self.layers[-1].output_layer = True
+        
+    def _set_processor_(self)->None:
+        r'''
+            Update layers and subprocesses with the specified processor
+        '''
+        for layer in self.layers:
+            layer.gaussian_processor = self.gaussian_processor
+        
+    
+    def __post_init__(self)->None:
+        r'''
+            Post init actions
+            
+            Initialize handler objects and validate options
+        '''
+        super(GaussianProcess, self).__init__()
+        sentinel:bool = self.layers is None or \
+            self.likelihoods_component is None
+        if not sentinel:
+            self._data_processor = Data(
+                nan_handling = self.nan_handling,
+                cast = self.cast,
+            )
+            self._io_handler = ModelIOHandler(
+                _save_path = self.save_path
+            )
+            self._divergence_handler = ConvergencesHandler()
+            # Inform the output layer of it's status so it can correctly
+            # label its output `TensorVariable` as 'f' instead of 'f[i]'
+            self._set_output_layer()
+            nada, nres = self._duplicate_components()
+            self._set_processor_()
+            self._conditional_adaptor = nada
+            self._conditional_responses = nres
+            self._conditional_likelihoods = [
+               LikelihoodComponent(
+                   distribution = likelihood.distribution,
+                   var_mapping = {
+                       k:f"{v}_star" for k,v in \
+                           likelihood.var_mapping.items()
+                   }                   
+                   ) for likelihood in self.likelihoods_component
+            ]
+            # Inform the layers of the type of gp to run
+            for layer in self.layers:
+                layer._set_processors_(self.gaussian_processor)
+
+    @property
+    def coords(self)->Optional[dict[str,Any]]:
+        return self._coords
+    @coords.setter
+    def coords(self, val:dict[str, Any])->None:
+        self._coords = val
+
+    @property
+    def idata(self)->Optional[az.InferenceData]:
+        return self._idata
+
+    @idata.setter
+    def idata(self, val:az.InferenceData)->None:
+        self._idata = val
+
+    @property
+    def model(self)->Optional[pymc.Model]:
+        return self._model
+
+    @model.setter
+    def model(self, val:pymc.Model)->None:
+        self._model = val
+        
+    @property
+    def trained(self)->bool:
+        return self._trained
+
+    @trained.setter
+    def trained(self, val:bool)->None:
+        self._trained = val
+
+    @property
+    def initialized(self)->bool:
+        return self._initialized
+
+    @initialized.setter
+    def initialized(self, val:bool)->None:
+        self._initialized = val
+    
+    def _from_context_mngr(self):
+        r'''
+            Εxtracts model variables from context variables
+        '''
+        self.layers = self._context_vars['layers']
+        self.likelihoods_component = self._context_vars[
+            'likelihoods_component']
+        self.free_variables_component = self._context_vars.get(
+            'free_variables_component'
+        )
+        self.responses_component = self._context_vars.get(
+            'responses_component'
+        )
+        self.adaptor_component = self._context_vars.get(
+            'adaptor_component'
+        )
+        
+    def __call__(self, predictors, targets):
+        # if self._context_init:
+        #     self._from_context_mngr()
+        super(GaussianProcess, self).__call__()
+        self.__post_init__()
+        self._n_inputs = len(predictors)
+        self._n_outputs = len(targets)
+        ppredictors = list(map(
+            self._data_processor, predictors
+        ))
+        ptargets = list(map(
+            self._data_processor, targets
+        ))
+        self.coords = ppredictors[0].coords()
+
+        self._core_component = GaussianProcessCoreComponent(
+            layers = self.layers,
+            predictors = ppredictors,
+            targets = ptargets,
+            )
+        builder = ModelDirector(
+            core_component = self._core_component,
+            likelihood_component = self.likelihoods_component,
+            adaptor_component = self.adaptor_component,
+            response_component = self.responses_component,
+            free_vars_component = self.free_variables_component,
+            coords = self.coords,
+        )
+        builder()
+        self._model = builder.model
+        self.var_names = self._core_component.variables
+        self._io_handler._model = self._model
+        self._io_handler._class = self
+        self.initialized = True
+        self._multiinput = self._core_component._multiinput
+        self._multioutput = self._core_component._multioutput
+        return self
+        
+    @property
+    def posterior_trace(self):
+        return self._posterior_trace
+    
+    @posterior_trace.setter
+    def posterior_trace(self, val:az.InferenceData)->None:
+        self._posterior_trace = val
+    
+    def fit(self, *args,sampler:Callable = pymc.sample ,
+            **kwargs)->az.InferenceData:
+        '''
+            Perform inference and return the posterior
+            
+            Sets the objects :code:`idata` and :code:`trained`
+            attributes. :code:`infer` is an alias for this method
+            
+            Args:
+            =====
+            
+                - | *args:tuple[Any,...] := Optional positional
+                    arguments to forward to the sampler
+                    
+                - | sampler:Callable=pymc.sample := The sampler to used
+                    to perform inference. Optional and defaults to
+                    :code:`pymc.sample`. Other options include
+                    :code:`pymc.sampling.jax.sample_numpyro_nuts` but
+                    have external dependencies
+                
+                - | **kwargs:dict[str, Any] := Optional keyword
+                    arguments to be forwarded to the sampler
+                    
+            Returns:
+            ========
+            
+                - | idata:arviz.InferenceData := The posterior trace as
+                    an :code:`arviz.InferenceData` object
+                    
+            Raises:
+            =======
+
+                - | RuntimeError := If the model has not been
+                    initialized yet
+        '''
+        if not self.initialized:
+            raise RuntimeError((
+                "Cannot run inference, model has not been initialized. "
+                "Ensure you've called the model object before calling "
+                "this method"
+            ))
+        else:
+            with self.model:
+                self.idata = sampler(*args, **kwargs)   
+                self.trained = True             
+        return self.idata
+    
+    
+    infer = fit
+    
+    def _duplicate_components(self):
+        r'''
+            Spawn new adaptor and response components to target
+            predictive GP variables
+            
+            Full bayesian treatment of a GP requires that, for each GP a
+            new variables representing the conditional be spawened.
+            Hence derived variables (results of stacking and concating,
+            transformations and subtensor splits) have be duplicated.
+            The new variables follow the "X_star" naming convention.
+            Wherever a variable was previously named "X" it'conditional
+            version is named "X_star". For example, for a subprocess
+            "f[1,0]" the conditional variable wil be named "f[1,0]_star"
+        '''
+        if self.adaptor_component is not None:
+            vmap:dict = self.adaptor_component.var_mapping
+            new_adaptor = ModelAdaptorComponent(
+                var_mapping = {
+                f"{k}_star":v for k,v in vmap.items()
+                }
+            )
+        else:
+            new_adaptor = None
+        if self.responses_component is not None:
+            og_refs = self.responses_component.responses
+            newfuncs = {
+                f"{k}_star":v for k,v in og_refs.functions.items()
+                }
+            newtargets = {
+                f"{k}_star":f"{v}_star" for k,v in og_refs.application_targets.items()
+            }
+            newrecords = {
+                f"{k}_star":v for k,v in og_refs.records.items()
+            } 
+            new_responses = ResponseFunctionComponent(
+                ResponseFunctions(
+                    functions = newfuncs,
+                    application_targets = newtargets,
+                    records = newrecords,
+                )
+            )
+        else:
+            new_responses = None
+        
+        return new_adaptor, new_responses
+    
+    def condition(self, Xnew):
+        '''
+            Propagate the conditioning process across the structure
+        '''
+        with self.model:
+            self._core_component.condition(
+                Xnew, self._conditional_likelihoods,
+                new_adaptor = self._conditional_adaptor, 
+                new_responses = self._conditional_responses,
+                )
+            
+    def _full_conditional_(self, Xnew, **kwargs):
+        r'''
+            Insert docstring here
+        '''
+        if not self._initialized_conditional:
+                self.condition(Xnew)
+        else:
+            pm.set_data(dict(inputs=Xnew))
+            
+        with self.model:
+            trace = pm.sample_posterior_predictive(
+                self.idata,
+                var_names = ["f_mu_star"],**kwargs )
+        return trace
+    
+        
+    
+    def predict(self, Xnew, method:str='full', **kwargs):
+        r'''
+            Predict on new points in the input space
+        '''
+        if not self.trained:
+            raise RuntimeError((
+                "Cannot predict on new points. Model is untrained. "
+                "Ensure the call and fit methods have been called first"
+            ))
+        # Support predict in the future
+        if method == "full":
+            trace = self._full_conditional_(Xnew, **kwargs)
+            self.posterior_trace = trace
+            return self.posterior_trace
+        else:
+            raise ValueError((
+                "Unrecognized prediction strategy. Expected one of "
+                f"'full' or 'mean' but received {method} instead"
+            ))
+                    
+    def gp_plot(self):
+        r'''
+            Generate the familiar "beads plot" for gaussian processes
+        '''
+        raise NotImplementedError()
+    
     
     def save(self, save_path:Optional[str]=None, 
              method:str='netcdf')->None:

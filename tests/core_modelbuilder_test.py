@@ -30,8 +30,7 @@ from bayesian_models.core import ModelAdaptorComponent
 from bayesian_models.core import ResponseFunctionComponent
 from bayesian_models.core import ResponseFunctions
 from bayesian_models.data import Data
-from bayesian_models.utilities import powerset, dict_powerset
-from bayesian_models.data import Data
+from bayesian_models.utilities import dict_powerset
 
 
 class TestFramework(unittest.TestCase):

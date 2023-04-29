@@ -14,16 +14,25 @@
 #   limitations under the License.
 #
 # This module contains basic functionality for model building and basic
-# machinery the library requires
+# machinery this the library requires
+#
+# TODO: Move type definitions to the typing submodule. Beware of 
+# circular import
 
 from dataclasses import dataclass, field
 from typing import Any, Type, Callable, Optional, Union, Iterable
+from typing import Sequence
 from abc import ABC, abstractmethod
 import pymc
+import pymc as pm
 from collections import defaultdict, namedtuple
 from bayesian_models.data import Data
 from bayesian_models.utilities import extract_dist_shape, invert_dict
-
+from bayesian_models.utilities import merge_dicts, get_wnulldict
+from bayesian_models.data import CommonDataStructureInterface
+import numpy as np
+import pytensor
+from warnings import warn
 
 Response = namedtuple("Response", ["name", "func", "target", "record"])
 Response.__doc__ = r"""
@@ -71,7 +80,7 @@ class Distribution:
         NOTE: For data nodes, the :code:`dist` argument should by the
         function :code:`pymc.Data`
         
-            Example usage:
+        Example usage:
 
         .. code-block:: python
 
@@ -120,8 +129,6 @@ class Distribution:
                 (its result will). Used to offset, and manipulate core distributions. Optional. Defaults to :code:`None`
     
     '''
-    
-    
     name:str = ''
     dist:Union[Type[
         pymc.Distribution], Type[Callable]
@@ -177,6 +184,145 @@ def distribution(dist:pymc.Distribution,name:str,
     return Distribution(dist = dist, name = name,
                         dist_args = args, dist_kwargs = kwargs,
                         dist_transform = transform)
+
+ScalarModelParameter = Union[float, int]
+ModelParameter = Union[Distribution, ScalarModelParameter]
+
+
+class InstanceMethod:
+    r"""
+        Class for hiding references to instance methods so they can be
+        pickled.
+        Example usage:
+        
+        .. code-block:: python
+            self.method = InstanceMethod(some_object, 'method_name')
+
+        Original implementation by :code:`pymc`
+    """
+
+    def __init__(self, obj, method_name):
+        self.obj = obj
+        self.method_name = method_name
+
+    def __call__(self, *args, **kwargs):
+        return getattr(self.obj, self.method_name)(*args, **kwargs)
+
+class AlternateContext(object):
+    r"""
+        Alternate implementation for object which use context managers
+        as alternate initializers. 
+        
+        This is a thread local variable implementation and is thread
+        safe, but will only work with custom objects. The objects should
+        call :code:`AlternateContext.get_context()` to fetch the
+        innermost context object and then register themselves to it. To
+        use, context user objects should subclass this class
+        
+        Implementation originally from :code:`pymc`. Modified by
+        removing configuration related code
+    """
+    import threading
+    
+    contexts = threading.local()
+
+    def __enter__(self):
+        type(self).get_contexts().append(self)
+        return self
+
+    def __exit__(self, typ, value, traceback):
+        type(self).get_contexts().pop()
+
+    @classmethod
+    def get_contexts(cls):
+        # no race-condition here, cls.contexts is a thread-local object
+        # be sure not to override contexts in a subclass however!
+        if not hasattr(cls.contexts, 'stack'):
+            cls.contexts.stack = []
+        return cls.contexts.stack
+
+    @classmethod
+    def get_context(cls):
+        """Return the deepest context on the stack."""
+        try:
+            return cls.get_contexts()[-1]
+        except IndexError:
+            raise TypeError("No context on context stack")
+    
+
+class ContextVars:
+    r'''
+        Coop inheritance mixin class for classes that use context
+        managers are alternate initializers
+    '''
+    
+    def __init__(self):
+        self._pre_context_vars:Optional[dict[str,Any]]=None
+        self._context_init:bool = False
+        self._context_vars:Optional[dict[str,Any]]=None
+    
+    @abstractmethod
+    def _from_context_mngr(self):
+        raise NotImplementedError()
+    
+    def __enter__(self):
+        r'''
+            Collect all variable definitions in the caller's namespace
+            so that the context specific ones can be extracted.
+            
+            Jumps on stack frame backwards and extract a copy of the
+            local namespace
+        '''
+        import inspect 
+        self._context_init = True
+        namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
+
+        self._pre_context_vars = {
+            k:v for k,v in namespace.items()
+        }
+        return self
+    
+    # Maybe a decorator here ?
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        r'''
+            Extract the changes in callers namespace before and after
+            the context manager was opened. 
+            
+            Jumps a single stack frame backwards in the call stack,
+            extracts the differences in the local namespace and sets the
+            :code:`_post_context_vars` and :code:`_context_vars`
+            attributes
+        '''
+        if exc_val is None:
+            import inspect
+            # Stack hopping isn't thread safe ?
+            namespace:dict[str, Any] = inspect.currentframe().f_back.f_locals
+            post_context_vars = {
+                alias: var_obj for alias, var_obj in namespace.items()
+            }
+            # Extract changed variables
+            changed_names:dict[str, Any] = {
+                k1:v1 for (k1, v1), (k2, v2) in zip(
+                    post_context_vars.items(), 
+                    self._pre_context_vars.items()
+                ) if (k1!=k2 or k2 is None) and (v1!=v2)
+            }
+            # Extract new variable names
+            new_names:dict[str, Any] = set(
+                post_context_vars.keys()
+                )-set(self._pre_context_vars.keys())
+            new_namespace:dict[str, Any] = {
+                k:post_context_vars[k] for k in new_names
+            }
+            self._context_vars = merge_dicts(changed_names, 
+                                             new_namespace)
+            return self
+        else:
+            raise exc_type(exc_val)
+        
+    def __call__(self)->None:
+        if self._context_init:
+            self._from_context_mngr()
 
 @dataclass(slots=True)
 class FreeVariablesComponent:
@@ -555,8 +701,7 @@ class ResponseFunctionComponent:
                     f"{response.target}. Variable {response.target} not "
                     "found on the model"
                 ))
-            
-    
+                
 @dataclass(kw_only=True, slots=True)
 class ModelAdaptorComponent:
     '''
@@ -636,8 +781,6 @@ class ModelAdaptorComponent:
             else:
                 v = func(output)
             self.variables[new_var] = v
-
-
 
 @dataclass(kw_only=True, slots=True)
 class LikelihoodComponent:
@@ -1416,6 +1559,7 @@ class ModelDirector:
                 free_vars_component = FreeVariablesComponent(),
                 adaptor_component = ModelAdaptorComponent(),
             )
+            
         Object Attributes:
         -------------------
         
@@ -1467,3 +1611,2069 @@ class ModelDirector:
     @property
     def model(self)->Optional[pymc.Model]:
         return self.builder.model
+    
+class GPProcessor(ABC):
+    r'''
+        Abstract base class for Gaussian Process inference
+        
+        Concrete subclasses should call the appropriate GP API and
+        induce priors on it. For example:
+        
+        .. code-block::
+        
+            import pymc as pm
+            with pm.Model() as model:
+                ...
+                gp = pm.Latent(cov_func=...)
+                f = gp.prior('f', Xnew)
+                # Other implementations pm.gp.Marginal
+                # pm.gp.MarginalSparse pm.gp.HSGP, pm.gp.LatentKron etc
+                
+        Concrete implementations are various approximations. Only full
+        MCMC and Hilbert Space Gaussian Process approximations are
+        implemented, as the :code:`Marginal` API and that of its sparse
+        approximations diverge too greatly from the general
+        :code:`Latent` API.
+    '''
+    
+    approximations:set[str] = {'HSGP', 'Full'}
+    
+    @property
+    @abstractmethod
+    def approximation(self):
+        raise NotImplementedError()
+    
+    @abstractmethod
+    def __call__(self):
+        raise NotImplementedError()
+
+class FullProcessor(GPProcessor):
+    r'''
+        Implementor class for Full gaussian processes with MCMC
+        
+        Expected types of processes here are Latent Gaussian Processes
+        
+        Object Attributes:
+        -------------------
+
+            - | approximation:str='Full' := Approximation type
+            
+            - | mean_func:pymc.gp.mean.Mean := The processes mean
+                function
+                
+            - | process:pymc.gp := The type of Gaussian Process
+                implementation to use. For Full Processes, accepted
+                values are :code:`pymc.gp.Latent` (most general)
+                
+            - | cov_func:pymc.gp.cov.Covariance := The processes
+                covariance function, i.e. kernel function
+                
+            - | mean_params:dict[str, Distribution] := Parameters of the
+                mean function. Passed as a dictionary mapping keyword
+                argument names to Distribution objects (or numbers)
+                representing priors for the parameter.
+                
+                Example usage:
+                
+                    .. code-block:: python
+                    
+                        DISTRIBUTION = bayesian_models.core.Distribution
+                        mean_func = pm.gp.mean.Constant
+                        mean_params:dict[str, DISTRIBUTION] = {
+                            c = distribution(
+                                pymc.Normal, 'c', 0, sigma=1
+                            )
+                        }
+                
+            - | kernel_params:dict[str, Distribution] := Parameters of
+                the kernel function. Passed as a dictionary mapping
+                keyword argument names to Distribution objects (or
+                numbers) representing priors for the parameter
+                
+                Example usage:
+                    
+                    .. code-block:: python
+                    
+                        DISTRIBUTION = bayesian_models.core.Distribution
+                        kernel = pm.gp.cov.ExpQuad
+                        kernel_params:dict[str,DISTRIBUTION] = dict(
+                            ls = distribution(
+                                pm.HalfCauchy, 'ls', 2, 
+                            )
+                        )
+                
+            - | pname:str := Name for the random variable representing
+                the output of the process. By default it is
+                :code:`'f[i,j]'` where i,j are layer/subprocess indexers
+    
+        Object Methods:
+        ---------------
+        
+            - | __call__(data)->tuple := Insert the gp random variable
+                to the model and induce a prior on it. Returns the gp
+                object and the random variable representing the output.
+                The first item return is the :code:`Latent` instance,
+                the second is the reference to the random variable
+                created, representing the prior
+    '''
+    approximation:str = 'Full'
+    
+    __slots__ = ('mean_func', "cov_func", "pname", "kernel_params",
+                 "mean_params")
+    
+    def __init__(self, mean_func, cov_func, 
+                    mean_params,pname)->None:
+        self.mean_func = mean_func
+        self.cov_func = cov_func
+        self.pname = pname
+        self.mean_params = mean_params
+        self.process = pm.gp.Latent
+        
+    def __call__(self, data):
+        r'''
+            Define the gaussian process and induce a prior on it.
+            
+            Assumes a :code:`pymc.Model` stack is open
+            
+            Args:
+            -----
+            
+                - | data:pytensor.TensorVariable := Observed data for
+                    the process. Should be a :code:`pm.ConstantData` :code:`TensorVariable` object
+                    
+            Returns:
+            -------
+            
+                - | process:tuple[process, output_tensor] := A tuple
+                    with a reference to the gaussian process object and
+                    the output (after inducing a prior on it)
+        '''
+        gp = self.process(
+            mean_func = self.mean_func(**self.mean_params),
+            cov_func= self.cov_func,
+            )
+        f = gp.prior(self.pname, data)
+        return gp, f
+
+
+class HSGP(GPProcessor):
+    r'''
+        Implementor class for Hilbert Space Gaussian Process
+        approximations
+        
+        The approximation operates on a subspace of the general input
+        space :math:`\reals^d`, usually  denoted :math:`\Omega` which is
+        defined as :math:`[-L,L]` for some positive :math:`L`. :math:`L`
+        is usually called the boundary. This approximation is applicable
+        to arbitrarily complex models (not requiring the assumption of a
+        Normal likelihood with additive noise) but requires the
+        specified kernel to have a spectral density. The approximation
+        subspace should include all output training points, thus it can
+        be expressed as:
+        
+        .. math::
+        
+            \begin{array}{c}
+                S = max(x_i)\\
+                \\
+                L = cS,\ c>0
+                \\
+            \end{array}
+        
+        Where :math:`c` is called the proportional extension factor with
+        typical values up to :math:`c=1.2`. This is a linear
+        approximation based on basis functions in the subspace with
+        computational complexity :math:`\mathcal{O}(m^*n+m^*)` where
+        :math:`m^*` is the cumulative product of the number of basis
+        functions for each dimension.
+        
+        Public Class Attributes:
+        ========================
+        
+            Exactly one of :code:`boundary_space` and
+            :code:`pro_ext_factor` should be specified. If both are
+            specified :code:`pro_ext_factor` will be used and the
+            :code:`boundary_space` value is ignored
+        
+            - | n_basis:list[int]=[25] := The number of basis functions
+                to use in the approximation. The more "wiggly" the
+                function is expected to be, the more basis functions are
+                needed and the more computational complexity increases.
+                Optional. Defaults to 25 (on each dimension). If a
+                single element list is provided, it will br extended to
+                meet the needed dimensions. If it's length is neither
+                equal to one, nor matches the number of input
+                dimensions, :code:`ValueError` is raised.
+                
+            - | boundary_space:list[float]=[10.0] := The boundary for
+                the subspace to be approximated. This range should
+                include all observations. It preferable to use the
+                :code:`prop_ext_factor` argument instead. Exactly one of
+                :code:`boundary_space` and :code:`pro_ext_factor` should
+                be specified. Optional. Defaults to [10.0]. If a
+                single element list is provided, it will br extended to
+                meet the needed dimensions. If it's length is neither
+                equal to one, nor matches the number of input
+                dimensions, :code:`ValueError` is raised.
+                
+            | prop_ext_factor:float=1.2 := Alternate specification for
+              the approximation subspace. Is relative to the largest
+              observation. Optional. Defaults to 1.2. At most one of
+              :code:`prop_ext_factor` or :code:`boundary_space` should
+              be specified. Where conflicted, this argument takes
+              precedence.
+              
+            | drop_first_basis:bool=False := When :code:`True` drop the
+              first basis function. Used when occasionally the first
+              basis function "flattens". Optional. Defaults to
+              :code:`False`.
+              
+        Private Class Attributes:
+        ==========================
+        
+            - | _approximation:str='HSGP' := The type of Gaussian
+                Process being implemented. Only here to improve
+                readability
+                
+        Object Attributes:
+        ==================
+            
+            - | mean_func:pymc.gp.mean.Mean := The processes mean
+                function
+                
+            - | process:pymc.gp := The type of Gaussian Process
+                implementation to use. For HSGP, accepted values are
+                :code:`pymc.gp.HSGP` (analogous to :code:`gp.Latent`)
+                
+            - | cov_func:pymc.gp.cov.Covariance := The processes
+                covariance function, i.e. kernel function.
+                
+                .. danger::
+                    Only certain kernels with spectral densities are 
+                    valid
+                
+            - | mean_params:dict[str, Distribution] := Parameters of the
+                mean function. Passed as a dictionary mapping keyword
+                argument names to Distribution objects (or numbers)
+                representing priors for the parameter.
+                
+                Example usage:
+                
+                    .. code-block:: python
+                        DISTRIBUTION = bayesian_models.core.Distribution
+                        mean_func = pm.gp.mean.Constant
+                        mean_params:dict[str, DISTRIBUTION] = {
+                            c = distribution(
+                                pymc.Normal, 'c', 0, sigma=1
+                            )
+                        }
+                
+            - | kernel_params:dict[str, Distribution] := Parameters of
+                the kernel function. Passed as a dictionary mapping
+                keyword argument names to Distribution objects (or
+                numbers) representing priors for the parameter.
+                
+                Example usage: 
+                
+                    .. code-block:: python
+                    
+                        DISTRIBUTION = bayesian_models.core.Distribution kernel = pm.gp.cov.ExpQuad
+                        kernel_params:dict[str,DISTRIBUTION] = dict(
+                            ls = distribution(
+                                pm.HalfCauchy, 'ls', 2 
+                                ) 
+                            )
+                
+            - | pname:str := Name for the random variable representing
+                the output of the process. By default it is
+                :code:`'f[i,j]'` where i,j are layer/subprocess indexers
+    
+        Object Methods:
+        ===============
+        
+            - | __call__(data)->tuple := Insert the gp random variable
+                to the model and induce a prior on it. Returns the gp
+                object and the random variable representing the output.
+                The first item return is the :code:`Latent` instance,
+                the second is the reference to the random variable
+                created, representing the prior
+    '''
+    n_basis:list[int] = [25]
+    boundary_space:list[float] = [10.0]
+    prop_ext_factor:float = 1.2
+    drop_first_basis:bool=False
+    _approximation:str = "HSGP"
+    
+    __slots__ = ('mean_func', 'cov_func', 'pname', 'kernel_params',
+                 'process')
+    
+    def __init__(self, mean_func, cov_func, 
+                mean_params, pname)->None:
+        self.mean_func = mean_func
+        self.cov_func = cov_func
+        self.pname = pname
+        self.mean_params = mean_params
+        self.process = pm.gp.HSGP
+        
+    def __call__(self, data):
+        r'''
+            Define the gaussian process and induce a prior on it.
+            
+            Assumes a :code:`pymc.Model` stack is open. Also defines
+            :code:`HSGP` approximation parameters. These should be
+            identical across all layers and subprocesses, hence they
+            should be user specified on the model and propagated to its
+            layers and subprocess components
+            
+            Args:
+            =====
+            
+                - | data:pytensor.TensorVariable := Observed data for
+                    the process
+                    
+            Returns:
+            =======
+            
+                - | process:tuple[process, output_tensor] := A tuple
+                    with a reference to the gaussian process object and
+                    the output (after inducing a prior on it)
+        '''
+        def extend_parameter(parameter:list[Union[float, int]], 
+                             length:int,
+                             par_name:str='n_basis'
+                             )->list[Union[float, int]]:
+            r'''
+                Infer exact approximation parameters
+                
+                If a single element list for the parameter is provided,
+                the list will be extended to meet the required number of
+                active dimensions :code:`length`. If the parameters'
+                length is not one and doesn't exactly match the number
+                of active dimensions :code:`ValueError` is used. If the
+                length of the parameter exactly matches the number of
+                active dimensions, it used as is.
+                
+                Args:
+                =====
+                
+                    - | parameter:list[Union[float,int]] := The
+                        parameter to extend. Possible approximation
+                        parameters are L,m 
+                        
+                    - | length:int := The number of active dimensions
+                    
+                    - | par_name:str='n_basis' := A string representing
+                        the name for parameter being examined. Used for
+                        error reporting only
+                        
+                Returns:
+                ========
+                
+                    - | ext_param:list[Union[int, float]] := The
+                        processed approximation parameter, as should be
+                        passed to :code:`pymc.gp.HSGP`
+                        
+                Raises:
+                =======
+                
+                    - | ValueError := If the user-specified parameter
+                        has a length that is neither one, nor matches
+                        the number of dimensions for the kernel exactly.
+                        In these cases not consistend inference can be
+                        made for the correct value
+            '''
+            if len(parameter)==1:
+                return parameter*length
+            elif len(parameter) == length:
+                return parameter
+            else:
+                raise ValueError((
+                    f"HSGP parameter {par_name} needs have a length of "
+                    "1 or exactly matching the number of input "
+                    f"expected a list of length 1 or {length} but "
+                    f"received length {len(parameter)}"
+                ))
+        default_basis = [25]
+        default_boundary = [10.0]
+        default_ext_factor = 1.25
+        dims = data.shape[-1].eval().tolist()
+        params:dict[str, Any] = dict(
+            mean_func = self.mean_func(**self.mean_params),
+            cov_func = self.cov_func,
+            drop_first = self.drop_first_basis
+        )
+        # Use boundary parameter only if it is the only one specified
+        boundary_condition:bool = self.prop_ext_factor == \
+            default_ext_factor and self.prop_ext_factor != \
+                default_boundary
+        if boundary_condition:
+            params['L'] = extend_parameter(
+                self.boundary_space,
+                length=dims,
+                par_name = "boundary_space (L)",
+                )
+        else:
+            params['c'] = self.prop_ext_factor
+        params["m"] = extend_parameter(
+            self.n_basis,
+            length = dims,
+            par_name = "n_basis (m)"
+        )
+        gp = pm.gp.HSGP(**params)
+        f = gp.prior(self.pname, data)
+        return gp, f
+    
+    @property
+    def approximation(self)->str:
+        return self._approximation
+
+
+KERNEL_ID = str
+PARAM_ID = str
+PARAM = Union[pymc.Distribution, float, int]
+BASE_KERNEL = pymc.gp.cov.Covariance
+TRANSFORMED_KERNEL = Any
+TENSOR_VARIABLE = Any
+VAR_ID = str
+VAR_OBJ = Any
+KERNEL_PARAMS = dict[PARAM_ID, PARAM]
+KERNEL_PARAMS_MAPPING = dict[KERNEL_ID, KERNEL_PARAMS]
+KERNEL_TRANSFORM_VARS = dict[KERNEL_ID, KERNEL_PARAMS]
+MODEL_VARIABLES = dict[VAR_ID, VAR_OBJ]
+KERNEL_TRANSFORMER = Callable[[BASE_KERNEL, ],TRANSFORMED_KERNEL]
+KERNEL_TRANSFORMERS = dict[KERNEL_ID, KERNEL_TRANSFORMER]
+KERNEL_COMBINATOR = Callable[[list],TENSOR_VARIABLE]
+K_IPARS = dict[str,dict[str,TENSOR_VARIABLE]]
+K_EPARS = dict[str, dict[str, TENSOR_VARIABLE]]
+
+@dataclass(slots=True)
+class Kernel(ContextVars):
+    r'''
+        Class for custom kernels
+        
+        Provides an API for user specified composite kernels, that are
+        derived from base kernels. Specify a set of kernels (as
+        key-value pairs) and operate on them by creating new kernels
+        that are combinations of the basic ones and other random
+        variables. The resulting transformed kernels can be then
+        synthesized to a final forms according to user specification
+        
+        Object Attributes:
+        ==================
+
+            - | base_kernels:dict[KERNEL_ID, BASE_KERNEL] := A
+                dictionary mapping kernel names to basic kernel objects
+                (i.e. :code:`pymc.gp.cov.Covariance` instances). Defines
+                the basic set of kernels to be used.
+                
+                Example Usage:
+                
+                .. code-block:: python
+                
+                    KERNEL = pymc.gp.cov.Covariance
+                    base_kernels:dict[str,KERNEL] = dict(
+                        k_se = pymc.gp.cov.ExpQuad,
+                        k_wn = pymc.gp.cov.WhiteNoise,
+                        k_ln = pymc.gp.cov.Linear
+                    ) # Compose a kernel from the Exponential Quadratic
+                    # and WhiteNoise kernels
+                
+            - | kernel_parameters:Optional[KERNEL_PARAMS_MAPPING]=None
+                := Defines The 'internal' kernel parameters. Is a two
+                level deep nested dict. The first level maps kernel
+                names (:code:`KERNEL_ID`) to parameters. The parameters
+                are specified as another dictionary, mapping parameter
+                names to object definitions
+                
+                Example Usage:
+                
+                .. code-block:: python
+
+                    intparams = {
+                        'k_se' : dict(
+                            ls = 'λ'
+                        ),
+                        'k_wn' : dict(
+                            sigma =  σ
+                            ),
+                    } # Define a single parameter for each one of two
+                    # Kernels. Define the mapping of variable to kernel
+                    # argument
+                
+            - | kernel_parameter_mapping:Optional[dict[str,str]]=None :=
+                A dictionary mapping kernel object parameters to
+                internal parameter names
+                
+                Example usage:
+                
+                .. code-block:: python
+                
+                    kmap = dict(
+                       λ = distribution('λ', HalfCauchy, 2),
+                       σ = distribution('σ', HalfCauchy, 2)
+                    ) # Define priors for two kernel parameters
+                
+            - | ext_vars:Optional[dict[str,dict]]]=None := Additional
+                variables used to transform the kernel. Supplied double
+                nested dictionary. The first level maps kernel names to
+                dictionaries of variables. The second level maps
+                parameters names to object definitions
+                
+                Example Usage:
+                
+                .. code-block:: python
+                    
+                    pars:dict[str,dict[str,Distribution]] = {
+                        'k_se': {
+                            'η_se':distribution('η_se', HalfCauchy, 2)
+                            },
+                        'k_ln': {
+                            'η_ln':distribution('η_ln', HalfCauchy, 2)
+                            },
+                    } # Define transform parameters for two basic
+                    # kernels . Map the parameters to the kernel they 
+                    # correspond to
+
+                
+            - | kernel_transformers:Optional[dict[str, Callable]]=None
+                := A dictionary mapping base kernel to kernel
+                transformer object. The keys of this dictionary are base
+                kernel names. The items are :code:`Callable` objects
+                which handle the transformation. These objects have an
+                exact signature. The all receive a reference to the
+                kernel to be transformed and a dictionary mapping
+                variable names to references (analoguous to the
+                :code:`ext_vars`). Should return the new, transformed
+                kernel object
+                
+                Example Usage:
+                
+                .. code-block:: python
+                
+                    transformer = {
+                        'k_se': lambda kernel, vars: vars['η_se']*kernel,
+                        'k_ls': lambda kernel, vars: vars['η_ln']*kernel,
+                    } # Transform each kernel by multiplying by the 
+                    # 'η_' parameter defined elsewhere
+                
+            - | kernel_combinator:Optional[Callable]=None := Defined how
+                transformed kernels are to be combined to the final
+                kernel. Should receive exactly one argument, which is a
+                sequence of transgformed kernels. Should return exactly
+                one value, the result of composing the transformed
+                kernels
+                
+                Example Usage:
+                
+                .. code-block:: python
+                
+                    combinator:Callable = lambda kernels: \
+                    kernels[0]+kernels[1]+kernels[2]
+                    # Sum three kernels
+                    
+            - | name:str := An alias for the kernel. Will be renamed
+                index according to the process
+                
+            - alias:Optional[str]=None := An alias for the kernel. The
+              if provided to 'name' arguement will be ignored and this
+              exact name will be used. Must be unique in the model
+                
+        Object Methods:
+        ================
+        
+            - | __call__(var_catalogue:dict[str,TENSOR_VARIABLE]) :=
+                Apply the transformations and compositions defined and
+                return the composite kernel
+    '''
+    
+    name:str="null"
+    base_kernels:dict[KERNEL_ID,BASE_KERNEL] = field(
+        default_factory=dict
+        )
+    shape:Optional[list[tuple[int,...]]] = None
+    active_dims:Optional[Sequence[int]] = None
+    kernel_parameters:KERNEL_PARAMS_MAPPING = field(
+        default_factory=dict)
+    _kernel_init_ipars:Optional[K_IPARS] = field(
+        init=False, repr=False, default_factory=dict)
+    ext_vars:Optional[KERNEL_TRANSFORM_VARS] = field(
+        default_factory=dict)
+    _kernel_init_epars:Optional[K_EPARS] = field(
+        init=False, repr=False, default_factory=dict)
+    kernel_transformers:Optional[KERNEL_TRANSFORMERS] = field(
+        default_factory=dict)
+    kernel_combinator:Optional[KERNEL_COMBINATOR] = None
+    
+    
+    def __post_init__(self)->None:
+        r'''
+            Validate inputs
+            
+            Raises:
+            =======
+            
+                ValueError:
+                
+                    - | If len(base_kernels)==0, no base kernels
+                        provided
+
+                    - | If Exactly one of kernel_parameters,
+                        kernel_transformer is provided. Must provide
+                        either None or both of these arguments
+        '''
+        super(Kernel, self).__init__()
+        sentinel:bool = self.base_kernels is not None or \
+            self.base_kernels == dict()
+        if not sentinel:
+            if len(self.base_kernels)==0:
+                raise ValueError("base_kernels argument cannot be empty")
+            c1 = self.kernel_transformers is None
+            c2 = self.kernel_parameters is None
+            trans_sentinel:bool = c1 != c2
+            if trans_sentinel:
+                raise ValueError((
+                    "Both or neither kernel_parameters and "
+                    "kernel_transformer must be provided. Received "
+                    f"kernel_parameters {self.kernel_parameters} and "
+                    f"kernel_tranformer {self.kernel_transformers}"
+                    ))
+            nulldict = dict()
+            nullset = lambda odict : nulldict if odict is None else odict
+            kernels:set = set(self.base_kernels.keys())
+            inpars:set = set(nullset(self.kernel_parameters).keys())
+            expars:set = set(nullset(self.ext_vars).keys())
+            extrans:set  =set(nullset(self.kernel_transformers).keys())
+            # Set differences for missing arguments
+            no_ipars = kernels-inpars
+            no_kernels = inpars-kernels
+            no_trans = expars - extrans
+            no_exparams = extrans-expars
+            NULL = set()
+            if len(kernels)>1 and self.kernel_combinator is None:
+                raise ValueError((
+                    "Multiple base kernels received, but not combinator "
+                    "given. When multiple base kernels are provided a "
+                    "kernel_combinator should be supplied mapping them to "
+                    "single final kernel. Received base kernels "
+                    f"{self.base_kernels.keys()} but no kernel_transformer"
+                ))
+            if no_ipars != NULL:
+                raise ValueError((
+                    f"Base kernels {no_ipars} have no internal parameters "
+                    "specified"
+                ))
+            if no_kernels != NULL:
+                raise ValueError((
+                    f"Parameters {no_kernels} target non existing kernels. "
+                    "Did you forget to provide the base kernel in the "
+                    "base_kernels argument?"
+                ))
+            if no_trans != NULL:
+                warn((
+                    f"Kernels {no_trans} have external parameters but no "
+                    "transformers specified for them. These parameters will"
+                    " be effectively ignored"
+                ))
+            if no_exparams != NULL:
+                raise ValueError((
+                    f"Found transformers for base kernels {no_exparams} "
+                    "but no external parameters have been specified for "
+                    "them. Transformer has not transformation to perform "
+                    "on the kernel"
+                ))
+        
+    def _update_irefs(self, tensor_pars:dict)->None:
+        r'''
+            Update mapping of internal kernel parameters to tensor
+            variables
+        '''
+        self._kernel_init_ipars = {
+            kid:{
+                parg:tensor_pars[kid][pval.name] for parg, pval \
+                    in kpars.items()
+                } for kid,kpars in self.kernel_parameters.items()
+        }
+    
+    def _update_erefs(self, tensor_pars:dict)->None:
+        r'''
+            Update mapping with TensorVariables 
+        '''
+        self._kernel_init_epars = tensor_pars
+        
+    def _initialize_base_kernels(self, inpt_shape):
+        r'''
+            Inject base kernels and their hyperparameters to the model
+        '''
+        # For the WhiteNoise kernel only, do no specify active_dims and
+        # input_dim
+        bases = {
+            kid: (
+                kfunc(
+                    self.shape[0][-1], **self._kernel_init_ipars[kid]
+                    ) if kfunc != pm.gp.cov.WhiteNoise else kfunc(
+                        **self._kernel_init_ipars[kid])
+                       ) for kid,kfunc in self.base_kernels.items()
+        }
+        return bases
+        
+    def _apply_transforms_(self, bases)->dict:
+        transformed:dict={}
+        for kernel_id, transformer in self.kernel_transformers.items():
+            transformed[kernel_id] = transformer(
+                bases[kernel_id],
+                self._kernel_init_epars[kernel_id]
+            )
+        collected:dict[str, pymc.gp.cov.Covariance] = {
+            kid:(
+                transformed[kid] if transformed.get(kid) is not None \
+                    else bases[kid] 
+                ) for kid in bases.keys()
+        }
+        return collected
+    
+    def _from_context_mngr(self):
+        r'''
+            Extracts model variables from context variables
+        '''
+        from functools import partial
+        cvars:dict[str,Any] = self._context_vars
+        lookup = partial(get_wnulldict,cvars)
+        
+        self.name = cvars['name']
+        self.base_kernels = cvars['base_kernels']
+        self.kernel_parameters = cvars['kernel_parameters']
+        self.ext_vars = lookup('ext_vars')
+        self.kernel_transformers = lookup('kernel_transformers')
+        self.kernel_combinator = cvars.get('kernel_combinator')
+    
+    def _complete_ctx_init_(self):
+        r'''
+            When intialized via the context manager, this method is
+            called to ensure the object is properly initialized
+        '''
+        super(Kernel, self).__call__()
+        if self._context_init:
+            self.__post_init__()
+    
+    def __call__(self, var_catalogue:dict[str,Any], inpt_shape)->Any:
+        super(Kernel, self).__call__()
+        if self._context_init:
+            self.__post_init__()
+        bases = self._initialize_base_kernels(inpt_shape)
+        if self.kernel_parameters is not None:
+            transformed:dict = self._apply_transforms_(bases)
+        else:
+            transformed:dict = bases
+        if self.kernel_combinator is not None:
+            synthesized:Any = self.kernel_combinator(transformed)
+        else:
+            synthesized:Any = transformed[
+                list(transformed.keys())[0]
+                ]  
+        return synthesized
+
+@dataclass(slots=True)
+class CoregionKernel(ContextVars):
+    r'''
+        Special kernel for coregionalized Gaussian Processes. These
+        processes are generally defined by the special kernel:
+        
+        .. math::
+        
+            \begin{array}{c}
+            k_{ICM}(x,x^{\prime}) = \overset{J}{\underset{j=0}{\sum}}
+            B_j\otimes k_j(x,x^{\prime})\\
+            \\
+            B_j = W_jW_j^T + diag{\kappa}
+            \end{array}
+            Where :math:`\otimes` is the Kronecker procduct, :math:`B_j`
+            is the coregionalization matrix, :math:`W_j` is the mixing
+            matrix which decides which gaussian processes map to which
+            outputs and the term :math:`diag(\kappa)` allows independant
+            variance. The matrix :math:`W` is of shape :math:`p\times q`
+            and mixes :math:`q` gaussian processes to produce :math:`p`
+            outputs.
+            
+            Usage Example:
+            
+            .. code-block:: python
+
+                # Base kernel
+                with Kernel() as k_b:
+                    name = 'k_se'
+                    base_kernels = {
+                        'k_se':pymc.gp.cov.ExpQuad
+                    }
+                    kernel_parameters = dict(
+                        k_se = dict(
+                            ls = distribution(
+                                pm.MutableData, 'l', 1
+                            )
+                        )
+                    ext_vars = {
+                        'k_se': {
+                            
+                            'η_se':distribution(
+                                pm.HalfCauchy, 'η_se', 2, 
+                                transform = lambda e:e+1
+                                ),
+                            }
+                    kernel_transformers = {
+                        'k_se': lambda k, v: v['η_se']*k
+                    }
+                with Coregion() as cor:
+                    name = "k"
+                    kernels:dict = {
+                        'k_se' : k_b
+                    }
+                    anisotropic=False
+                    coreg_parameters = {
+                        'k_se': {
+                            'W' : distribution(
+                                pm.Normal, 'W' ,0,1, shape=(3,4)
+                                ), # 3 outputs and 4 processes
+                            'kappa':distribution(
+                                pm.Normal,
+                                    pm.Normal, 'kappa', 0,1, shape=(3,)
+                                ),
+                        }
+                    }
+            
+        Object Attributes:
+        ==================
+        
+            - | kernels:Sequence[Kernel] := Defines a set of  spatial
+                kernels to use during coregionalization.
+                
+            - | name:str="null" := An alias for the synthesized kernel
+            
+            - | anisotropic:bool=False := If :math:`False` (default),
+                then it assumed that observations are provided for every
+                output :math:`p` (the size of the first axis of the
+                inputs is assumed to be the same). The likelihood is
+                assumed to be multivariate and the models' final output
+                is a matrix of the shape :math:`\overset{N\times
+                p}{\mathbf{f}}` and a :math:`p` dimensional multivariate
+                likelihood is used. If :math:`True` the process is
+                anisotropic. Then the inputs need not have the same size
+                over the first axis (but need to be equal over the
+                second axis), a collection of :math:`p` output tensors
+                will  be spawned of the general shape
+                :math:`\overset{N_j \times 1}{f_j}` and each will be
+                given a sepperate likelihood.
+                
+            - | coreg_parameters:dict[str,dict[str,Distribution]]=None
+                := The design for the coregionalization matrix as two
+                level deep dictionary nested structure. The keys of the
+                outer dict are aliases mapping to those of the
+                :code:`kernels` argument. The elements are dictionaries
+                whose keys are coregion arguments (see below) and whose
+                values are :code:`Distribution` objects representing
+                priors on the relevant parameter / argument. Each
+                coregion kernel gets either two parameters
+                :math:`W,kappa` or the parameter :math:`B`
+                
+            
+
+    '''
+    kernels:Optional[dict[str,Kernel]] = field(default=None)
+    name:str = "null"
+    anisotropic:bool=False
+    coreg_parameters:Optional[dict[str,dict[str,Distribution]]] = None
+    _coreg_refs:Optional[dict[str,dict[str,Distribution]]] = None
+    
+    def __post_init__(self):
+        c1:bool = self.kernels is None
+        c2:bool = self.coreg_parameters is None
+        sentinel:bool = c1 or c2
+        if not sentinel:
+            pass
+        else:
+            pass
+    
+    def _from_context_mng_(self):
+        r'''
+            Update attributes via alterate constructor
+        '''
+    
+    def _coregionalize_(self):
+        r'''
+            Prepeare the coregionalization kernel
+        '''
+                   
+    def __call__(self, var_catalogue):
+        for kernel in self.kernels:
+            kernel(var_catalogue)
+    
+@dataclass(slots=True)
+class GaussianSubprocess:
+    r'''
+        Object representing a single gaussian process inside a DGP
+        layer. 
+        
+        A single layer is composed of multiple subprocesses, loosely
+        analogous to neurons in a deep neural network. A subprocess
+        corresponds to a single element of the vector output dimensions.
+        For example:
+        
+        .. math::
+        
+            \begin{array}{c}
+                \mathbb{D}\ =\ \{(\mathbf{x}_i, \mathbf{y_i})\ |\ 
+                \mathbf{x_i}\in\mathbb{R}^m, \mathbf{y}_i\in\mathbb{R}^k
+                \}
+                \mathbf{y}\thicksim
+                \begin{pmatrix}
+                    GP_j(m_0,k_0)&\dots GP_j(m_k,k_k)
+                \end{pmatrix}              
+            \end{array}
+        
+        A local topology can be defined for subprocesses. All
+        subprocesses with the same local topology will be stacked and
+        maintained in the trace.
+        
+        Example Usage:
+        
+            .. code-block::python
+
+                # Defines two sets of subprocesses with two different
+                # local topologies 'A', 'B' for the same layer. The 
+                # stacked output of each local topology is accessible as
+                # 'f[A]' by default. Local topology names are globaly
+                # unique
+                processes:list = [
+                    GaussianSubprocess(
+                        kernel = pm.gp.cov.ExpQuad,
+                        kernel_hyperparameters = dict(
+                            ls = distribution(
+                                pm.HalfCauchy, 'λ', 2
+                            )
+                            ),
+                        mean = pm.gp.mean.Zero,
+                        index = (0,i),
+                        topology="A"
+                    ) for i in range(5)
+                ] + [
+                    GaussianSubprocess(
+                        kernel = pm.gp.cov.ExpQuad,
+                        kernel_hyperparameters = dict(
+                            ls = distribution(
+                                pm.HalfCauchy, 'λ', 2
+                            )
+                            ),
+                        mean = pm.gp.mean.Zero,
+                        index = (1,i),
+                        topology="B",
+                    ) for i in range(3)
+                    ]
+            
+        
+        Object Attributes:
+        ==================
+        
+            - | kernel:pymc.Covariance := The kernel function of the
+                process
+                
+            - | kernel_hyperparameters:dict[str,Distributions]={} :=
+                Hyperparameters for the kernel function. Is given as a
+                dictionary of parameter names to :code:`Distribution`
+                objects. The keys are kernel parameters (as they appear
+                in the :code:`pymc.gp.cov.Covariance` objects keywords)
+                and the values are :code:`Distribution` instances
+                defining the prior for the hyperparameter (if
+                hierarchical) or exact values.
+                
+                Example:
+                
+                .. code-block:: python
+
+                    import pymc
+                    kernel = pymc.gp.cov.ExpQuad
+                    kernel_params = dict(
+                        ls = Distribution(
+                            pymc.HalfNormal, l, 5
+                        )
+                    )
+                    exact_params = dict(
+                        ls = 5 # Non hierarchical
+                    )
+                    
+            - | mean:pymc.gp.mean=pymc.gp.mean.Zero := The mean function 
+                for the process. Optional. Defaults to 
+                :code:`pymc.gp.mean.Zero`
+                    
+            - | mean_hyperparameters:dict[str,Distributions]={} :=
+                Hyperparameters for the mean function. Is given as a
+                dictionary of parameter names to :code:`Distribution`
+                objects. The keys are kernel parameters (as they appear
+                in the :code:`pymc.gp.cov.mean.Mean` objects keywords)
+                and the values are :code:`Distribution` instances
+                defining the prior for the hyperparameter (if
+                hierarchical) or exact values.
+                
+                Example:
+                
+                .. code-block:: python
+
+                    import pymc
+                    kernel = pymc.gp.mean.Constant
+                    kernel_params = dict(
+                        c = Distribution(
+                            pymc.HalfNormal, l, 1
+                        )
+                    )
+                    exact_params = dict(
+                        c = 5 # Non hierarchical
+                    )
+                    ext_params = dict(
+                        c = distribution(
+                            pm.ConstantData, 'c', 5
+                            )
+                    ) # Also valid
+                    
+            - | process = Used
+                
+            - | alias:Optional[str]=None := An exact name for the
+                subprocess. Must be unique across all layers and all
+                subprocesses
+                
+            - | symbol:str='f' := A symbol for the process. The
+                subprocess will be indexed as 'f[i,j]' for the i-th
+                layer and the j-th subprocess. If 'alias' is specified,
+                this value will be ignored
+                
+            - | index:NamedTuple[int, int] := Indexer for the subprocess
+                of the form :code:`tuple(layer:int, subprocess:int)`
+                
+                .. note::
+                    Supplied as a tuple, this will be redefined as an equivalent namedtuple. Fr example:
+                    
+                    .. code-block::
+
+                        from collections import namedtuple
+                        ProcessIndex = namedtuple('ProcessIndex', [
+                            'layer_idx', 'subprocess_idx'
+                        ])
+                        index = (1,2)
+                        nindex = ProcessIndex(
+                            layer_idx = 1,
+                            subprocess_idx = 2
+                        )
+            
+            - | processor = None
+            
+            - | process_name:Optional[str] = The internal name for the
+                process. If :code:`alias` is supplied this will be used.
+                Else the name will be composed as
+                :code:`{symbol}[{index.layer_idx},index.subprocess_idx]`
+                - for example :code:`'f[1,2]'`. This will be the idx
+                name of the output tensor of the subprocess
+            
+            - | random_variables
+            
+            - | variables:dict[str, Any] := A catalogue of variables
+                added to the model. Recorded as a mappings of strings,
+                representing internal variables names to references to
+                the object
+            
+            - | index:Union[tuple[int,int], NamedTuple[int,int]] := An
+                indexer for the subprocess. Supplied as a tuple of
+                :code:`int`, repackaged as a namedtuple with the fields
+                :code:`layer_idx` and :code:`subprocess_idx`.
+            
+            - | gp=None := Reference to process object. Generally named
+                according the format :code:`gp[i,j]`, where :code:`i` is
+                an indexer for the layer and :code:`j` is an indexer for
+                the subprocess inside the layer. 
+            
+            - | func := A reference to the output of the gp (the result
+                of inducing a prior on a gp). Example:
+                
+                .. code-block:: python
+                
+                    gp = pymc.gp.Latent(...)
+                    func = gp.prior('name', X, ...)
+
+            
+            - | gaussian_processor:Type[GPProcess]=FullProcessor := A
+                processor instance for gaussian process implementation.
+                Defaults to :code:`FullProcess` which performs full
+                inference, without approximation.
+            
+        Private Attributes:
+        ===================
+            
+            - | _mean_name_mapping:dict[str,str] := An internal
+                mapping of process variable names to model names.
+                For example a local hierarchical prior :code:`c` for
+                a length scale parameter may get mapped to the
+                general name :code:`c[0,0]`. Used for reverse
+                lookups.
+            
+            - | _kernel_name_mapping:dict[str,str] := An internal
+                mapping of process variable names to model names.
+                For example a local hierarchical prior :code:`λ` for
+                a length scale parameter may get mapped to the
+                general name :code:`λ[0,0]`. Used for reverse
+                lookups
+            
+            - | _mean_refs:dict[str,Any] := A mapping of parameters
+                (as they appear in the mean objects keywords) to
+                variable references. Essentially the result of
+                performing a model-wide lookup on the values of
+                :code:`mean_hyperparameters` and replacing these
+                :code:`Distributions` with the corresponding random
+                variables
+            
+            - | _kernel_refs:dict[str,Any] := A mapping of
+                parameters (as they appear in the mean objects
+                keywords) to variable references. Essentially the
+                result of performing a model-wide lookup on the
+                values of :code:`mean_hyperparameters` and replacing
+                these :code:`Distributions` with the corresponding
+                random variables
+                
+        Object Methods:
+        ===============
+        
+            - | __call__(inputs:TensorVariable, var_catalogue:dict) :=
+                Initialize the model by constructing the
+                :code:`pymc.Model` object. Assumes a :code:`pymc.Model`
+                context stack is open. :code:`var_catalogue` is a global
+                model variable catalogue, and should be supplied by the builder. 
+    '''
+    kernel:Kernel
+    mean:pymc.gp.mean  = pymc.gp.mean.Zero
+    mean_hyperparameters:dict[str, ModelParameter] = field(
+        default_factory = dict
+        )
+    shape:list[tuple[int,...]]=None
+    process:Any = pymc.gp.Latent
+    alias:Optional[str] =field(default=None)
+    symbol:str = field(default='f')
+    processor = None
+    process_name:Optional[str] = None
+    random_variables:dict = field(default_factory=dict)
+    variables:dict = field(default_factory=dict)
+    topology:Optional[str] = field(default=None)
+    _mean_name_mapping:Optional[dict[str, str]] = field(
+        repr=False,
+        default=None
+        )
+    _ker_name_map_ext:Optional[dict[str,dict[str,str]]] = field(
+        init=False, repr = False, default=None
+    )
+    _ker_name_map_int:Optional[dict[str,dict[str,str]]] = field(
+        init=False, repr = False, default=None
+    )
+    _ker_int_refs:Optional[dict[str, dict[str,Any]]] = field(
+        init=False, repr=False, default = None
+    )
+    _ker_ext_refs:Optional[dict[str, dict[str,Any]]] = field(
+        init=False, repr=False, default = None
+    )
+    _mean_refs:dict[str, Optional[Any]] = field(
+        repr=False, default_factory=dict
+        )
+    index:tuple[int, int]=field(default_factory=tuple)
+    gp:Optional[Any] = field(repr=False, default= None)
+    func:Optional[Any] = field(repr=False, default=None)
+    gaussian_processor:Type[GPProcessor] = FullProcessor
+    
+    def __post_init__(self)->None:
+        r'''
+            Post initialization actions
+            
+            Set naming conventions and construct local to global lookup
+            tables. Update attributes
+            
+            Updated Attributes:
+            ===================
+            
+                - | index:tuple[int,int]->namedtuple := Swap the user
+                    defined tuple with a namedtuple version for improved
+                    readability. Example conversion:
+                    
+                    .. code-block:: python
+                        subprocess_idx=namedtuple('subprocess_indx',
+                        ['layer_idx', 'subprocess_idx']
+                        )
+                        userspec:tuple[int,int] = (5,2)
+                        new_spec = subprocess_idx(
+                            layer_idx = userspec[0],
+                            subprocess_idx = userspec[1]
+                        )
+                        
+                - | mean_name_mapping:dict = Construct a mapping of
+                    local variable names to global ones. Example:
+                
+                    .. code-block:: python
+                        # For the 5-th layer and 2nd subprocess in the 
+                        # layer
+                        name_map:dict = {
+                            'λ' = 'λ[5,2]'
+                            # Local name 'λ' to global name 'λ[5,2]'
+                        }
+                        
+                - | kernel_name_mapping:dict = Construct a mapping of
+                    local variable names to global ones. Example:
+                
+                    .. code-block:: python
+                        # For the 5-th layer and 2nd subprocess in the 
+                        # layer
+                        name_map:dict = {
+                            'λ' = 'λ[5,2]'
+                            # Local name 'λ' to global name 'λ[5,2]'
+                        }
+                        
+                - | kernel_refs:dict[str,None] = Construct empty
+                    catalogue of kernel parameter references
+                    
+                - | mean_refs:dict[str,None] = Construct empty
+                    catalogue of mean parameter references
+                    
+                - | process_name:str = Assign a unique name for the
+                    process. If :code:`alias` is provided, it used and
+                    must be unique globally. Else the naming convention
+                    :code:`{sym}[{i}, {j}]`. :code:`sym` is the general
+                    symbol for processes (default :code:`f`),
+                    :code:`i,j` are indexers for the layer and
+                    subprocess,  respectively.
+        '''
+        from warnings import warn
+        if self.alias is not None and self.symbol=='f':
+            warn((
+                "When specifying alias, the value of symbol will be "
+                "ignored and alias is assumed to be an exact name for "
+                f"the subprocess. Received non-default symbol {self.symbol} "
+                f"and alias {self.alias}"
+            ))
+        subprocess_idx = namedtuple('subprocess_indx',
+                                    ['layer_idx', 'subprocess_idx']
+                                    )
+        self.index = subprocess_idx(
+            layer_idx=self.index[0], subprocess_idx=self.index[1])
+        self._mean_name_mapping = {
+            v.name : "{sym}[{i},{j}]".format(
+                sym = v.name,
+                i = self.index.layer_idx,
+                j = self.index.subprocess_idx
+                ) for _, v in self.mean_hyperparameters.items()
+            } if self.mean_hyperparameters is not None else  None
+        self.kernel._complete_ctx_init_()
+        kernel_int_pars = self.kernel.kernel_parameters
+        kernel_ext_pars = self.kernel.ext_vars
+        kintnamemap = {k:{
+            dist.name: "{sym}[{i},{j}]".format(
+                sym = dist.name,
+                i = self.index.layer_idx,
+                j = self.index.subprocess_idx,
+            )
+            for p,dist in v.items()
+            } for k,v in kernel_int_pars.items()} if kernel_int_pars\
+                is not None else dict()
+        kextnamemap = {
+            k:{
+                dist.name : "{sym}[{i},{j}]".format(
+                sym = dist.name,
+                i = self.index.layer_idx,
+                j = self.index.subprocess_idx,    
+                )
+                for _, dist in v.items()
+                } for k,v in kernel_ext_pars.items()
+        } if kernel_ext_pars is not None else dict()
+        self._ker_name_map_int = kintnamemap
+        self._ker_name_map_ext = kextnamemap
+        self._ker_int_refs = {
+            kname: {
+                alias:None for alias in v.keys()
+                } for kname,v in kernel_int_pars.items()
+        } if kernel_int_pars is not None else dict()
+        
+        self._ker_ext_refs = {
+            kname:{
+                parname:None for parname in kpars.keys()
+                } for kname,kpars in kernel_ext_pars.items()
+            } if kernel_ext_pars is not None else dict()
+        self._mean_refs = {
+            k: None for k,_ in self.mean_hyperparameters.items()
+        } 
+        self.process_name = self.alias if self.alias is not None else \
+            "{sym}[{i},{j}]".format(
+                sym = self.symbol,
+                i = self.index.layer_idx,
+                j = self.index.subprocess_idx,
+            )
+    
+    def _update_shape(self, shape:tuple[int,...])->None:
+        self.shape = shape
+        self.kernel.shape = shape
+    
+    def __extract_basic_rvs__(self)->dict[str, Distribution]:  
+        r'''
+            Extract and package parameters for ease of access
+            
+            Extract all random variables from the subprocess and package
+            them into a dict to be forwarded to the
+            :code:`CoreModelComponent` so they can be inserted into the
+            model
+            
+            Args:
+            =====
+            
+                - None
+                
+            Returns:
+            ========
+            
+                - | params:dict[dist_name:str, dist:Distribution] := The
+                    packaged hyperparameters. Is a dictionary mapping
+                    variable names in the form
+                    'name[layer_idx,process_idx]' to Distributions which
+                    constitute the prior for the parameter. This format
+                    is required by the builder to insert the random
+                    variables
+
+        '''
+        
+        def reindex_names(name_dict)->dict:
+            r'''
+                Remap local subprocess level variable names to global
+                model ones
+                
+                User-specified kernel parameters are expected to be
+                named locally but could be present across multiple
+                processes. This function replaces the names with indexed
+                ones. For example :code:`λ` local variable is remapped
+                to :code:`λ[1,2]`.
+                
+                Example:
+                
+                .. code-block:: python
+                
+                    params:dict[str, Distribution] = {
+                        'λ' : Distribution(pm.HalfCauchy, 'λ', 
+                        dist_args= (1,)) 
+                    }
+                    # Expected output
+                    nparams:dict[str,Distribution] = {
+                        'λ[0,0]' = Distribution(
+                            pm.HalfCauchy, 'λ[0,0]', dist_args=(1,)
+                        )
+                    }
+                
+                Args:
+                =====
+                
+                    - | name_dict:dict[str, Distribution] := A supplied
+                        dictionary of kernel or mean parameters. Of the general form:
+                        
+                        .. code-block:: python
+
+                            {
+                                λ = Distribution(...)
+                            }
+                            
+                Returns:
+                ========
+                
+                    - | new_dict[str, Distribution] := An updated
+                        dictionary with the variable / parameter names
+                        replaced with indexed version of themselves
+            '''
+            
+            new_dict:dict = dict()
+            for k, dist in name_dict.items():
+                new_name:str = "{name}[{l_idx},{p_idx}]".format(
+                    name = dist.name, l_idx = self.index.layer_idx,
+                    p_idx = self.index.subprocess_idx,
+                )
+                new_dict[new_name] = distribution(
+                    dist.dist, new_name, *dist.dist_args, 
+                    **dist.dist_kwargs
+                )
+            return new_dict
+        k_ipars = self.kernel.kernel_parameters
+        k_epars = self.kernel.ext_vars
+        ipars = merge_dicts(*[
+            reindex_names(v) for _,v in k_ipars.items()
+        ]) if k_ipars is not None else dict()
+        epars = merge_dicts(*[
+            reindex_names(v) for _,v in k_epars.items()
+        ]) if k_epars is not None else dict()
+        kparams:dict = merge_dicts(ipars,epars)
+        mparams:dict = reindex_names(self.mean_hyperparameters)
+        return merge_dicts(kparams, mparams)
+        
+    def __update_var_refs__(self, var_catalogue:dict)->None:
+        r'''
+            Update kernel and mean reference catalogues
+            
+            Given a catalogue of basic random variables present in the
+            model, remap kernel keyword arguments to the basic rvs
+
+            Args:
+            =====
+            
+                - | var_catalogue:dict[str,Any] := A catalogue of random
+                    variables present in the model. A mapping of strings
+                    representing variable names to references to the
+                    object
+                    
+            Returns:
+            ========
+            
+                - None
+                
+                Updates the :code:`kernel_refs` and :code:`mean_refs` attributes generated in :code:`__post_init__`
+        '''
+        self._mean_refs = {
+            k : var_catalogue[
+                self._mean_name_mapping[v.name]
+                ] for k,v in self.mean_hyperparameters.items()
+            } if self.mean_hyperparameters is not None else dict(0)
+        kiparams = {
+            ker:{
+                dist.name:dist for _, dist in pdict.items()
+                } for ker,pdict in self.kernel.kernel_parameters.items()
+            } if self.kernel.kernel_parameters is not None else dict()
+        keparams = self.kernel.ext_vars
+        # Remap names->Distributions to names->TensorVariables
+        if kiparams is not None:
+            self._ker_int_refs = {
+                kname: {
+                        n:var_catalogue[
+                            self._ker_name_map_int[kname][n]
+                            ] for n,m in v.items()
+                    }
+                for kname,v in kiparams.items() 
+                }
+            self.kernel._update_irefs(self._ker_int_refs)
+        if keparams is not None:
+            self._ker_ext_refs = {
+                kname: {
+                        n:var_catalogue[
+                            self._ker_name_map_ext[kname][n]
+                            ] for n,m in v.items()
+                    }
+                for kname,v in keparams.items() 
+                }
+            self.kernel._update_erefs(self._ker_ext_refs)
+
+    def __call__(self, inputs:Any, var_catalogue:dict):
+        r'''
+            Initialize the gaussian subprocess
+            
+            Args:
+            =====
+            
+                - | inputs:TensorVariable := A :code:`TensorVariable`
+                    representing the inputs to the subprocess. Either
+                    the process training data or the output of the
+                    previous layer
+                    
+                - | var_catalogue:dict[str,TensorVariable] := A global
+                    catalogue of model variables. Supplied by the
+                    builder
+                    
+            Returns:
+            ========
+            
+                - | f:TensorVariable := The variable representing the
+                    induced prior on the subprocess
+        '''
+        self.__update_var_refs__(var_catalogue)
+        final_kernel = self.kernel(var_catalogue, inputs.shape)
+        self.gp, self.func = self.gaussian_processor(
+            self.mean,
+            final_kernel,
+            self._mean_refs,
+            self.process_name
+        )(inputs)
+        self.variables[self.process_name] = self.func
+        self.variables[
+            "gp[{i},{j}]".format(
+                i=self.index.layer_idx, 
+                j = self.index.subprocess_idx
+                )
+            ] = self.gp   
+        return self.func
+    
+    def condition(self, X):
+        r'''
+            Build the conditional distribution
+        '''
+        str_f_name:str = "{sym}_{this}[{layer_idx},{process_idx}]".format(
+            sym = self.symbol,
+            this = "star",
+            layer_idx = self.index.layer_idx,
+            process_idx = self.index.subprocess_idx,
+        )
+        f = self.gp.conditional(str_f_name, X)
+        self.variables[str_f_name] = f
+        return f
+
+@dataclass(slots=True)
+class GPLayer:
+    r'''
+        A Deep Gaussian Process (DGP) layer object
+        
+        Represents a single layer of a deep gaussian process. Is a
+        composite object, made up of subprocesses
+        (:code:`GaussianSubprocess`). Layers are :code:`Callable`
+        objects that accept the output tensor of the previous layer and
+        return the tensor output of their own layer. Layers are indexed objects and so are their subprocesses.
+        
+        Object Attributes:
+        ==================
+        
+            - | subprocesses:Sequence[GaussianSubprocesses] := A
+                :code:`Sequence` of subprocesses in the layer (as
+                :code:`GaussianSubprocess` instances)
+            
+            - | layer_idx:int=0 := An index for the layer
+            
+            - | variables:dict[str, Any] := A catalogue of variables the
+                Layer added to the model. Recorded as a mapping of
+                internal variable names to references to the actual
+                tensor variables in the model
+                
+            - | gps:Sequence := A collection of gaussian process objects
+                created by the layer. These are implementations, for
+                example:
+                
+                .. code-block:: python
+                
+                    gp = pymc.gp.Latent(...)
+    
+            - | functions:Sequence[TensorVariable] := A collection of
+                :code:`TensorVariable` objects that are the outputs of
+                each subprocess. For example:
+                
+                .. code-block:: python
+                
+                    gp = pymc.gp.Latent(...)
+                    function = gp.prior('f', Xnew)
+                    
+            - | processor_type:Type[GPProcess]=FullProcess := An
+                implementor defining the gaussian process implementation
+                to use. Primarily defines the approximation to be used.
+                Must be the same across all layers and subprocesses
+                
+            - | output_layer:bool=False := Signals if the layer is the
+                final one. If :code:`True` will name the tensor output
+                of the layer as :code:`'f'` instead of :code:`'f[1]'`
+                
+        Object Methods:
+        ===============
+        
+            - | __call__(inpts:TensorVariable, var_catalogue:dict[str,
+                Any]) := Injects all subprocesses into the model.
+                Assumes a :code:`pymc.Model` context stack is open
+                
+            - | __iter__() := Returns a iterator over the layers'
+                subprocesses, rendering the :code:`GPLayer` an iterable
+                object
+    '''
+    subprocesses:Sequence[GaussianSubprocess]
+    layer_idx:int = 0
+    variables:dict = field(default_factory=dict)
+    gps:dict = field(default_factory=dict)
+    functions:dict = field(default_factory=dict)
+    gaussian_processor:Type[GPProcessor] = FullProcessor
+    output_layer:bool = False
+    topology:Optional[str]=field(default=None)
+    shape:Optional[tuple[int,...]]=None
+    _sub_topology:Optional[str] = field(
+        repr = False, init=False, default=None
+    )
+    _l:int=0
+    
+    def _update_shape(self, shape:tuple[int,...])->None:
+        self.shape=shape
+        for subprocess in self.subprocesses:
+            subprocess._update_shape(self.shape)
+    
+    def _set_processors_(self, processor:Type[GPProcessor])->None:
+        r'''
+            Inform the sub layers of the gaussian processor to be used
+        '''
+        # TODO: This type of propagation is really ugly. Need to improve
+        self.gaussian_processor = processor
+        for subprocess in self.subprocesses:
+            subprocess.gaussian_processor = self.gaussian_processor
+    
+    def __post_init__(self):
+        self._get_subtopology()
+    
+    def _get_subtopology(self)->None:
+        r'''
+            Infer the subprocess topology
+            
+            If any topologies are present, collects them into a nested dictionary structure for use, in the general form:
+            
+            .. code-block:: python
+            
+                OSTRING = Optional[str]
+                local_topology:dict[OSTRING:dict[OSTRING, str]] = {
+                    'layer_topology' : {
+                        "local_topology_A": Sequence[GaussianSubprocess],
+                        "local_topology_B": Sequence[GaussianSubprocess],
+                        ...
+                    }
+                }
+            All missing topologies default to :code:`None`. A layer with
+            no defined topology is equivalent to:
+            
+            .. code-block:: python
+            
+                local_topology = {None: {None: self.layers} }
+        '''
+        if self.topology is not None:
+            from copy import copy
+            from itertools import groupby
+            sorted_subprocesses:Sequence[GaussianSubprocess] = sorted(
+                copy(self.subprocesses), key=lambda e: e.topology)
+            gs = groupby(sorted_subprocesses, key= lambda e:e.topology)
+            self._sub_topology = {self.topology:{
+                topological_group:list(members
+                                    ) for topological_group, members in gs
+            }}
+        else:
+            self._sub_topology = {None: {None:self.subprocesses}}
+    
+    def __call__(self, inpts, var_catalogue:dict[str, Any]):
+        r'''
+            Initialize the Gaussian Process layer
+            
+            Inserts all subprocesses in the layer to the
+            :code:`pymc.Model` object and induces priors over them.
+            Spawns random variables representing the "induced"
+            :math:`f`. If no topology is defined intermediate layer and
+            subprocess outputs are inaccessible. When topologies are
+            defined they are wrapped in :code:`Deterministic` nodes,
+            making them accessible post inference. The general schema
+            here is: 
+            
+            .. code-block:: python
+            
+                # Loosely equivalent to:
+                layer_topology = {"C":{
+                    "A":[...],
+                    "B":[...],
+                }}
+                f[A] = pytensor.stack(*[...]).T
+                f[B] = pytensor.stack(*[...]).T
+                f[C] = pytensor.concatenate([f[A],f[B]], axis=-1)
+                
+            .. caution::
+            
+                The local topology implicitly defines the output vector.
+                With no topology specified, the order of the element in 
+                the output vector is the same as the one in 
+                :code:`layer`. With topology, they are sorted 
+                alphabetically
+            
+            Args:
+            -----
+            
+                - | inpts:TensorVariable := The input the layer.
+                    Generally the output of the previous layer
+                    
+                - | var_catalogue:dict[str, TensorVariable] := A mapping
+                    containing variables present in the model. Is a
+                    mapping of internal variable names to references to
+                    the :code:`TensorVariable` objects in the
+                    computation graph
+                    
+            Returns:
+            --------
+            
+                - | f:TensorVariable := The tensor output of the layer
+        '''
+        GP = GaussianSubprocess
+        layer_funcs:list=[]
+        process_vars:list[dict]=[]
+        deterministics:dict={}
+        local_topology:dict[str,GP] = self._sub_topology[
+            self.topology
+            ]
+        for p_topology, processes in local_topology.items():
+            gps:list=[]
+            funcs:list = []
+            for process in processes:
+                l = process(inpts, var_catalogue)
+                gps.append(process.gp)
+                funcs.append(process.func)
+                process_vars.append(process.variables)
+            self.gps[p_topology] = gps
+            self.functions[p_topology] = funcs
+            stacked = pytensor.tensor.stack(funcs).T     
+            if p_topology is not None:
+                f = pymc.Deterministic(f"f[{p_topology}]",
+                        stacked
+                )
+                deterministics[f"f[{p_topology}]"] = f
+            else:
+                f = stacked
+            layer_funcs.append(f)
+        self.variables = merge_dicts(self.variables, deterministics,
+                                     *process_vars)
+        if self.topology is None:
+            layer_out = f
+        else:
+            layer_out = pymc.Deterministic(f"f[{self.topology}]",
+                pytensor.tensor.concatenate(layer_funcs, axis=-1)
+            )
+            self.variables[f"f[{self.topology}]"]=layer_out
+        str_f_name:str = f"f[{self.layer_idx}]" if not self.output_layer \
+            else "f"
+        if not self.output_layer:
+            self.variables[str_f_name] = layer_out
+        else:
+            self.variables[str_f_name] = layer_out
+        return layer_out
+
+    def condition(self, inpts):
+        r'''
+            Construct the conditional distribution
+            
+            Propagate the conditioning across the structure similar to
+            the :code:`__call__` method. All conditional variables share
+            the same name as their prior version with the suffix '_star'
+            appended. For example:
+            
+                .. code-block:: python
+                
+                    # Output of the first subprocess of the first layer
+                    f[0,0]->f[0,0]_star
+        '''
+        GP = GaussianSubprocess
+        layer_funcs:list=[]
+        process_vars:list[dict]=[]
+        deterministics:dict={}
+        local_topology:dict[str,GP] = self._sub_topology[
+            self.topology
+            ]
+        for p_topology, processes in local_topology.items():
+            funcs:list = []
+            for process in processes:
+                l = process.condition(inpts)
+                funcs.append(l)
+                process_vars.append(process.variables)
+            f = pymc.Deterministic(f"f_{p_topology}_star",
+                pytensor.tensor.stack(funcs).T
+                )
+            deterministics[f"f_{p_topology}_star"] = f
+            layer_funcs.append(f)
+        self.variables = merge_dicts(self.variables, deterministics,
+                                     *process_vars)
+        if self.topology is None:
+            f = pytensor.tensor.stack(layer_funcs).T
+        else:
+            f = pymc.Deterministic(f"f_{self.topology}_star",
+                pytensor.tensor.concatenate(layer_funcs, axis=-1)
+            )
+            self.variables[f"f_{self.topology}_star"]=f
+        str_f_name:str = f"f[{self.layer_idx}]_star" if self.output_layer \
+            else "f_star"
+        if not self.output_layer:
+            self.variables[f"f[{self.layer_idx}]_star"] = f
+        else:
+            self.variables[f'f_star'] = f
+        return f
+    
+    def __next__(self):
+        r'''
+            :code:`GPLayer` instances are iterators overs the component :code:`GaussianSubprocess` elements
+        '''
+        
+        if self._l<=len(self.subprocesses):
+            return self.subprocesses[self._l]
+        else:
+            raise StopIteration()
+            
+    def __iter__(self):
+        r'''
+            Construct an iterator for layer object
+            
+            Returns:
+            --------
+            
+                - | subprocess_iterable := Iterator over the layers'
+                    subprocesses
+        '''
+        return iter(self.subprocesses)
+
+class GaussianProcessCoreComponent(CoreModelComponent):
+    r'''
+        Core model component for Gaussian process models
+        
+        Creation of kernel and mean parameters, along with data notes
+        are delegated to the generic :code:`CoreModelComponent`. Defines
+        a higher level structure for the model by calling all the layers
+        in order and passing each the output of the previous, starting
+        with the data notes themselves. Loosely equivalent to:
+        
+        .. code-block:: python
+            
+            X = self.data
+            L = X
+            for layer in self.layers:
+                L = layer(L)
+                
+        Object Public Attributes:
+        =========================
+        
+            - | layers:Sequence[GPLayer] := The layers of the model
+            
+            - | predictors:list[CommonDataStructureInterface] := The
+                processed training inputs. Only a list for possible
+                future implementation of multiinput models. Currectly
+                should have length of 1
+                
+            - | targets:list[CommonDataStructureInterface] := The
+                processed training outputs. Only a list for possible
+                future implementation of multiinput models. Currectly
+                should have length of 1
+        
+        Object Private Attributes:
+        ===========================
+        
+            - | _multiinput:bool := Flag for multiple input values. Not
+                implemented and will raise is it evaluates to
+                :code:`True`.
+            
+            - | _multioutput:bool := Flag for multiple output values.
+                Not implemented and will raise is it evaluates to
+                :code:`True`.
+                
+        Object Methods:
+        ================
+
+            - | __pre_init__() := Pre initialization actions. Creates
+                data nodes and collects all basic random variables
+                required by all layers and subprocesses
+                
+            - | __call__() := Spawn and connect all the layers,
+                delegating details to each layer and its subprocesses. 
+                
+            _ | condition(Xnew, conditional_likelihoods,
+                new_adaptor=None, new_responses=None) := Propagate the
+                conditing across the structure by spawning predictive
+                random variables and connecting the 'new' layers.
+                Delegates details to layers and subprocesses via their
+                respective :code:`condition` methods
+        
+
+    '''
+    
+    __slots__ = ('layers', 'predictors', 'targets', 
+                 "_multiinput", "_multioutput", "shape")
+    
+    def __pre_init__(self, 
+                     layers, 
+                     predictors, 
+                     targets
+                     )->dict[str, Distribution]:
+        r'''
+            Perform pre initialization actions
+            
+            Process raw data inputs and spawn :code:`pymc.ConstantData`
+            containers for them. Extract all necessary basic random
+            variables for all processes and layers, so that they can be
+            forwarded to the :code:`CoreModelComponent` for
+            initialization.
+            
+            
+            .. note::
+
+                Input/output data are supplied more generally as lists.
+                At present multiple inputs and outputs are not supported
+                however
+            
+            Args:
+            =====
+            
+                - | layers:Sequence[GPLayer] := A sequence representing
+                    the layers of the model
+                    
+                - | predictors:list[Any] := Array-like of raw input
+                    information. Will be forwarded to :code:`Data` for preprocessing
+                    
+                - | targets:list[Any] := List of array-like target
+                    information. Will be forwarded to the data processor
+                    for preprocessing
+                    
+            Returns:
+            ========
+            
+                - | dists[str,Distribution] := All the basic random
+                    variables (and data nodes) to be added to the model.
+                    Is in the form of a mapping of internal names to
+                    :code:`Distribution` objects. Will be forwarded to
+                    :code:`CoreModelComponent` for insertion to the
+                    model stack
+        '''
+        self.shape = [p.shape()  for p in predictors]
+        data:dict[str, Distribution] = {}
+        
+        if len(predictors)==1:
+            data['train_inputs'] = distribution(
+                pm.ConstantData, 'train_inputs', 
+                predictors[0].values()   
+            )
+        else:
+            for i, predictor in enumerate(predictors):
+                data[f'train_inputs_{i}'] = distribution(
+                    pm.ConstantData, f'train_inputs_{i}',
+                    predictor.values()
+                )
+                
+        if len(targets)==1:
+            data['train_outputs'] = distribution(
+                pm.ConstantData, 'train_outputs',
+                targets[0].values()
+            )
+        else:
+            for i, target in enumerate(targets):
+                data[f"train_ouputs_{i}"] = distribution(
+                    pm.ConstantData, f'train_outputs_{i}',
+                    target.values()
+                )
+        collected_rvs:list[dict[str, Distribution]] = [] 
+        for layer in layers:
+            for process in layer:
+                collected_rvs.append(process.__extract_basic_rvs__())
+        
+        dists:dict[str, Distribution] = merge_dicts(data, 
+                                                    *collected_rvs)
+        return dists
+    
+    def __init__(self, 
+                layers:Sequence[GPLayer], 
+                predictors:Optional[list[
+                     CommonDataStructureInterface
+                     ]] = None,
+                targets:Optional[list[
+                    CommonDataStructureInterface
+                    ]] = None,
+                distributions:dict[str, Distribution] = dict(),
+                model:Optional[pymc.Model]=None,
+                )->None:
+        # WARNING! Putting this after any attributes are set will
+        # trigger an infinite recursion (for some reason)
+        dists = self.__pre_init__(layers, predictors, targets)
+        super().__init__(distributions = dists, model = model)
+        self.layers = layers
+        self.predictors = predictors
+        self.targets = targets
+        self._multiinput:bool = len(predictors) != 1
+        self._multioutput:bool = len(targets) != 1
+        
+    def _update_shape_(self):
+        if len(self.shape)>1:
+            raise ValueError((
+                "Multiple inputs not supported presently. Expected "
+                "input objects' shape to be a length - 1 list of tuples"
+                f" but saw {self.shape} of length {len(self.shape)} "
+                "instead"
+            ))
+        for layer in self.layers:
+            layer._update_shape(self.shape)
+        
+    def __call__(self)->None:
+        r'''
+            Construct the specified model by calling all the layer and connecting them
+            
+            Sequentially calls all the layers and delegates details to
+            them. Forward all basic random variables and data to the
+            :code:`CoreModelComponent` for inialization. Updates its
+            variables attribute with all new variables spawned in the
+            model
+        '''
+        super().__call__()
+        self._update_shape_()
+        if not self._multiinput:
+            v = self.variables['train_inputs']
+        else:
+            raise NotImplementedError("Multiple inputs or outputs")
+        for layer in self.layers:
+            v = layer(v, self.variables)
+            self.variables = merge_dicts(
+                self.variables, layer.variables
+                )
+            
+    def condition(self, Xnew, conditional_likelihoods,
+                  new_adaptor=None, new_responses=None):
+        r'''
+            Propagate the conditioning across the structure
+            
+            Spawn conditional variables for the layers and subprocesses
+            and connect them, applying response and adaptor components
+            to the new variables.
+            
+            Args:
+            =====
+            
+            
+                - | Xnew:TensorVariable := Node for new inputs to
+                    predict with
+                    
+                - | conditional_likelihoods:list[LikelihoodComponent] :=
+                    Clone of the original likelihood with updated
+                    variable mappings. New mappings are named with the
+                    suffix "_star"
+                    
+                - | new_adaptor:Optional[ModelAdaptorComponent] := A
+                    cloned adaptor component with update variable names.
+                    New names are the old ones, with suffix '_star'
+                    
+                - | new_responses:Optional[ResponseFunctionComponent] :=
+                    A clone response function component to be applied to
+                    the new, conditional variables
+                    
+            Returns:
+            ========
+            
+                - None
+                
+                Propagates conditioning across the structure
+                
+            Raises:
+            =======
+            
+                - | NotImplementedError := If likelihoods list has more
+                    than one element. Multiple outputs not supported
+        '''
+        if len(conditional_likelihoods) != 1:
+            raise NotImplementedError((
+                "Multiple likelihoods / outputs not implemented. "
+                "Expected exactly one likelihood but received "
+                f"{len(conditional_likelihoods)}"
+            ))
+        inputs = pymc.MutableData('inputs', Xnew)
+        self.variables['inputs'] = inputs
+        L = inputs
+        for layer in self.layers:
+            L = layer.condition(L)
+            self.variables = merge_dicts(
+                self.variables, layer.variables
+                )
+        if new_adaptor is not None:
+            new_adaptor(self.variables["f_star"])
+            self.variables = merge_dicts(
+                self.variables, new_adaptor.variables
+                )
+        if new_responses is not None:
+            new_responses(self.variables)
+            self.variables = merge_dicts(
+                self.variables, new_responses.variables
+            )
+        for likelihood in conditional_likelihoods:
+            vmap:dict = likelihood.var_mapping
+            shapes:dict = {
+                k:self.variables[v] for k,v in vmap.items()
+            }
+            outputs = likelihood.distribution("outputs", **shapes)
+            self.variables['outputs'] = outputs

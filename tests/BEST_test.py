@@ -18,11 +18,10 @@ import unittest
 from bayesian_models.models import BEST
 import numpy as np
 import pandas as pd
-from os import remove
 import warnings
+from os import remove
+from bayesian_models.typing import PREDICATES
 
-
-PREDICATES = dict[str, bool]
 warnings.filterwarnings("ignore")
 
 class TestBESTModel(unittest.TestCase):
